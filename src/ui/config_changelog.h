@@ -686,6 +686,33 @@ static const ChangeLine CL_88[] = {
       "*Les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lanc\xC3\xA9 un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne.", CK_FIXED, "Timers", "Timers" },
 };
 
+static const ChangeLine CL_112[] = {
+    { "*The Equipment screen, redrawn as one sheet* (Game UI > Menus and screens > Equipment screen : Sheet, the default ; Classic keeps the previous layout). Your name, jobs, item level and Su, HP / MP / TP gauges, your attributes and your gil on the left ; the 16 slots with Attack, Defense and the resists ; the piece worn described at the right.",
+      "*L'\xC3\xA9""cran \xC3\x89quipement, redessin\xC3\xA9 en une seule fiche* (Interface du jeu > Menus et \xC3\xA9""crans > \xC3\x89""cran \xC3\x89quipement : Fiche, par d\xC3\xA9""faut ; Classique garde l'ancienne disposition). Ton nom, tes jobs, ton iLv et Su, les jauges HP / MP / TP, tes attributs et tes gils \xC3\xA0 gauche ; les 16 emplacements avec Attaque, D\xC3\xA9""fense et r\xC3\xA9sistances ; la pi\xC3\xA8""ce port\xC3\xA9""e d\xC3\xA9""crite \xC3\xA0 droite.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Compare before you change a piece.* In a slot, the piece worn and the one under the cursor are shown side by side under the sheet, each with its stats, effects and augments.",
+      "*Compare avant de changer une pi\xC3\xA8""ce.* Dans un emplacement, la pi\xC3\xA8""ce port\xC3\xA9""e et celle sous le curseur s'affichent c\xC3\xB4te \xC3\xA0 c\xC3\xB4te sous la fiche, chacune avec ses stats, effets et augments.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Item descriptions you read at a glance* : the base stats as an aligned grid, then families (defense, physical, magic, utility) in your job's order, value first ; effects as bullets ; augments in green ; the pet's stats marked \"Pet:\". The same in every item card.",
+      "*Des descriptions d'objet lisibles d'un coup d'\xC5\x93il* : les stats de base en grille align\xC3\xA9""e, puis par familles (d\xC3\xA9""fense, physique, magie, utilitaire) dans l'ordre de ton job, valeur d'abord ; effets en liste ; augments en vert ; les stats du familier marqu\xC3\xA9""es \xC2\xAB Pet: \xC2\xBB. Pareil dans toutes les fiches d'objet.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*The list of a slot shows the bag it lists* (Inventory, Wardrobe 2...) on its Storage Options row.",
+      "*La liste d'un emplacement indique le sac affich\xC3\xA9* (Inventaire, Garde-robe 2...) sur sa ligne Storage Options.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*One look for every redrawn menu* : the same text size, row height, titles and margins as the Equipment sheet -- the main menu, its lists, Status, Quests, Missions, Key Items, Linkshell, Synthesis, the shops, the auction house, the top bar.",
+      "*Un seul style pour tous les menus redessin\xC3\xA9s* : la m\xC3\xAAme taille de texte, hauteur de ligne, titres et marges que la fiche \xC3\x89quipement -- menu principal, listes, Status, Quests, Missions, Key Items, Linkshell, Synth\xC3\xA8se, boutiques, h\xC3\xB4tel des ventes, barre du haut.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*No more hand cursor in the redrawn menus* : the lit row or cell is the cursor.",
+      "*Plus de main dans les menus redessin\xC3\xA9s* : la ligne ou la case allum\xC3\xA9""e est le curseur.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*Item cells all the same size* (Synthesis, Check, the delivery box, trade), as the Equipment grid.",
+      "*Des cases d'objet de la m\xC3\xAAme taille partout* (Synth\xC3\xA8se, Examiner, bo\xC3\xAEte de livraison, \xC3\xA9""change), comme la grille d'\xC3\x89quipement.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*Mog House > Layout > Mog Safe* : the furnishings list is redrawn.",
+      "*Mog House > Layout > Mog Safe* : la liste des meubles est redessin\xC3\xA9""e.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Item cards as wide as their text* -- no more wide empty cards.",
+      "*Des fiches d'objet \xC3\xA0 la largeur de leur texte* -- plus de grandes fiches vides.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*The item level shown is your current one* (as the game's Status), no longer the maximum.",
+      "*L'iLv affich\xC3\xA9 est ton iLv actuel* (comme le Status du jeu), et non plus le maximum.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*Item and key item names with quotes* (\"A\" Egg, Stuffed \"big one\"...) no longer show backslashes.",
+      "*Les noms d'objets et d'objets cl\xC3\xA9s avec des guillemets* (\"A\" Egg, Stuffed \"big one\"...) n'affichent plus de barres obliques.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*Current Gil* no longer runs over the Equipment grid with a large purse.",
+      "*Current Gil* ne d\xC3\xA9""borde plus sur la grille d'\xC3\x89quipement avec beaucoup de gils.", CK_FIXED, "Game UI", "Interface du jeu" },
+};
+
 static const ChangeLine CL_111[] = {
     { "*The Update tab flags the new release again after an update from 1.0.103.* That version rewrote the config without the last release you had seen, so 1.1.0 showed no count on the tab ; now the installed release counts as new once.",
       "*L'onglet Mise \xC3\xA0 jour signale de nouveau la nouvelle version apr\xC3\xA8s une mise \xC3\xA0 jour depuis la 1.0.103.* Cette version r\xC3\xA9\xC3\xA9""crivait la config sans la derni\xC3\xA8re version vue, et la 1.1.0 n'affichait aucun compteur sur l'onglet ; d\xC3\xA9sormais la version install\xC3\xA9""e compte une fois comme nouvelle.", CK_FIXED, "Update", "Mise \xC3\xA0 jour" },
@@ -965,6 +992,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.1.2", CL_112, (int)(sizeof(CL_112) / sizeof(CL_112[0])), "2026-11-28" },
     { "1.1.1", CL_111, (int)(sizeof(CL_111) / sizeof(CL_111[0])), "2026-11-27" },
     { "1.1.0", CL_110, (int)(sizeof(CL_110) / sizeof(CL_110[0])), "2026-11-27" },
     { "1.0.103", CL_103, (int)(sizeof(CL_103) / sizeof(CL_103[0])), "2026-11-15" },

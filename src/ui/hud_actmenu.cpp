@@ -716,6 +716,9 @@ bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
 void row_image(u32 dev, const NativeEntryMenu& m, int i, RowSpec& r, bool alt = false) {
     if (i < 0 || i >= 32 || !m.sheet[i]) return;
     if (!client_labels_ok()) return;   // the client's own label : in its language -- only when the menus speak it
+    // ONE TYPE (2026-11-27, the uniform pass) : a row that has its own text keeps it ; the client's letter images (a heavier,
+    // larger bitmap type) only for the rows with no text of ours
+    if (r.label && r.label[0]) return;
     const unsigned short id = alt && m.spr[i][1] ? m.spr[i][1] : m.spr[i][0];   // (grey : the normal look, dimmed by the row)
     label_img(dev, m.sheet[i], id, r);
 }
@@ -750,14 +753,24 @@ unsigned g_lastMs = 0;
 
 struct Metrics { float S, tz, ow, capH, gap, icZ, pad, gutter, capPadL, icW, capPadR, triW, bi; bool icons; };   // bi : the frame theme's border a box reserves on each side (0 = normal frames)
 Metrics metrics_at(float S);
+// THE STANDARD PANEL TITLE (2026-11-27, the uniform pass) : the Equipment sheet's panel headings ("Hands", the name) --
+// as written, light gold, the text size. (Small capitals in brass are the SECTION titles inside a panel, not these.)
+static void panel_title(Font* fo, u32 dev, float x, float y, const char* t, float tz, float A, u32 sh, float ow) {
+    fo->draw_lc(dev, x, y, t ? t : "", tz, with_alpha(0xFFE8D9B0u, A), sh, ow);
+}
+// the redrawn menus' HAND : gone (2026-11-27, the uniform pass -- "le curseur, c'est la ligne allumee") ; the calls stay as
+// the record of where the client's own cursor sits
+static inline void menu_hand(u32, u32, float, float, float, int) {}
 Metrics metrics(const Frame& f) {
     float sc = ui_config().muScale; if (!(sc >= 0.6f && sc <= 1.6f)) sc = 1.0f;   // Game UI -> Menus : their size
     return metrics_at(f.screenH / 1000.0f * sc);
 }
 Metrics metrics_at(float S_) {
     Metrics k; k.S = S_; const float S = k.S;
-    k.tz = 11.5f * S; k.ow = 0.9f * S; k.capH = snap(19.0f * S); k.gap = snap(3.0f * S); k.icZ = 10.0f * S;
-    k.pad = snap(6.0f * S); k.gutter = snap(22.0f * S); k.icons = ui_config().muLabel == 1;
+    // THE ONE STANDARD (2026-11-27, the uniform pass -- the Equipment sheet's) : the text, the row's height, rows packed
+    // (no gap : a list, not a stack of pills), no hand gutter (the lit row IS the cursor)
+    k.tz = 10.1f * S; k.ow = 0.9f * S; k.capH = snap(17.0f * S); k.gap = snap(1.0f * S); k.icZ = 9.0f * S;
+    k.pad = snap(6.0f * S); k.gutter = snap(6.0f * S); k.icons = ui_config().muLabel == 1;
     k.capPadL = snap(9.0f * S); k.icW = k.icons ? snap(k.icZ + 7.0f * S) : 0.0f; k.capPadR = snap(6.0f * S); k.triW = snap(8.0f * S);
     k.bi = box_inset(ui_config().muBox);
     return k;
@@ -961,21 +974,19 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
             rrect_stroke(dev, mx, y, mw, k.capH, r, with_alpha(0x38C8D6EAu, a), 1.0f);
             continue;
         }
-        rrect(dev, cx0, y, capW, k.capH, r, with_alpha(0x5A1C2638u, a), with_alpha(0x5A0A0F18u, a));
-        rrect_topcaps(dev, cx0 + 1.0f, y + 1.0f, capW - 2.0f, snap(k.capH * 0.45f), r - 1.0f, with_alpha(0x14FFFFFFu, a), with_alpha(0x00FFFFFFu, a));
-        rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0x38C8D6EAu, a), 1.0f);
+        if ((i & 1) == 0) rrect(dev, cx0, y, capW, k.capH, 4.0f * S, with_alpha(0x14FFFFFFu, a), with_alpha(0x0CFFFFFFu, a));   // a faint stripe
         if (rows[i].mark) {                                    // held by a manual sort : a gold rim, breathing
             const float p = 0.55f + 0.45f * sinf(f.t * 6.0f);
             rrect(dev, cx0, y, capW, k.capH, r, with_alpha(0x30FFDA8Au, a * p), with_alpha(0x18FFDA8Au, a * p));
             rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0xF0FFDA8Au, a * p), 1.5f * S);
         }
     }
-    if (hasCur) {   // the selection glides between rows : clipped to its capsule, the exact party glass + sweep, a gold rim
-        const float y = snap(b.curY);
+    if (hasCur) {   // the selection glides between rows : the party glass + sweep, a gold rim ; dimmed when not driven
+        const float y = snap(b.curY), la = focused ? 1.0f : 0.45f;
         rrect_clip_begin(dev, cx0, y, capW, k.capH, r);
-        party_selframe(dev, cx0, y, capW, k.capH, f.t, A, 0);
+        party_selframe(dev, cx0, y, capW, k.capH, f.t, A * la, 0);
         rrect_clip_end(dev);
-        rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
+        rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0xC8FFDA8Au, A * la), 1.0f);
     }
     for (int i = 0; i < n && i < 32; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.55f : 1.0f);
@@ -1015,12 +1026,6 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
             const float tx = cx0 + capW - k.capPadR * 0.5f - k.triW * 0.5f, th = 3.2f * S;
             tri(dev, tx + th * 0.8f, cy, tx - th * 0.6f, cy - th, tx - th * 0.6f, cy + th, with_alpha(mix(0xA0B9C8DCu, 0xFFFFF1CCu, s), a));
         }
-    }
-    if (hasCur && focused) {   // AioHUD's hand, in the gutter of the menu being driven, bobbing on the party's rhythm
-        const float hand = snap(k.capH * 1.25f), cy = b.curY + k.capH * 0.5f;
-        const float hx = bx + k.gutter * 0.5f - 1.0f * S + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
-        else tri(dev, hx + 5.0f * S, cy, hx - 3.5f * S, cy - 5.0f * S, hx - 3.5f * S, cy + 5.0f * S, with_alpha(0xFFFFDA8Au, A));
     }
     // the IMAGE labels (the client's letters) : a shadow, then the letters in the text's colour
     for (int i = 0; i < n && i < 32; ++i) if (rows[i].ltex && !rows[i].center) {
@@ -1497,7 +1502,7 @@ int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int 
 // longer than `hi` wraps there (prose). Same metrics as card_draw. Needs the card loaded (card_ready).
 float card_fit_w(const Frame& f, const Metrics& k, float lo, float hi) {
     const float S = k.S; Font* fo = f.font; if (!fo) return hi;
-    const float ctz = snap(k.tz * 1.0f), cpad = snap(8.0f * S) + k.bi, icon = snap(32.0f * S);
+    const float ctz = snap(k.tz * 1.0f), cpad = snap(7.0f * S) + k.bi, icon = snap(32.0f * S);
     const float chrome = 2.0f * cpad + icon + 6.0f * S, avail = hi - chrome - 2.0f * S;
     float w = 0.0f;
     auto para = [&](const char* t, float extra) {                   // each '\n'-separated line of t
@@ -1902,7 +1907,11 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
         if (X && X->line[0]) lstrcpynA(ench, X->line, sizeof(ench));             // the client's "<...>" (charges, or rank / path / RP)
         const char* ilv = X && X->ilvl[0] ? X->ilvl : 0;
         const float colH = (float)nl * clH, encH = (ench[0] ? clH : 0.0f) + (ilv ? clH : 0.0f);
-        const float chT = snap(cpad + (colH > icon ? colH : icon) + encH + cpad);
+        (void)colH; (void)encH; (void)augFrom;
+        // THE EQUIPMENT SHEET'S SECTIONS in every card (2026-11-27, the uniform pass) : measured first (invisible), the box
+        // as tall as them -- the icon kept at the top left
+        const float sheetH = card_draw_sheet(f, k, colX, tw, 0.0f, X, 0.0f);
+        const float chT = snap(cpad + (sheetH > icon ? sheetH : icon) + cpad);
         // THE HEIGHT, ANIMATED (the user 2026-11-20 : "rendre les transitions smooth") : it eases to the new item's height ;
         // shown again after a moment away, it UNFOLDS from a thin strip (or picks up its fold mid-way). The content waits
         // for the box : no text past its edge
@@ -1953,30 +1962,7 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
             tquad(dev, ix, iy, icon, icon, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
             dSetTex(dev, 0, 0); cs(dev);                                  // back to the colour state : the badges' rrects follow
         }
-        // the badges, in the top-right corner -- Rare (blue) then Ex (green), left to right. PILLS sized to their word at
-        // a readable size (2026-11-17 : the round ones of the client's size were "pas tres lisibles")
-        const char* BADGE[2] = { item_rare(g_card) ? "Rare" : 0, item_ex(g_card) ? "Ex" : 0 };
-        const u32 BCOL[2] = { 0xFF2F5FB8u, 0xFF2E8A46u };
-        const float btz = snap(ctz * 0.85f), bh2 = snap(btz * 1.45f), byB = snap(cy + cpad - 1.0f * S);
-        float bxs[2] = { 0, 0 }, bws[2] = { 0, 0 };
-        { float right = snap(bx + bw - cpad);
-          for (int b = 1; b >= 0; --b) if (BADGE[b]) { bws[b] = snap(fo->measure(BADGE[b], btz) + 12.0f * S); bxs[b] = snap(right - bws[b]); right = snap(bxs[b] - 4.0f * S); } }
-        for (int b = 0; b < 2; ++b) if (BADGE[b]) {
-            rrect(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(BCOL[b], A), with_alpha(mix(BCOL[b], 0xFF000000u, 0.35f), A));
-            rrect_topcaps(dev, bxs[b] + 1.0f, byB + 1.0f, bws[b] - 2.0f, snap(bh2 * 0.45f), bh2 * 0.5f - 1.0f, with_alpha(0x38FFFFFFu, A), with_alpha(0x00FFFFFFu, A));
-            rrect_stroke(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(0xC0E8F0FFu, A), 1.0f);
-        }
-        fo->begin(dev);
-        const u32 sh = with_alpha(0xC8000000u, A), white = with_alpha(0xFFF4F6FAu, A);
-        for (int b = 0; b < 2; ++b) if (BADGE[b])
-            fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), snap(byB + bh2 * 0.5f), BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
-        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, i >= augFrom ? with_alpha(0xFFA8E8B4u, A) : white, sh, k.ow);
-        float ry = snap(cy + ch - cpad - clH * 0.5f) - (ilv ? clH : 0.0f);
-        if (ench[0]) {
-            const float ew = fo->measure(ench, ctz);
-            fo->draw_lc(dev, snap(bx + bw - cpad - ew), ry, ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
-        }
-        if (ilv) { ry = snap(cy + ch - cpad - clH * 0.5f); fo->draw_lc(dev, snap(bx + bw - cpad - fo->measure(ilv, ctz)), ry, ilv, ctz, white, sh, k.ow); }
+        card_draw_sheet(f, k, colX, tw, snap(cy + cpad), X, A);
     }
 }
 
@@ -2030,7 +2016,7 @@ void npc_draw(const Frame& f) {
     const char* L[6]; bool lead[6], q[6]; int nL = 0;
     if (last.talk) for (int i = 0; i < last.nLines && nL < 5; ++i) { L[nL] = last.line[i]; lead[nL] = last.lead[i]; q[nL] = false; ++nL; }
     if (last.query && last.question[0] && nL < 6) { L[nL] = last.question; lead[nL] = false; q[nL] = true; ++nL; }
-    const float tz = snap(k.tz * 1.08f), lineH = snap(tz * 1.45f), pad = snap(9.0f * S) + k.bi;   // the bubble's edge -> text (+ the frame border)
+    const float tz = snap(k.tz * 1.08f), lineH = snap(tz * 1.45f), pad = snap(7.0f * S) + k.bi;   // the bubble's edge -> text (+ the frame border)
     float wText = 0.0f;
     for (int i = 0; i < nL; ++i) { const float w = fo->measure(L[i], tz); if (w > wText) wText = w; }
     // the answers : the CLIENT's page -- its 3 rows from its own top (2026-11-17 : "la liste contient moins d'items dans
@@ -2309,22 +2295,18 @@ void persona_draw(const Frame& f) {
         sprintf(hpS, "%d / %u", hp, d.maxHp); sprintf(mpS, "%d / %u", mp, d.maxMp); sprintf(tpS, "%d", tp);
         for (int a = 0; a < 7; ++a) { sprintf(av[a], "%u", (unsigned)d.base[a]); if (d.added[a]) sprintf(ad[a], "%+d", (int)d.added[a]); else ad[a][0] = 0; }
         const char* nm = live ? f.game->me.name : "";
-        // THE CLIENT'S SIZE : its rect, the lines fitted into it (14 lines in 190 UI units) ; the text a touch smaller
-        // than the menus' when the line asks for it. Wider only if a line would not fit (a long name, French labels).
-        const int nTop = 2 + (l2[0] ? 1 : 0) + (l3[0] ? 1 : 0);              // name, main job, [sub job], [iLv]
-        const float gap = snap(3.0f * S);
-        const float sx = f.screenW / (float)lastP.uiW, sy = f.screenH / (float)lastP.uiH;
-        float bw = snap((float)(lastP.rx1 - lastP.rx0) * sx), bh = snap((float)(lastP.ry1 - lastP.ry0) * sy);
-        if (bh < 120.0f * S) bh = snap(120.0f * S);
-        bw += 2.0f * k.bi; bh += 2.0f * k.bi;                                  // the client's rect + the frame border
-        lh = (bh - 2.0f * pad - 2.0f * gap) / (float)(nTop + 10);
-        if (tz > lh * 0.92f) tz = lh * 0.92f;
-        const float c1 = fo->measure("STR", tz) + 8.0f * S, c2 = fo->measure("0000", tz), c3 = fo->measure("+000", tz) + 6.0f * S;
-        float w = c1 + c2 + c3;
-        const float wl[4] = { fo->measure(nm, tz * 1.05f), fo->measure(l1, tz), fo->measure(l2, tz), fo->measure(l3, tz) };
-        for (int i = 0; i < 4; ++i) if (wl[i] > w) w = wl[i];
-        const float vw = fo->measure("HP", tz) + 8.0f * S + fo->measure(hpS, tz); if (vw > w) w = vw;
-        if (w + 2.0f * pad > bw) bw = snap(w + 2.0f * pad);
+        // THE EQUIPMENT SHEET'S STATS (2026-11-27, the uniform pass) : the same header (the name, iLv / Su at the right ; the
+        // main job in blue, the sub job), the same HP / MP / TP gauges, the same attribute rows -- its text size, its pitch ;
+        // sized by the content, at the client's place
+        (void)tpS; (void)hpS; (void)mpS;
+        const float lzz = k.tz, jz = snap(lzz * 0.9f), gaugeBlk = snap(lzz * 1.3f + 5.0f * S + 8.0f * S), attrStep = snap(lzz * 1.2f), headL = snap(lzz * 1.35f);
+        char mj[48] = "", sj[48] = "";
+        _snprintf(mj, sizeof(mj), "%s %d", d.mjob >= 1 && d.mjob <= 22 ? JOB_FULL[d.mjob] : "?", d.mlvl); mj[sizeof(mj) - 1] = 0;
+        if (d.sjob >= 1 && d.sjob <= 22 && d.slvl) { _snprintf(sj, sizeof(sj), "/  %s %d", JOB_FULL[d.sjob], d.slvl); sj[sizeof(sj) - 1] = 0; }
+        float w = 130.0f * S;
+        { const float w1 = fo->measure(nm, snap(lzz * 1.12f)) + 10.0f * S + fo->measure(l3, jz); if (w1 > w) w = w1;
+          const float w2 = fo->measure(mj, jz) + 6.0f * S + fo->measure(sj, jz); if (w2 > w) w = w2; }
+        const float bw = snap(w + 2.0f * pad), bh = snap(pad + 2.0f * headL + 6.0f * S + 3.0f * gaugeBlk + 6.0f * S + 7.0f * attrStep + pad);
         float bx, by; place(lastP, bw, bh, bx, by);
         const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
         persBottom = by + bh; persX = bx; persW = bw;          // its REST place : the Master Level box hangs from it (it slides on its own)
@@ -2335,33 +2317,50 @@ void persona_draw(const Frame& f) {
         if (A > 0.0f) {
             g_frameJoin = jm;
             draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
-            float y = by + pad;
-            const float yHair1 = y + (float)nTop * lh + gap * 0.5f, yHair2 = yHair1 + 3.0f * lh + gap;
-            rrect(dev, bx + pad, snap(yHair1), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
-            rrect(dev, bx + pad, snap(yHair2), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
             const u32 sh = with_alpha(0xC8000000u, A);
+            const float L = bx + pad, R = bx + bw - pad;
+            float y = by + pad;
             fo->begin(dev);
-            auto line = [&](const char* t, u32 c, float z) { fo->draw_lc(dev, snap(bx + pad), snap(y + lh * 0.5f), t, z, with_alpha(c, A), sh, k.ow); y += lh; };
-            line(nm, 0xFFFFFFFFu, tz * 1.05f);
-            line(l1, cGold, tz);
-            if (l2[0]) line(l2, cVal, tz);
-            if (l3[0]) line(l3, cLab, tz);
-            y += gap;
-            const char* vl[3] = { "HP", "MP", "TP" }; const char* vv[3] = { hpS, mpS, tpS };
-            const u32 vc[3] = { 0xFFB8F0A0u, 0xFFA8D0FFu, 0xFFFFE0A0u };
-            for (int i = 0; i < 3; ++i) {
-                const float cy = snap(y + lh * 0.5f);
-                fo->draw_lc(dev, snap(bx + pad), cy, vl[i], tz, with_alpha(cLab, A), sh, k.ow);
-                fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(vv[i], tz)), cy, vv[i], tz, with_alpha(vc[i], A), sh, k.ow);
-                y += lh;
-            }
-            y += gap;
+            {   const float hy = snap(y + headL * 0.5f), hy2 = snap(y + headL * 1.5f);
+                fo->draw_lc(dev, L, hy, nm, snap(lzz * 1.12f), with_alpha(0xFFF4F6FAu, A), sh, k.ow);
+                if (l3[0]) fo->draw_lc(dev, snap(R - fo->measure(l3, jz)), hy, l3, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+                fo->draw_lc(dev, L, hy2, mj, jz, with_alpha(0xFF4FA8F0u, A), sh, k.ow);
+                if (sj[0]) fo->draw_lc(dev, snap(L + fo->measure(mj, jz) + 6.0f * S), hy2, sj, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+                y = snap(y + 2.0f * headL + 3.0f * S);
+                rrect(dev, L, y, R - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+                y = snap(y + 3.0f * S); }
+            auto gauge = [&](const char* lab, int cur, unsigned mx, u32 c0, u32 c1, u32 vc2) {
+                const float ty = snap(y + lzz * 0.55f);
+                char a2[16], b2[16]; sprintf(a2, "%d", cur); sprintf(b2, " / %u", mx);
+                fo->begin(dev);
+                fo->draw_lc(dev, L, ty, lab, lzz, with_alpha(cLab, A), sh, k.ow);
+                const float wb = fo->measure(b2, snap(lzz * 0.9f));
+                fo->draw_lc(dev, snap(R - wb), ty, b2, snap(lzz * 0.9f), with_alpha(0xFF56627Au, A), sh, k.ow);
+                fo->draw_lc(dev, snap(R - wb - fo->measure(a2, lzz)), ty, a2, lzz, with_alpha(vc2, A), sh, k.ow);
+                const float gy = snap(y + lzz * 1.3f), gh = snap(5.0f * S), r = gh * 0.5f;
+                const float fr = mx ? fminf(1.0f, fmaxf(0.0f, (float)cur / (float)mx)) : 0.0f;
+                cs(dev);
+                rrect(dev, L, gy, R - L, gh, r, with_alpha(0xC0080C12u, A), with_alpha(0xC0141A22u, A));
+                if (fr > 0.0f) { const float fw = snap(fmaxf(gh, (R - L) * fr));
+                    rrect(dev, L, gy, fw, gh, r, with_alpha(c0, A), with_alpha(c1, A));
+                    rrect_topcaps(dev, L + 1.0f, gy + 0.5f, fw - 2.0f, snap(gh * 0.45f), r - 0.5f, with_alpha(0x50FFFFFFu, A), with_alpha(0x00FFFFFFu, A)); }
+                rrect_stroke(dev, L, gy, R - L, gh, r, with_alpha(0x40000000u, A), 1.0f);
+                y = snap(y + gaugeBlk);
+            };
+            gauge("HP", hp, d.maxHp, 0xFF6ED36Au, 0xFF3E9E44u, 0xFFC8F4B4u);
+            gauge("MP", mp, d.maxMp, 0xFF6AA8F0u, 0xFF3A6CC0u, 0xFFB8D4FFu);
+            gauge("TP", tp, 3000u, 0xFFF0C850u, 0xFFB8901Cu, 0xFFFFE8A0u);
+            y = snap(y + 6.0f * S);
+            cs(dev);
+            for (int a = 0; a < 7; ++a) if ((a & 1) == 0)
+                rrect(dev, snap(L - 4.0f * S), snap(y + (float)a * attrStep), snap(R - L + 8.0f * S), attrStep, 3.0f * S, with_alpha(0x10FFFFFFu, A), with_alpha(0x0AFFFFFFu, A));
+            fo->begin(dev);
+            const float baseR = snap(L + (R - L) * 0.62f);
             for (int a = 0; a < 7; ++a) {
-                const float cy = snap(y + lh * 0.5f);
-                fo->draw_lc(dev, snap(bx + pad), cy, ATTR[a], tz, with_alpha(cLab, A), sh, k.ow);
-                fo->draw_lc(dev, snap(bx + bw - pad - c3 - fo->measure(av[a], tz)), cy, av[a], tz, with_alpha(cVal, A), sh, k.ow);
-                if (ad[a][0]) fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(ad[a], tz)), cy, ad[a], tz, with_alpha(d.added[a] > 0 ? 0xFF8CE68Cu : 0xFFFF8C8Cu, A), sh, k.ow);
-                y += lh;
+                const float cy = snap(y + (float)a * attrStep + attrStep * 0.5f);
+                fo->draw_lc(dev, snap(L + 2.0f * S), cy, ATTR[a], lzz, with_alpha(cLab, A), sh, k.ow);
+                fo->draw_lc(dev, snap(baseR - fo->measure(av[a], lzz)), cy, av[a], lzz, with_alpha(cVal, A), sh, k.ow);
+                if (ad[a][0]) fo->draw_lc(dev, snap(R - fo->measure(ad[a], lzz)), cy, ad[a], lzz, with_alpha(d.added[a] > 0 ? 0xFF7CE07Cu : 0xFFFF7A6Au, A), sh, k.ow);
             }
         }
     }
@@ -2697,7 +2696,7 @@ void currencies_draw(const Frame& f) {
     static float wAll = 0.0f, atS = 0.0f;
     if (atS != S) { atS = S; wAll = 0.0f; for (int t = 0; t < 2; ++t) for (int i = 0; i < (t ? CURRENCY2_N : CURRENCY1_N); ++i) { const float w = fo->measure(t ? CURRENCY2_EN[i] : CURRENCY1_EN[i], tz); if (w > wAll) wAll = w; } }
     const int V = 12;                                                         // rows shown at once
-    const float pad = snap(8.0f * S) + k.bi, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), fieldH = snap(k.capH * 1.05f);   // pad : + the frame border
+    const float pad = snap(7.0f * S) + k.bi, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), fieldH = snap(k.capH * 1.05f);   // pad : + the frame border
     const float bw = snap(pad + 6.0f * S + wAll + 18.0f * S + fo->measure("9,999,999", vz) + 10.0f * S + pad);
     const float listY = headH + 6.0f * S + fieldH + 6.0f * S;
     const float bh = snap(pad + listY + (float)V * rowH + pad);
@@ -2769,14 +2768,14 @@ void currencies_draw(const Frame& f) {
         rrect(dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
     }
     if (curRow >= 0 && last.focused) {                                        // AioHUD's hand, left of the box
-        const float hand = snap(k.capH * 1.25f), cy = g_curB.curY + rowH * 0.5f;
+        const float hand = snap(k.tz * 1.75f), cy = g_curB.curY + rowH * 0.5f;
         const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+        if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
     }
     // the text, in one pass
     const u32 sh = with_alpha(0xC8000000u, A);
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, last.mode == 1 ? "Currencies" : "Currencies 2", tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, last.mode == 1 ? "Currencies" : "Currencies 2", tz, A, sh, k.ow);
     {
         char cnt[32];
         if (!last.loaded) strcpy(cnt, "...");
@@ -2929,7 +2928,7 @@ void unityrank_draw(const Frame& f) {
     if (K.open) last = K;
     if (!block_ease(g_urB, K.open, now, dt) || last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi;   // the box edge -> content (+ the frame border)
+    const float S = k.S, pad = snap(7.0f * S) + k.bi;   // the box edge -> content (+ the frame border)
     Font* fo = f.font; const u32 dev = f.dev;
     const int mine = native_unity_info().unity;
     const char* title = last.list ? gtr("Partial Ranking Results", "Classement partiel") : gtr("Ranking Results", "Classement");
@@ -2972,14 +2971,14 @@ void unityrank_draw(const Frame& f) {
         rrect_clip_end(dev);
         rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
         if (last.focused) {
-            const float hand = snap(k.capH * 1.25f), cy = g_urB.curY + rowH * 0.5f;
+            const float hand = snap(k.tz * 1.75f), cy = g_urB.curY + rowH * 0.5f;
             const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-            if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+            if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
         }
     } else g_urB.curY = -1.0f;
     const u32 sh = with_alpha(0xC8000000u, A);
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, title, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, title, tz, A, sh, k.ow);
     if (last.loading) {
         const char* w = gtr("Preparing data.", "Pr\xC3\xA9paration des donn\xC3\xA9""es.");
         fo->draw_lc(dev, snap(L + (W - fo->measure(w, tz)) * 0.5f), snap(ly + rowH * 0.5f), w, tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
@@ -3103,7 +3102,7 @@ void unitylists_draw(const Frame& f) {
         static NativeSearch last;
         if (S0.open) last = S0;
         if (block_ease(g_srB, S0.open, now, dt) && last.uiW > 0) {
-            const float pad = snap(8.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S);   // pad : + the frame border
+            const float pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S);   // pad : + the frame border
             const int V = last.vis;
             const float jobW = fo->measure("MNK99/WAR49", tz * 0.92f), nameW = fo->measure("Wwwwwwwwwwwwwww", tz) * 0.8f;
             // a linkshell's member list, as the client's : the member's LS item (shell / sack / pearl) as an icon, job / sub, race, name, zone
@@ -3144,9 +3143,9 @@ void unitylists_draw(const Frame& f) {
                     rrect_clip_end(dev);
                     rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
                     if (last.focused) {
-                        const float hand = snap(k.capH * 1.25f), cy = g_srB.curY + rowH * 0.5f;
+                        const float hand = snap(k.tz * 1.75f), cy = g_srB.curY + rowH * 0.5f;
                         const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-                        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+                        if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
                     }
                 } else g_srB.curY = -1.0f;
                 if (last.n > V) {                                  // where this page sits : a thin rail
@@ -3170,7 +3169,7 @@ void unitylists_draw(const Frame& f) {
                 const u32 sh = with_alpha(0xC8000000u, A);
                 fo->begin(dev);
                 if (last.ctx == 4) fo->draw_lc(dev, L, hy, last.lsName[0] ? last.lsName : "Linkshell", tz * 0.95f, with_alpha(last.lsRgb ? (last.lsRgb | 0xFF000000u) : 0xFFE8D9B0u, A), sh, k.ow);
-                else fo->draw_lc(dev, L, hy, last.ctx == 3 ? gtr("Search", "Recherche") : last.ctx == 2 ? "Level Sync" : last.ctx == 1 ? gtr("Party", "Groupe") : gtr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+                else panel_title(fo, dev, L, hy, last.ctx == 3 ? gtr("Search", "Recherche") : last.ctx == 2 ? "Level Sync" : last.ctx == 1 ? gtr("Party", "Groupe") : gtr("Unity Lists", "Listes Unity"), tz, A, sh, k.ow);
                 if (last.ctx != 2) {
                     char cnt[48];
                     if (last.counted) sprintf(cnt, gtr("%d found", "%d trouv\xC3\xA9(s)"), last.total); else strcpy(cnt, gtr("Searching...", "Recherche..."));
@@ -3302,7 +3301,7 @@ void jobpoints_draw(const Frame& f) {
     if (cat) lastK = K0;
     if (!block_ease(g_jpB, on, now, dt) || last.uiW <= 0 || last.n <= 0) { g_j2B.vis = g_j3B.vis = 0.0f; return; }
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_jpB.openMs) / 1000.0f) / 0.08f);
     const float A = g_jpB.vis * tO; if (A <= 0.0f) return;
@@ -3377,9 +3376,9 @@ void jobpoints_draw(const Frame& f) {
         rrect_clip_end(dev);
         rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
         if (foc) {
-            const float hand = snap(k.capH * 1.25f), cy = g_jpB.curY + rowH * 0.5f;
+            const float hand = snap(k.tz * 1.75f), cy = g_jpB.curY + rowH * 0.5f;
             const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-            if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+            if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
         }
     } else g_jpB.curY = -1.0f;
     if (cat && lastK.n > lastK.vis) {                       // where this page sits : a thin rail
@@ -3416,7 +3415,7 @@ void jobpoints_draw(const Frame& f) {
         }
     }
     fo->begin(dev);
-    fo->draw_lc(dev, tx, hy, title, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, tx, hy, title, tz, A, sh, k.ow);
     if (cat && job >= 1 && job <= 23) {                       // the header's right : the spent total (gifts) / JP to spend
         char hr[40];
         if (lastK.tab) sprintf(hr, gtr("Combo Total: %d", "Total : %d"), last.jpSpent[job]); else sprintf(hr, "%d JP", last.jobPts[job]);
@@ -3461,7 +3460,7 @@ void jobpoints_draw(const Frame& f) {
         const float Lb = jx + pad, Rb = jx + jw - pad, hyb = snap(jy + pad + headH * 0.5f), lyb = jy + pad + headH + 6.0f * S;
         rrect(dev, Lb, snap(jy + pad + headH), Rb - Lb, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
         fo->begin(dev);
-        fo->draw_lc(dev, Lb, hyb, job <= 22 ? JOB_FULL[job] : "?", tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        panel_title(fo, dev, Lb, hyb, job <= 22 ? JOB_FULL[job] : "?", tz, A, sh, k.ow);
         for (int i = 0; i < 3; ++i) {
             const float cy = snap(lyb + (float)i * rowH + rowH * 0.5f);
             const bool full = (i == 0 && last.capPts[job] >= 30000) || (i == 1 && last.jobPts[job] >= 500);
@@ -3500,7 +3499,7 @@ void alterego_draw(const Frame& f) {
     if (F0.open) last = F0;
     if (!block_ease(g_aeB, F0.open, now, dt) || last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_aeB.openMs) / 1000.0f) / 0.08f);
     const float A = g_aeB.vis * tO; if (A <= 0.0f) return;
@@ -3549,9 +3548,9 @@ void alterego_draw(const Frame& f) {
         rrect_clip_end(dev);
         rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
         if (last.focused) {
-            const float hand = snap(k.capH * 1.25f), cy = g_aeB.curY + rowH * 0.5f;
+            const float hand = snap(k.tz * 1.75f), cy = g_aeB.curY + rowH * 0.5f;
             const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-            if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+            if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
         }
     } else g_aeB.curY = -1.0f;
     if (last.n > last.vis) {
@@ -3574,7 +3573,7 @@ void alterego_draw(const Frame& f) {
         }
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, gtr("Alter Ego Points", "Points Alter Ego"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, gtr("Alter Ego Points", "Points Alter Ego"), tz, A, sh, k.ow);
     if (last.pointsOk) { char hr[24]; sprintf(hr, "%d P", last.points); fo->draw_lc(dev, snap(L + W - fo->measure(hr, tz * 0.9f)), hy, hr, tz * 0.9f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     for (int i = 0; i < nRows; ++i) {
         const NativeJpRow& r = last.row[i];
@@ -3599,7 +3598,7 @@ void alterego_draw(const Frame& f) {
         const float Lb = jx + pad, Rb = jx + jw - pad, hyb = snap(jy + pad + headH * 0.5f), cy = snap(jy + pad + headH + 6.0f * S + rowH * 0.5f);
         rrect(dev, Lb, snap(jy + pad + headH), Rb - Lb, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
         fo->begin(dev);
-        fo->draw_lc(dev, Lb, hyb, pl, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        panel_title(fo, dev, Lb, hyb, pl, tz, A, sh, k.ow);
         fo->draw_lc(dev, snap(Rb - fo->measure(pv, tz)), cy, pv, tz, with_alpha(last.points > 999 ? 0xFF6FB4FFu : 0xFFF2F5FAu, A), sh, k.ow);
     }
     if (dTitle[0]) {
@@ -3657,7 +3656,7 @@ void celestite_draw(const Frame& f) {
     if (K0.open) last = K0;
     if (!block_ease(g_celB, K0.open, now, dt) || last.equip.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.98f), headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.98f), headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_celB.openMs) / 1000.0f) / 0.08f);
     const float A = g_celB.vis * tO; if (A <= 0.0f) return;
@@ -3721,9 +3720,9 @@ void celestite_draw(const Frame& f) {
         party_selframe(dev, cX, y, colW, rowH, f.t, A, 0);
         rrect_clip_end(dev);
         rrect_stroke(dev, cX, y, colW, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
-        const float hand = snap(k.capH * 1.25f), cy = g_celB.curY + rowH * 0.5f;
+        const float hand = snap(k.tz * 1.75f), cy = g_celB.curY + rowH * 0.5f;
         const float hx = cX - hand * 0.35f + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+        if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
     } else g_celB.curY = -1.0f;
     // the Lv badges (gold Lv3, silver Lv2, bronze Lv1) and the icons
     for (int i = 0; i < nE; ++i) {
@@ -3757,7 +3756,7 @@ void celestite_draw(const Frame& f) {
         }
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L1, hy, last.type >= 0 && last.type < 6 ? gtr(TYPE_EN[last.type], TYPE_FR[last.type]) : "?", tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L1, hy, last.type >= 0 && last.type < 6 ? gtr(TYPE_EN[last.type], TYPE_FR[last.type]) : "?", tz, A, sh, k.ow);
     if (!last.mayChange) { const char* m = gtr("Mog House only", "Mog House uniquement"); fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(m, tz * 0.85f)), hy, m, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     for (int i = 0; i < nE; ++i) {
         const float cy = snap(ly + (float)i * rowH + rowH * 0.5f);
@@ -3800,7 +3799,7 @@ void meritcat_draw(const Frame& f) {
     if (K0.open) last = K0;
     if (!block_ease(g_mcB, K0.open, now, dt) || last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_mcB.openMs) / 1000.0f) / 0.08f);
     const float A = g_mcB.vis * tO; if (A <= 0.0f) return;
@@ -3872,9 +3871,9 @@ void meritcat_draw(const Frame& f) {
         rrect_clip_end(dev);
         rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
         if (last.focused) {
-            const float hand = snap(k.capH * 1.25f), cy = g_mcB.curY + rowH * 0.5f;
+            const float hand = snap(k.tz * 1.75f), cy = g_mcB.curY + rowH * 0.5f;
             const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
-            if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+            if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
         }
     } else g_mcB.curY = -1.0f;
     if (last.n > last.vis) {
@@ -3898,7 +3897,7 @@ void meritcat_draw(const Frame& f) {
     fo->begin(dev);
     {
         char title[96]; if (merits) { jp_clean(native_merit_text(last.cat, false), title, sizeof(title)); if (!title[0]) strcpy(title, "..."); } else strcpy(title, gtr("Categories", "Cat\xC3\xA9gories"));
-        fo->draw_lc(dev, L, hy, title, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        panel_title(fo, dev, L, hy, title, tz, A, sh, k.ow);
     }
     for (int i = 0; i < nRows; ++i) {
         const NativeMeritRow& r = last.row[i];
@@ -3952,7 +3951,7 @@ void meritcat_draw(const Frame& f) {
         const float c1 = snap(lyb + rowH * 0.5f), c2 = snap(lyb + headH + 6.0f * S + rowH * 0.5f), c3 = snap(lyb + headH + 6.0f * S + rowH * 1.5f);
         rrect(dev, Lb, snap(lyb + headH), Rb - Lb, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
         fo->begin(dev);
-        fo->draw_lc(dev, Lb, c1, l1, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        panel_title(fo, dev, Lb, c1, l1, tz, A, sh, k.ow);
         fo->draw_lc(dev, snap(Rb - fo->measure(v1, tz)), c1, v1, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
         fo->draw_lc(dev, Lb, c2, l2, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow);
         const bool full = last.cap > 0 && last.spent >= last.cap;
@@ -4024,7 +4023,6 @@ static bool equip_sheet_draw(const Frame& f) {
     if (!block_ease(g_eqsB, E0.open, now, dt) || last.uiW <= 0) return true;
     const PersonaMem& D0 = native_persona_data(); static PersonaMem D; if (D0.ok) D = D0;
     Metrics k = metrics(f);   // the sheet's text a size down (2026-11-27 : "trop gros, police, padding") -- cards included
-    k.tz = snap(k.tz * 0.88f); k.capH = snap(k.capH * 0.88f);
     const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, gap = snap(7.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_eqsB.openMs) / 1000.0f) / 0.08f);
@@ -4400,7 +4398,7 @@ void equipment_draw(const Frame& f) {
     }
     const NativeEquip& lastS = g_eqPreview ? shown : last;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_eqB.openMs) / 1000.0f) / 0.08f);
     const float A = g_eqB.vis * tO; if (A <= 0.0f) return;
@@ -4468,9 +4466,9 @@ void equipment_draw(const Frame& f) {
     }
     if (curCell >= 0 && last.focused) {
         const float cx = snap(L + (float)(curCell % 4) * (cell + cg)), cy = snap(gy + (float)(curCell / 4) * (cell + cg));
-        const float hand = snap(k.capH * 1.25f);
+        const float hand = snap(k.tz * 1.75f);
         const float hx = cx - hand * 0.35f + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, cy + cell * 0.5f, hand, 0);
+        if (g_handTex) menu_hand(dev, g_handTex, hx, cy + cell * 0.5f, hand, 0);
     }
     if (E0.open) {
         g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
@@ -4488,7 +4486,7 @@ void equipment_draw(const Frame& f) {
         disc(dev, dx, dyc, 3.2f * S, with_alpha(ELC[i], A));
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, last.setMode ? (last.setName[0] ? last.setName : gtr("Equipment Set", "Set")) : gtr("Equipment", "\xC3\x89quipement"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, last.setMode ? (last.setName[0] ? last.setName : gtr("Equipment Set", "Set")) : gtr("Equipment", "\xC3\x89quipement"), tz, A, sh, k.ow);
     if (curCell >= 0) { const char* sn = SLOT_EN[SLOT_AT[curCell]]; fo->draw_lc(dev, snap(L + gridW - fo->measure(sn, tz * 0.85f)), hy, sn, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     for (int c = 0; c < 16; ++c) if (lastS.id[SLOT_AT[c]] && lastS.ward[SLOT_AT[c]]) {
         const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
@@ -4581,9 +4579,9 @@ void equipment_draw(const Frame& f) {
                 rrect_clip_end(dev);
                 rrect_stroke(dev, Lx, y, Wx, rowH, r, with_alpha(0xC8FFDA8Au, LA), 1.0f);
                 if (last.lfocused) {
-                    const float hand = snap(k.capH * 1.25f), cy = g_elB.curY + rowH * 0.5f;
+                    const float hand = snap(k.tz * 1.75f), cy = g_elB.curY + rowH * 0.5f;
                     const float hx = lx - hand * 0.35f + party_cursor_bob(f.t, hand);
-                    if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+                    if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
                 }
             } else g_elB.curY = -1.0f;
             if (last.ln > last.lvis) {
@@ -4695,7 +4693,7 @@ void price_text(char* out, int v) {
     out[o] = 0;
 }
 float items_box_width(const Frame& f, const Metrics& k, const ItemsBox& L) {   // one width whatever the rows : the widest name's
-    Font* fo = f.font; const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi, iz = snap(snap(k.capH * 1.25f) - 4.0f * S);
+    Font* fo = f.font; const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi, iz = snap(snap(k.tz * 1.75f) - 4.0f * S);
     const float wName = fo->measure(ITEM_NAME_REF, tz);
     float wRight = L.prices ? fo->measure("99,999,999", tz) + snap(k.capH) + 4.0f * S : fo->measure("999", tz);
     if (L.prices) for (int i = 0; i < L.vis && L.top + i < L.n; ++i) {   // a count beside the price, a tax before it
@@ -4705,16 +4703,16 @@ float items_box_width(const Frame& f, const Metrics& k, const ItemsBox& L) {   /
 }
 unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsBox& L, const char* win, float lx, float ly, float lw, float lh, float A, float dt, float* hit) {
     const UiConfig& C = ui_config(); Font* fo = f.font; const u32 dev = f.dev;
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S);
     const u32 sh = with_alpha(0xC8000000u, A);
     const int nRows = L.n - L.top < L.vis ? L.n - L.top : L.vis;
-    const float rowH = snap(k.capH * 1.25f), iz = snap(rowH - 4.0f * S);
+    const float rowH = snap(k.tz * 1.75f), iz = snap(rowH - 6.0f * S);   // the Equipment list's pitch and icon
     draw_themed_box(dev, f.skin, lx, ly, lw, lh, C.muBox, A, S);
     const float Lx = lx + pad, Wx = lw - 2.0f * pad, hy = snap(ly + pad + headH * 0.5f), ry = snap(ly + pad + headH + 6.0f * S);
     rrect(dev, Lx, snap(ly + pad + headH), Wx, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
     for (int i = 0; i < nRows; ++i) {
         const float y = snap(ry + (float)i * rowH);
-        if (((i + L.top) & 1) == 0) rrect(dev, Lx, y, Wx, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+        if (((i + L.top) & 1) == 0) rrect(dev, Lx, y, Wx, rowH, 3.0f * S, with_alpha(0x14FFFFFFu, A), with_alpha(0x0CFFFFFFu, A));
         // the Temporary Items end here : a gold hairline
         if (L.row[i].tempRow && L.top + i == L.tempRows - 1) rrect(dev, Lx, snap(y + rowH - 1.0f), Wx, 1.0f, 0.0f, with_alpha(0x60FFDA8Au, A), with_alpha(0x60FFDA8Au, A));
     }
@@ -4746,9 +4744,9 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
         if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(Lx + 8.0f * S), snap(ry + (float)i * rowH + 2.0f * S), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
     }
     if (cr >= 0 && L.focused) {
-        const float hand = snap(k.capH * 1.25f), cy = B.curY + rowH * 0.5f;
+        const float hand = snap(k.tz * 1.75f), cy = B.curY + rowH * 0.5f;
         const float hx = lx - hand * 0.35f + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+        if (g_handTex) menu_hand(dev, g_handTex, hx, cy, hand, 0);
     }
     {   // the mouse : the client's hand follows, a click validates
         const MouseState* ms = f.mouse; int mrow = -1;
@@ -4762,7 +4760,7 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
         } else B.hoverRow = 0;
     }
     fo->begin(dev);
-    fo->draw_lc(dev, Lx, hy, L.title, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, Lx, hy, L.title, tz, A, sh, k.ow);
     if (L.counter && L.counter[0]) fo->draw_lc(dev, snap(Lx + Wx - fo->measure(L.counter, tz * 0.85f)), hy, L.counter, tz * 0.85f, with_alpha(L.full ? 0xFFFF8A6Au : 0xFF93A6BEu, A), sh, k.ow);
     if (!L.n) fo->draw_lc(dev, snap(Lx + 8.0f * S), snap(ry + rowH * 0.5f), gtr("No items.", "Aucun objet."), tz, with_alpha(0xFF6E7C8Eu, A), sh, k.ow);
     for (int i = 0; i < nRows; ++i) {
@@ -4800,7 +4798,7 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
 // the quantity box (itemctrl : a stack retrieved from the bin, a synthesis material) : the item, value / max ; the client's
 // keys change it. Returns its height.
 float qty_box(const Frame& f, const Metrics& k, unsigned qid, int val, int mx, float x, float y, float w, float QA) {
-    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S);
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S);
     const float qh = snap(pad + headH + 6.0f * S + k.capH * 1.6f + pad);
     draw_themed_box(f.dev, f.skin, x, y, w, qh, C.muBox, QA, S);
     const float Lq = x + pad, Rq = x + w - pad, hq = snap(y + pad + headH * 0.5f), vq = snap(y + pad + headH + 6.0f * S + k.capH * 0.8f);
@@ -4826,7 +4824,7 @@ float qty_box(const Frame& f, const Metrics& k, unsigned qid, int val, int mx, f
 // client lays them out (the user, 2026-11-19 : "dans le jeu c'est OK et Cancel et elles sont horizontales"). Fixed size.
 bool is_form(const char* n) { return !strcmp(n, "scname") || !strcmp(n, "scchar") || !strcmp(n, "scmlev"); }
 void form_size(const Frame& f, const Metrics& k, const NativeEntryMenu& L, float& w, float& h) {
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
     const bool name = !strcmp(L.name, "scname");
     float fw = name ? f.font->measure("Mmmmmmmmmmmmmmm_", k.tz) + 20.0f * S : 2.0f * (f.font->measure("Maximum", k.tz * 0.85f) + f.font->measure("99", k.tz * 1.1f) + 30.0f * S) + 8.0f * S;
     const float hint = f.font->measure(gtr("(press Enter to type)", "(Entr\xC3\xA9""e pour taper)"), k.tz * 0.9f) + 20.0f * S;
@@ -4837,7 +4835,7 @@ void form_size(const Frame& f, const Metrics& k, const NativeEntryMenu& L, float
 }
 // returns the ROW (1-based index into L.entry) under the mouse, 0 none
 int form_draw(const Frame& f, const Metrics& k, Block& B, const NativeEntryMenu& L, float x, float y, float w, float h, float A) {
-    const u32 dev = f.dev; const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
+    const u32 dev = f.dev; const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
     Font* fo = f.font; const u32 sh = with_alpha(0xC8000000u, A);
     draw_themed_box(dev, f.skin, x, y, w, h, ui_config().muBox, A, S);
     const bool name = !strcmp(L.name, "scname");
@@ -4860,11 +4858,11 @@ int form_draw(const Frame& f, const Metrics& k, Block& B, const NativeEntryMenu&
         rrect_stroke(dev, e.x, e.y, e.w, e.h, r, with_alpha(editing ? 0xE0FFB45Au : cur ? 0xD8FFDA8Au : 0x40C8D6EAu, A), editing || cur ? 1.5f * S : 1.0f);
         if (ms && ms->focused && ms->x >= e.x && ms->x < e.x + e.w && ms->y >= e.y && ms->y < e.y + e.h)
             for (int r2 = 0; r2 < L.n; ++r2) if (L.entry[r2] == e.entry) hover = r2 + 1;
-        if (cur && L.focused) { const float hand = snap(k.capH * 1.25f); if (g_handTex) party_cursor(dev, g_handTex, e.x - hand * 0.35f + party_cursor_bob(f.t, hand), e.y + e.h * 0.5f, hand, 0); }
+        if (cur && L.focused) { const float hand = snap(k.tz * 1.75f); if (g_handTex) menu_hand(dev, g_handTex, e.x - hand * 0.35f + party_cursor_bob(f.t, hand), e.y + e.h * 0.5f, hand, 0); }
     }
     fo->begin(dev);
     const char* title = name ? gtr("Name", "Nom") : !strcmp(L.name, "scmlev") ? "Master Level" : gtr("Level", "Niveau");
-    fo->draw_lc(dev, Lx, hy, title, k.tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, Lx, hy, title, k.tz, A, sh, k.ow);
     for (int i = 0; i < ne; ++i) {
         const El& e = el[i]; const float cy = snap(e.y + e.h * 0.5f);
         if (e.field) {
@@ -4903,7 +4901,7 @@ void comment_draw(const Frame& f) {
     if (K0.open) last = K0;
     if (!block_ease(g_cmB, K0.open, now, dt) || last.uiW <= 0) return;
     const Metrics k = no_icons(metrics(f));
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), rowH = snap(k.capH * 1.2f);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), rowH = snap(k.capH * 1.2f);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_cmB.openMs) / 1000.0f) / 0.08f);
     const float A = g_cmB.vis * tO; if (A <= 0.0f) return;
@@ -4938,7 +4936,7 @@ void comment_draw(const Frame& f) {
         rrect_stroke(dev, L, y, W, rowH - 2.0f * S, 4.0f * S, with_alpha(cur && last.typing ? 0xE0FFB45Au : cur ? 0xC8FFDA8Au : 0x30C8D6EAu, A), cur ? 1.5f * S : 1.0f);
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, last.cmMode == 0 ? gtr("Bazaar Comment", "Message du bazar") : gtr("Search Comment", "Commentaire de recherche"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, last.cmMode == 0 ? gtr("Bazaar Comment", "Message du bazar") : gtr("Search Comment", "Commentaire de recherche"), tz, A, sh, k.ow);
     if (genre[0]) fo->draw_lc(dev, snap(L + W - fo->measure(genre, tz * 0.85f)), hy, genre, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
     for (int i = 0; i < 3; ++i) {
         const float cy = snap(ly + (float)i * rowH + (rowH - 2.0f * S) * 0.5f), tx = snap(L + 10.0f * S);
@@ -4981,7 +4979,7 @@ void linkshell_draw(const Frame& f) {
     if (L0.open) last = L0;
     if (!block_ease(g_lsB, L0.open, now, dt) || last.uiW <= 0 || last.vis <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(22.0f * S), rowH = snap(k.capH * 1.25f), iz = snap(rowH - 4.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), rowH = snap(k.tz * 1.75f), iz = snap(rowH - 6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_lsB.openMs) / 1000.0f) / 0.08f);
     const float A = g_lsB.vis * tO * (last.focused ? 1.0f : 0.8f); if (A <= 0.0f) return;
@@ -4989,7 +4987,8 @@ void linkshell_draw(const Frame& f) {
     // FIXED, the client's 3 columns : the icon (LS1 / LS2 over its top right), the item (its status colour), the LS name (20 chars)
     const float kindW = fo->measure("Linkpearl", tz);
     const float lw = snap(pad + 4.0f * S + iz + 10.0f * S + kindW + 14.0f * S + fo->measure("Wwwwwwwwwwwwwwwwwwww", tz) * 0.8f + pad);
-    const float lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
+    const int fitRows = last.n < last.vis ? (last.n > 0 ? last.n : 1) : last.vis;   // as tall as its rows (the client's page held 8 for 2)
+    const float lh = snap(pad + headH + 6.0f * S + (float)fitRows * rowH + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float lx = snap(16.0f * sx), ly = snap(48.0f * sy);
     if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw);
@@ -5001,7 +5000,7 @@ void linkshell_draw(const Frame& f) {
     rrect(dev, Lx, snap(ly + pad + headH), Wx, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
     const int nRows = last.n - last.top < last.vis ? last.n - last.top : last.vis;
     const int cr = last.cursor >= last.top && last.cursor < last.top + nRows ? last.cursor - last.top : -1;
-    for (int i = 0; i < nRows; ++i) { const float y = snap(ry + (float)i * rowH); if (((i + last.top) & 1) == 0) rrect(dev, Lx, y, Wx, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A)); }
+    for (int i = 0; i < nRows; ++i) { const float y = snap(ry + (float)i * rowH); if (((i + last.top) & 1) == 0) rrect(dev, Lx, y, Wx, rowH, 3.0f * S, with_alpha(0x14FFFFFFu, A), with_alpha(0x0CFFFFFFu, A)); }
     if (cr >= 0) {
         const float targetY = ry + (float)cr * rowH;
         if (g_lsB.curY < 0.0f) g_lsB.curY = targetY;
@@ -5010,7 +5009,7 @@ void linkshell_draw(const Frame& f) {
         const float y = snap(g_lsB.curY), r = rowH * 0.5f;
         rrect_clip_begin(dev, Lx, y, Wx, rowH, r); party_selframe(dev, Lx, y, Wx, rowH, f.t, A, 0); rrect_clip_end(dev);
         rrect_stroke(dev, Lx, y, Wx, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
-        if (last.focused) { const float hand = snap(k.capH * 1.25f); if (g_handTex) party_cursor(dev, g_handTex, lx - hand * 0.35f + party_cursor_bob(f.t, hand), g_lsB.curY + rowH * 0.5f, hand, 0); }
+        if (last.focused) { const float hand = snap(k.tz * 1.75f); if (g_handTex) menu_hand(dev, g_handTex, lx - hand * 0.35f + party_cursor_bob(f.t, hand), g_lsB.curY + rowH * 0.5f, hand, 0); }
     } else g_lsB.curY = -1.0f;
     // each row : the item's icon tinted with its LS colour (as the client does), the slot (1 / 2) over its top right
     for (int i = 0; i < nRows; ++i) {
@@ -5086,7 +5085,7 @@ void region_draw(const Frame& f) {
     if (up) last = R0;
     if (!block_ease(g_rgB, up, now, dt) || last.uiW <= 0 || last.uiH <= 0 || last.mode < 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(10.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 1.05f), headH = snap(22.0f * S);   // pad : + the frame border
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, rowH = snap(k.capH * 1.05f), headH = snap(22.0f * S);   // pad : + the frame border
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_rgB.openMs) / 1000.0f) / 0.08f);
     const float A = g_rgB.vis * tO; if (A <= 0.0f) return;
@@ -5298,13 +5297,13 @@ void synth_draw(const Frame& f) {
     const bool gridOn = Y0.open && Y0.gridOpen;
     if (!block_ease(g_synB, gridOn, now, dt) || last.gUiW <= 0) { g_hisB.vis = 0.0f; g_hisB.wasOpen = false; return; }
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_synB.openMs) / 1000.0f) / 0.08f);
     const float A0 = g_synB.vis * tO; if (A0 <= 0.0f) return;
     const float A = A0 * (last.gridFocused ? 1.0f : 0.85f);
     const u32 sh = with_alpha(0xC8000000u, A);
-    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S), sep = snap(12.0f * S);
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S), sep = snap(12.0f * S);
     const char* tSyn = gtr("Synthesize", "Synth\xC3\xA9tiser"); const char* tCan = gtr("Cancel", "Annuler");
     float btnW = fo->measure(tSyn, tz); { const float w2 = fo->measure(tCan, tz); if (w2 > btnW) btnW = w2; } btnW = snap(btnW + 28.0f * S);
     const float gridW = 4.0f * cell + 3.0f * cg, innerH = 2.0f * cell + cg;
@@ -5325,10 +5324,17 @@ void synth_draw(const Frame& f) {
     const float sx0 = snap(L + cell + sep), bx0 = snap(sx0 + gridW + sep);
     const float bH = cell, bY0 = gy, bY1 = snap(gy + cell + cg);
     const u32 red = with_alpha(0xD2FF3838u, A);
-    // the cells
+    {   // THE EQUIPMENT SHEET'S INSET (2026-11-27, the uniform pass) : the crystal and the materials in one sunk pane
+        const float ip = snap(5.0f * S), ir = snap(6.0f * S);
+        const float ix = snap(cx0 - ip), iy = snap(gy - ip), iw = snap(sx0 + gridW - cx0 + 2.0f * ip), ih = snap(innerH + 2.0f * ip);
+        rrect(dev, ix, iy, iw, ih, ir, with_alpha(0x58080C12u, A), with_alpha(0x58101620u, A));
+        rrect_stroke(dev, ix, iy, iw, ih, ir, with_alpha(0x34C8D6EAu, A), 1.0f);
+        rrect_topcaps(dev, ix + 1.0f, iy + 1.0f, iw - 2.0f, snap(6.0f * S), ir - 1.0f, with_alpha(0x30000000u, A), with_alpha(0x00000000u, A));
+    }
+    // the cells : the Equipment grid's wells (its radius, its dark, its rim)
     auto well = [&](float x, float y, float w, float h, bool crystal) {
-        rrect(dev, x, y, w, h, 5.0f * S, with_alpha(crystal ? 0x70283040u : 0x70101826u, A), with_alpha(0x70080C14u, A));
-        rrect_stroke(dev, x, y, w, h, 5.0f * S, with_alpha(crystal ? 0x60FFDA8Au : 0x30C8D6EAu, A), 1.0f);
+        rrect(dev, x, y, w, h, 6.0f * S, with_alpha(0x80101826u, A), with_alpha(0x80080C14u, A));
+        rrect_stroke(dev, x, y, w, h, 6.0f * S, with_alpha(crystal ? 0x40C8D6EAu : 0x22C8D6EAu, A), 1.0f);
     };
     well(cx0, cy0, cell, cell, true);
     for (int i = 0; i < 8; ++i) well(snap(sx0 + (float)(i % 4) * (cell + cg)), snap(gy + (float)(i / 4) * (cell + cg)), cell, cell, false);
@@ -5350,21 +5356,21 @@ void synth_draw(const Frame& f) {
         rrect_stroke(dev, curX, curY, curW, curH, curR, with_alpha(0xD8FFDA8Au, A), 1.5f * S);
     }
     // the icons : the crystal, the materials ; what the inventory lacks (History) : dimmed, a red cross
-    const float z = snap(cell - 8.0f * S), m = snap(6.0f * S), th = snap(2.5f * S);
+    const float z = snap(cell - 4.0f * S), m = snap(6.0f * S), th = snap(2.5f * S);
     if (last.crystalId) {
         const u32 tex = list_icon(f, 3, last.crystalId); const bool miss = last.gridMode == 2 && !last.crystalHave; const float a = A * (miss ? 0.4f : 1.0f);
-        if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx0 + 4.0f * S), snap(cy0 + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
+        if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx0 + 2.0f * S), snap(cy0 + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
         if (miss) { seg_soft(dev, cx0 + m, cy0 + m, cx0 + cell - m, cy0 + cell - m, th, red); seg_soft(dev, cx0 + cell - m, cy0 + m, cx0 + m, cy0 + cell - m, th, red); }
     }
     for (int i = 0; i < 8; ++i) if (last.slotId[i]) {
         const float x = snap(sx0 + (float)(i % 4) * (cell + cg)), y = snap(gy + (float)(i / 4) * (cell + cg));
         const u32 tex = list_icon(f, 3, last.slotId[i]); const float a = A * (last.slotMiss[i] ? 0.4f : 1.0f);
-        if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(x + 4.0f * S), snap(y + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
+        if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(x + 2.0f * S), snap(y + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
         if (last.slotMiss[i]) { seg_soft(dev, x + m, y + m, x + cell - m, y + cell - m, th, red); seg_soft(dev, x + cell - m, y + m, x + m, y + cell - m, th, red); }
     }
     if (curW > 0.0f && last.gridFocused) {
-        const float hand = snap(k.capH * 1.25f), hx = curX - hand * 0.35f + party_cursor_bob(f.t, hand);
-        if (g_handTex) party_cursor(dev, g_handTex, hx, curY + curH * 0.5f, hand, 0);
+        const float hand = snap(k.tz * 1.75f), hx = curX - hand * 0.35f + party_cursor_bob(f.t, hand);
+        if (g_handTex) menu_hand(dev, g_handTex, hx, curY + curH * 0.5f, hand, 0);
     }
     {   // the mouse : the hand follows, a click validates (a slot : the materials list ; Synthesize ; Cancel)
         const MouseState* ms = f.mouse; int ent = 0;
@@ -5380,7 +5386,7 @@ void synth_draw(const Frame& f) {
         } else g_synB.hoverRow = 0;
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, gtr("Synthesis", "Synth\xC3\xA8se"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, gtr("Synthesis", "Synth\xC3\xA8se"), tz, A, sh, k.ow);
     if (last.gridMode == 2) { const char* t = gtr("History", "Historique"); fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(t, tz * 0.85f)), hy, t, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     if (!last.crystalId) { const char* t = gtr("Crystal", "Cristal"); const float zz = tz * 0.72f; fo->draw_lc(dev, snap(cx0 + (cell - fo->measure(t, zz)) * 0.5f), snap(cy0 + cell * 0.5f), t, zz, with_alpha(0xFF56627Au, A), sh, k.ow); }
     for (int i = 0; i < 8; ++i) if (last.slotId[i] && last.slotQty[i] > 1) {
@@ -5398,16 +5404,16 @@ void synth_draw(const Frame& f) {
         for (int i = 0; i < 16; ++i) { hr[i].itemId = last.hItem[i]; hr[i].itemCount = 0; hr[i].itemCol = last.hFav[i] ? 0x80909040u : 0x80808080u; hr[i].tempRow = false; hr[i].hasPrice = false; hr[i].price = 0; hr[i].priceCol = 0; }
         char hc[16]; sprintf(hc, "%d / 10", last.hN);
         ItemsBox HL = { hr, last.hN, last.hTop, last.hVis, last.hCursor, 0, last.histFocused, Y0.open && Y0.histOpen, gtr("History", "Historique"), hc, false };
-        const float hw = keep_width(g_hisB, items_box_width(f, k, HL)), hh = snap(pad + headH + 6.0f * S + (float)last.hVis * snap(k.capH * 1.25f) + pad);
+        const float hw = keep_width(g_hisB, items_box_width(f, k, HL)), hh = snap(pad + headH + 6.0f * S + (float)last.hVis * snap(k.tz * 1.75f) + pad);
         const float th2 = ease_out(((float)(now - g_hisB.openMs) / 1000.0f) / 0.08f);
-        float hx = snap(bx + bw + gap), hyy = by;
+        float hx = snap(bx + bw - k.bi), hyy = by;                 // glued, border on border (the Equipment sheet's panels)
         if (hx + hw > f.screenW - 4.0f) hx = snap(f.screenW - 4.0f - hw);
         const int jh = menu_place_at(f, __LINE__, hx, hyy, hx, by0, hw, hh);   // glued beside the grid (theme kit)
         g_frameJoin = jh;                                    // items_box_draw draws its box first
         const unsigned h = items_box_draw(f, k, g_hisB, HL, "cmbhlst", hx, snap(hyy + (1.0f - th2) * 4.0f * S), hw, hh, g_hisB.vis * th2 * A0 * (last.histFocused ? 1.0f : 0.85f), dt, g_hit[13]);
         if (last.histFocused) iid = h;
         // the favourites : a small gold star (a diamond) at the row's right
-        const float rowH = snap(k.capH * 1.25f), ry = snap(hyy + pad + headH + 6.0f * S);
+        const float rowH = snap(k.tz * 1.75f), ry = snap(hyy + pad + headH + 6.0f * S);
         const int nRows = last.hN - last.hTop < last.hVis ? last.hN - last.hTop : last.hVis;
         for (int i = 0; i < nRows; ++i) if (last.hFav[i]) {
             const float dcx = snap(hx + hw - pad - 10.0f * S), dcy = snap(ry + (float)i * rowH + rowH * 0.5f), r = 4.0f * S;
@@ -5434,10 +5440,10 @@ void items_draw(const Frame& f) {
     if (I0.open) last = I0;
     if (!block_ease(g_itB, I0.open, now, dt) || last.uiW <= 0 || last.itVis <= 0) { g_binB.vis = g_qtyB.vis = 0.0f; return; }
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
     const float tO = ease_out(((float)(now - g_itB.openMs) / 1000.0f) / 0.08f);
     const float A = g_itB.vis * tO; if (A <= 0.0f) return;
-    const float rowH = snap(k.capH * 1.25f);
+    const float rowH = snap(k.tz * 1.75f);
     const bool bin = last.binMode && last.binVis > 0 && last.binUiW > 0;
     // the inventory (Synthesis : the crystals, the materials)
     char cnt[24]; if (last.invCap > 0) sprintf(cnt, "%d / %d", last.invUsed, last.invCap); else sprintf(cnt, "%d", last.invUsed);
@@ -5527,7 +5533,7 @@ void items_draw(const Frame& f) {
 // warnOver). The auction's bid / sale price and your bazaar's unit price. Returns its height.
 static float gil_entry_box(const Frame& f, const Metrics& k, const char* head, unsigned val, unsigned digit, bool focused, unsigned gil, bool gilOk, bool warnOver,
                            float x, float y, float w, float A) {
-    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
     const float lineH = snap(k.capH * 1.5f), h = snap(pad + headH + 6.0f * S + lineH + 4.0f * S + k.capH * 1.2f + pad);
     const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
     draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
@@ -5547,7 +5553,7 @@ static float gil_entry_box(const Frame& f, const Metrics& k, const char* head, u
         rrect(dev, snap(vx + ux), snap(vy + vz * 0.55f), snap(cw), snap(2.0f * S), 1.0f * S, with_alpha(0xF0FFDA8Au, A), with_alpha(0xF0FFDA8Au, A)); }   // the edited digit : underlined
     gil_coin(dev, snap(L + 5.0f * S + cz * 0.5f), vy, cz, A);
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, head, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, head, tz, A, sh, k.ow);
     fo->draw_lc(dev, vx, vy, v, vz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
     if (gilOk) { char g[24], t[48]; price_text(g, (int)(gil > 999999999u ? 999999999u : gil)); _snprintf(t, sizeof(t), "%s %s G", gtr("Your gil", "Tes gils"), g); t[47] = 0;
         fo->draw_lc(dev, snap(L + W - fo->measure(t, tz * 0.85f)), snap(ly + lineH + 4.0f * S + k.capH * 0.6f), t, tz * 0.85f,
@@ -5565,7 +5571,7 @@ void shop_draw(const Frame& f) {
     if (S0.owner) { const bool keepList = !S0.open && last.open; const NativeShop prev = last; last = S0; if (keepList) { memcpy(last.row, prev.row, sizeof(last.row)); last.n = prev.n; last.top = prev.top; last.vis = prev.vis; last.cursor = prev.cursor; last.rx0 = prev.rx0; last.ry0 = prev.ry0; last.sell = prev.sell; } }
     if (last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     // ---- Buy / Sell ----
     if (block_ease(g_shMB, S0.mainOpen, now, dt)) {
@@ -5602,7 +5608,7 @@ void shop_draw(const Frame& f) {
     if (!block_ease(g_shLB, S0.owner && S0.open, now, dt) || last.vis <= 0) { g_shQB.vis = 0.0f; g_shQB.wasOpen = false; return; }
     const float tO = ease_out(((float)(now - g_shLB.openMs) / 1000.0f) / 0.08f);
     const float A = g_shLB.vis * tO; if (A <= 0.0f) return;
-    const float rowH = snap(k.capH * 1.25f);
+    const float rowH = snap(k.tz * 1.75f);
     char gil[24] = ""; if (last.gilOk) { price_text(gil, (int)(last.gil > 999999999u ? 999999999u : last.gil)); strcat(gil, " G"); }
     const char* title = last.owner == 2 ? (last.sell ? gtr("Guild : sell", "Guilde : vendre") : gtr("Guild : buy", "Guilde : acheter"))
                       : last.owner == 3 ? gtr("Bazaar", "Bazar") : last.owner == 4 ? gtr("Your bazaar", "Ton bazar")
@@ -5671,7 +5677,7 @@ void inspect_draw(const Frame& f) {
     const bool bazaarUp = native_shop().owner == 3 && native_shop().open;
     if (!block_ease(g_inB, I0.open && !bazaarUp, now, dt) || last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_inB.openMs) / 1000.0f) / 0.08f);
     const float A = g_inB.vis * tO; if (A <= 0.0f) return;
@@ -5679,7 +5685,7 @@ void inspect_draw(const Frame& f) {
     static const int SLOT_AT[16] = { 0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8 };      // Equipment's grid
     static const int ENTRY_OF[16] = { 1, 5, 9, 13, 2, 3, 7, 12, 16, 6, 8, 10, 14, 11, 15, 4 };
     static const char* SLOT_EN[16] = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "L.Ear", "R.Ear", "L.Ring", "R.Ring", "Back" };
-    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S), gridW = 4.0f * cell + 3.0f * cg;
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S), gridW = 4.0f * cell + 3.0f * cg;
     const float lineH = snap(k.capH * 1.2f), btnH = snap(k.capH * 1.5f);
     int cmN = 0; char cm[3][CHAT_TEXT];
     if (last.cmOpen) for (int i = 0; i < 3; ++i) if (last.cmText[i][0]) {
@@ -5715,8 +5721,8 @@ void inspect_draw(const Frame& f) {
         }
         const unsigned id = last.id[SLOT_AT[c]];
         if (id) {
-            const u32 tex = list_icon(f, 3, id); const float z = snap(cell - 8.0f * S);
-            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 4.0f * S), snap(cy + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+            const u32 tex = list_icon(f, 3, id); const float z = snap(cell - 4.0f * S);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 2.0f * S), snap(cy + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
         }
         if (ms && ms->focused && ms->x >= cx && ms->x < cx + cell && ms->y >= cy && ms->y < cy + cell) ment = ENTRY_OF[SLOT_AT[c]];
     }
@@ -5731,8 +5737,8 @@ void inspect_draw(const Frame& f) {
     }
     if (curCell >= 0 && last.focused) {
         const float cx = snap(gx + (float)(curCell % 4) * (cell + cg)), cy = snap(gy + (float)(curCell / 4) * (cell + cg));
-        const float hand = snap(k.capH * 1.25f);
-        if (g_handTex) party_cursor(dev, g_handTex, cx - hand * 0.35f + party_cursor_bob(f.t, hand), cy + cell * 0.5f, hand, 0);
+        const float hand = snap(k.tz * 1.75f);
+        if (g_handTex) menu_hand(dev, g_handTex, cx - hand * 0.35f + party_cursor_bob(f.t, hand), cy + cell * 0.5f, hand, 0);
     }
     if (I0.open) {
         g_hit[18][0] = bx / f.screenW; g_hit[18][1] = by / f.screenH; g_hit[18][2] = bw / f.screenW; g_hit[18][3] = bh / f.screenH;
@@ -5741,7 +5747,7 @@ void inspect_draw(const Frame& f) {
         if (ment && ms && ms->clicked && (ment != 17 || I0.waresOk)) native_inspect_pick(ment);
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, last.name[0] ? last.name : gtr("Check", "Examiner"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, last.name[0] ? last.name : gtr("Check", "Examiner"), tz, A, sh, k.ow);
     if (curCell >= 0 && last.focused) { const char* sn = SLOT_EN[SLOT_AT[curCell]]; fo->draw_lc(dev, snap(L + W - fo->measure(sn, tz * 0.85f)), hy, sn, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     fo->draw_lc(dev, L, jy, last.jobs, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
     for (int c = 0; c < 16; ++c) if (!last.id[SLOT_AT[c]]) {
@@ -6006,14 +6012,14 @@ static float auc_price_box(const Frame& f, const Metrics& k, const NativeAuction
 }
 // the price history : the last ten sales -- the date, the seller -> the buyer, the price
 static float auc_hist_width(const Frame& f, const Metrics& k) {
-    Font* fo = f.font; const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz;
+    Font* fo = f.font; const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz;
     return snap(pad + 8.0f * S + fo->measure("00/00/00", tz * 0.85f) + 12.0f * S + 2.0f * fo->measure("Wwwwwwwwwwww", tz * 0.9f) + fo->measure(" > ", tz) + 12.0f * S
                 + fo->measure("999,999,999", tz) + 8.0f * S + snap(k.capH) + 8.0f * S + pad);
 }
 static void auc_hist_draw(const Frame& f, const Metrics& k, const NativeAuction& a, bool live, float x, float y, float w, float h, float A, float dt) {
-    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
     const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
-    const float rowH = snap(k.capH * 1.25f);
+    const float rowH = snap(k.tz * 1.75f);
     draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
     const float L = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f), ry = snap(y + pad + headH + 6.0f * S);
     rrect(dev, L, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
@@ -6040,7 +6046,7 @@ static void auc_hist_draw(const Frame& f, const Metrics& k, const NativeAuction&
         g_auHB.hoverRow = mrow + 1;
     } else g_auHB.hoverRow = 0;
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, gtr("Price history", "Historique des prix"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, gtr("Price history", "Historique des prix"), tz, A, sh, k.ow);
     if (!sold) fo->draw_lc(dev, snap(L + 8.0f * S), snap(ry + rowH * 0.5f), gtr("No sales yet.", "Aucune vente."), tz, with_alpha(0xFF6E7C8Eu, A), sh, k.ow);
     const float dW = fo->measure("00/00/00", tz * 0.85f), nW = fo->measure("Wwwwwwwwwwww", tz * 0.9f);
     for (int i = 0; i < a.hn; ++i) {
@@ -6075,7 +6081,7 @@ void auc_draw(const Frame& f) {
     }
     if (last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S), rowH = snap(k.capH * 1.25f);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S), rowH = snap(k.tz * 1.75f);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     // ---- the menu : one, the deepest, at the client's top right ----
     if (A0.menuOpen && strcmp(g_auMName, A0.menu.name)) { lstrcpynA(g_auMName, A0.menu.name, 9); g_auMB.openMs = now; g_auMB.hoverRow = 0; }
@@ -6274,7 +6280,7 @@ void gen_list_draw(const Frame& f) {
                    if (!strcmp(G0.listName, "msglist")) lstrcpynA(title, gtr("Messages", "Messages"), sizeof(title)); }   // its top bar has no title
     if (!block_ease(g_glB, G0.list, now, dt) || last.uiW <= 0 || last.lvis <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz, rowH = snap(k.capH * 1.25f);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz, rowH = snap(k.tz * 1.75f);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     const float tO = ease_out(((float)(now - g_glB.openMs) / 1000.0f) / 0.08f), A = g_glB.vis * tO * (last.listFocused || !G0.list ? 1.0f : 0.8f);
     if (A <= 0.0f) return;
@@ -6523,7 +6529,7 @@ void macro_edit_draw(const Frame& f) {
     if (E0.pal || E0.ed) last = E0;
     if (last.uiW <= 0 || last.uiH <= 0) return;
     const Metrics k = metrics(f), kN = no_icons(k);
-    const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi;
+    const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi;
     Font* fo = f.font; const u32 dev = f.dev; const u32 sh0 = 0xC8000000u;
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     const MouseState* ms = f.mouse;
@@ -6692,7 +6698,7 @@ void gen_grid_draw(const Frame& f) {
         if (ms && ms->focused && ms->x >= x && ms->x < x + w && ms->y >= y && ms->y < y + h) ment = M.entry[i];
     }
     fo->begin(dev);
-    if (title[0]) fo->draw_lc(dev, snap(bx + 10.0f * S), snap(by - 10.0f * S), title, k.tz * 0.95f, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (title[0]) panel_title(fo, dev, snap(bx + 10.0f * S), snap(by - 10.0f * S), title, k.tz, A, with_alpha(0xC8000000u, A), k.ow);
     if (G0.grid && last.gridFocused) {
         g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
         static float mv[2]; const bool moved = mouse_moved(f.mouse, mv);
@@ -6804,9 +6810,9 @@ void gen_panel_draw(const Frame& f) {
     bool anyFocused = false; for (int i = 0; i < G0.np; ++i) if (G0.p[i].focused) anyFocused = true;
     const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
     // the type scale : rows a touch larger than the menus, the title larger still, the stats' numbers the largest
-    const float tz = snap(k.tz * 1.08f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f), tzV = snap(k.tz * 1.45f);
-    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 2.0f), secH = snap(tzS * 2.6f), secGap = snap(10.0f * S);
-    const float tileH = snap(tzV * 2.9f), gapT = snap(8.0f * S), bulletW = snap(22.0f * S);
+    const float tz = k.tz, tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = k.tz, tzV = snap(k.tz * 1.15f);
+    const float pad = snap(7.0f * S) + k.bi, rowH = snap(k.tz * 1.75f), secH = snap(tzS * 2.6f), secGap = snap(10.0f * S);
+    const float tileH = snap(k.tz * 2.5f), gapT = snap(5.0f * S), bulletW = snap(18.0f * S);   // the Equipment insets' scale
     for (int s = 0; s < 2; ++s) {
         if (!g_gpName[s][0]) continue;
         bool open = false; for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, g_gpName[s])) open = true;
@@ -6844,7 +6850,7 @@ void gen_panel_draw(const Frame& f) {
         }
         float bw = fmaxf(wRow + 2.0f * pad, 2.0f * wStat + gapT + 2.0f * pad);
         if (ttl) bw = fmaxf(bw, fo->measure(ttl, tzT) + 2.0f * pad + snap(24.0f * S) + (tval[s][0] ? fo->measure(tval[s], tzS) + snap(120.0f * S) : 0.0f));
-        bw = keep_width(g_gpB[s], fmaxf(bw, snap(440.0f * S)));            // a journal page : roomy (the user, 2026-11-21)
+        bw = keep_width(g_gpB[s], fmaxf(bw, snap(300.0f * S)));            // a journal page : roomy (the user, 2026-11-21)
         const int statLines = (nStat + 1) / 2;
         const float statsH = statLines ? snap(16.0f * S) + statLines * tileH + (statLines - 1) * gapT : 0.0f;
         const float bh = snap((ttl ? headH : 0.0f) + pad + h + statsH + footH + pad);
@@ -6901,7 +6907,7 @@ void gen_panel_draw(const Frame& f) {
         if (curI >= 0 && P.focused) {
             float& cy = g_gpCurY[s]; const float target = ry[curI];
             cy = cy < 0.0f ? target : cy + (target - cy) * fminf(1.0f, dt * 18.0f);
-            const float cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+            const float cx = snap(x0 - 3.0f * S), cw = (x1 - x0) + 6.0f * S;
             rrect(dev, cx, snap(cy + 1.0f * S), cw, rh[curI] - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
             rrect_stroke(dev, cx, snap(cy + 1.0f * S), cw, rh[curI] - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S);
         }
@@ -6972,13 +6978,14 @@ void gen_panel_draw(const Frame& f) {
             for (int i = 0; i < n; ++i) { const PanelItem& I = items[s][i]; if (!I.stat) continue;
                 const float tx = snap(x0 + (c & 1) * (tw + gapT)), tyy = snap(ty + (c / 2) * (tileH + gapT)); ++c;
                 const u32 sc = stat_colour(I.label, acc);
-                rrect(dev, tx, tyy, tw, tileH, snap(7.0f * S), with_alpha(with_a(sc, 0x30), A), with_alpha(0x60101624u, A));
-                rrect_stroke(dev, tx, tyy, tw, tileH, snap(7.0f * S), with_alpha(with_a(sc, 0x58), A), 1.0f);
+                // THE EQUIPMENT SHEET'S INSET (2026-11-27, the uniform pass) : a sunk pane, its rim ; the colour stays the dot's
+                rrect(dev, tx, tyy, tw, tileH, snap(6.0f * S), with_alpha(0x58080C12u, A), with_alpha(0x58101620u, A));
+                rrect_stroke(dev, tx, tyy, tw, tileH, snap(6.0f * S), with_alpha(0x34C8D6EAu, A), 1.0f);
                 char up[60]; lstrcpynA(up, I.label, sizeof(up)); CharUpperA(up);
                 disc(dev, snap(tx + 15.0f * S), snap(tyy + tileH * 0.30f), 3.0f * S, with_alpha(sc, A));
                 fo->begin(dev);
                 fo->draw_lc(dev, snap(tx + 24.0f * S), snap(tyy + tileH * 0.30f), up, tzK, with_alpha(0xFFB4BECCu, A), with_alpha(0xA0000000u, A), k.ow);
-                fo->draw_lc(dev, snap(tx + 12.0f * S), snap(tyy + tileH * 0.68f), I.value, tzV, with_alpha(sc, A), with_alpha(0xC8000000u, A), k.ow);
+                fo->draw_lc(dev, snap(tx + 12.0f * S), snap(tyy + tileH * 0.68f), I.value, tzV, with_alpha(0xFFE4EAF2u, A), with_alpha(0xC8000000u, A), k.ow);
             }
         }
         if (scroll) {
@@ -7030,8 +7037,8 @@ void missions_draw(const Frame& f) {
     const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
     for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "miss00")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
     const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
-    const float tz = snap(k.tz * 1.06f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f), tzC = snap(k.tz * 1.22f);
-    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f), secH = snap(tzS * 2.6f), indent = snap(18.0f * S);
+    const float tz = k.tz, tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = k.tz, tzC = k.tz;
+    const float pad = snap(7.0f * S) + k.bi, rowH = snap(k.tz * 1.75f), secH = snap(tzS * 2.6f), indent = snap(18.0f * S);
     const u32 acc = panel_accent("miss00", L.title);
     const char* kicker = gtr("Missions", "Missions");
     const char* title = L.title[0] ? L.title : kicker;
@@ -7127,7 +7134,7 @@ void missions_draw(const Frame& f) {
     section(y, L.hCur[0] ? L.hCur : gtr("Current", "En cours"), -1, 0); y += secH;
     int mrow = -1;
     {   const bool none = L.row[1].value < 0, on = cur == 1 && L.focused;
-        const float cx = snap(x0 - 4.0f * S), cw = (x1 - x0) + 8.0f * S;
+        const float cx = snap(x0 - 3.0f * S), cw = (x1 - x0) + 6.0f * S;
         rrect(dev, cx, snap(y), cw, cardH, snap(8.0f * S), with_alpha(none ? 0x30202A3Cu : with_a(acc, on ? 0x48 : 0x2C), A), with_alpha(0x50101624u, A));
         rrect_stroke(dev, cx, snap(y), cw, cardH, snap(8.0f * S), with_alpha(on ? 0xD0FFDA8Au : none ? 0x30C8D6EAu : with_a(acc, 0x90), A), on ? 1.6f * S : 1.0f);
         const float ly = snap(y + 9.0f * S + tzS * 0.7f), ny = snap(y + cardH - 9.0f * S - tzC * 0.75f);
@@ -7244,8 +7251,8 @@ void journal_draw(const Frame& f) {
     const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
     for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "quest01")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
     const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
-    const float tz = snap(k.tz * 1.04f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.30f);
-    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f), rowH2 = snap(k.capH * 2.75f);
+    const float tz = k.tz, tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = k.tz;
+    const float pad = snap(7.0f * S) + k.bi, rowH = snap(k.tz * 1.75f), rowH2 = snap(k.tz * 2.6f);
     const bool roe = L.mode >= 2, quests = !roe;
     // ---- the names : family, title, subtitle, accent
     const char* kicker = quests ? gtr("Quests", "Quetes") : L.mode == 4 ? "Vana'Bout" : "Records of Eminence";
@@ -7267,7 +7274,7 @@ void journal_draw(const Frame& f) {
     const NativeJournal::Row* CR = L.count ? &L.row[L.cursor] : 0;
     const bool detail = roe && CR && !CR->category && CR->name[0];
     char dl[4][120]; int nDl = 0; const float headH = snap(tzK * 1.5f + tzT * 1.6f + (subt[0] ? tzS * 1.4f : 0.0f) + 14.0f * S);
-    const float bw = keep_width(g_jrB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(560.0f * S))));
+    const float bw = keep_width(g_jrB, fmaxf(snap(300.0f * S), fminf(f.screenW * 0.30f, snap(380.0f * S))));
     const float x0r = pad, x1r = bw - pad;
     if (detail) nDl = wrap_lines(fo, native_journal_desc((unsigned)CR->value), tzS, x1r - x0r - 4.0f * S, dl, 3);
     const float detH = detail ? snap(12.0f * S + tzS * 1.5f * (float)nDl + tzS * 2.4f + 16.0f * S) : 0.0f;
@@ -7323,7 +7330,7 @@ void journal_draw(const Frame& f) {
         {   float ty = y; for (int r = g_jrTop; r < L.cursor; ++r) ty += rh_of(r);
             if (L.cursor >= g_jrTop && L.cursor < g_jrTop + nVis && L.focused) {
                 g_jrCurY = g_jrCurY < 0.0f ? ty : g_jrCurY + (ty - g_jrCurY) * fminf(1.0f, dt * 18.0f);
-                const float h = rh_of(L.cursor), cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+                const float h = rh_of(L.cursor), cx = snap(x0 - 3.0f * S), cw = (x1 - x0) + 6.0f * S;
                 rrect(dev, cx, snap(g_jrCurY + 1.0f * S), cw, h - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
                 rrect_stroke(dev, cx, snap(g_jrCurY + 1.0f * S), cw, h - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S); } }
         float ry = y;
@@ -7448,12 +7455,12 @@ void mission_detail_draw(const Frame& f) {
     const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
     for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "miss00")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
     const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font;
-    const float tz = snap(k.tz * 1.0f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f);
-    const float pad = snap(18.0f * S) + k.bi;
+    const float tz = k.tz, tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = k.tz;
+    const float pad = snap(7.0f * S) + k.bi;
     const u32 acc = panel_accent("miss00", L.title);
     const u32 sc = L.detailCurrent ? acc : 0xFF9CE27Au;
     // ---- the orders : each DAT line wrapped to the box
-    const float bw = keep_width(g_mdB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(580.0f * S))));
+    const float bw = keep_width(g_mdB, fmaxf(snap(300.0f * S), fminf(f.screenW * 0.30f, snap(380.0f * S))));
     const float tw = bw - 2.0f * pad;
     static char dl[22][120]; int nDl = 0;
     {   const char* p = L.dDesc;
@@ -7532,8 +7539,8 @@ void key_items_draw(const Frame& f) {
     if (up) L = K0;
     if (!block_ease(g_kiB, up, now, dt)) { if (!K0.open) { g_kiCurY = -1.0f; g_kiTop = 0; } return; }
     const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
-    const float tz = snap(k.tz * 1.04f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.30f);
-    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f);
+    const float tz = k.tz, tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = k.tz;
+    const float pad = snap(7.0f * S) + k.bi, rowH = snap(k.tz * 1.75f);
     const bool cats = L.state == 1, page = L.state == 3;
     const u32 acc = cats ? 0xFFE8C060u : ki_colour(L.catColour);
     char title[64], subt[96] = "";
@@ -7549,7 +7556,7 @@ void key_items_draw(const Frame& f) {
     // ---- the description : under the list (3 lines), or the page in full
     const NativeKeyItems::Row* CR = L.count ? &L.row[L.cursor] : 0;
     const bool detail = !cats && CR && CR->name[0];
-    const float bw = keep_width(g_kiB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(560.0f * S))));
+    const float bw = keep_width(g_kiB, fmaxf(snap(300.0f * S), fminf(f.screenW * 0.30f, snap(380.0f * S))));
     static char dl[16][120]; int nDl = 0;
     if (detail) { const char* p = L.desc; const int maxL = page ? 16 : 4;
         while (*p && nDl < maxL) { char para[700]; int n = 0; while (p[n] && p[n] != '\n' && n < 699) { para[n] = p[n]; ++n; } para[n] = 0;
@@ -7598,7 +7605,7 @@ void key_items_draw(const Frame& f) {
         if (L.cursor >= g_kiTop && L.cursor < g_kiTop + nVis && L.focused) {
             const float ty = y + (float)(L.cursor - g_kiTop) * rowH;
             g_kiCurY = g_kiCurY < 0.0f ? ty : g_kiCurY + (ty - g_kiCurY) * fminf(1.0f, dt * 18.0f);
-            const float cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+            const float cx = snap(x0 - 3.0f * S), cw = (x1 - x0) + 6.0f * S;
             rrect(dev, cx, snap(g_kiCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
             rrect_stroke(dev, cx, snap(g_kiCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S); }
         for (int v = 0; v < nVis; ++v) {
@@ -7727,12 +7734,12 @@ void dlv_draw(const Frame& f) {
     if (!block_ease(g_dvB, D0.box != 0, now, dt) || last.uiW <= 0 || !last.box) { g_dsB.vis = g_diB.vis = 0.0f; return; }
     const bool recv = last.box == 1;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_dvB.openMs) / 1000.0f) / 0.08f);
     const float A = g_dvB.vis * tO * (last.focused || !D0.box ? 1.0f : 0.85f); if (A <= 0.0f) return;
     const u32 sh = with_alpha(0xC8000000u, A);
-    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S), gridW = 4.0f * cell + 3.0f * cg, lineH = snap(k.capH * 1.4f), btnH = snap(k.capH * 1.5f);
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S), gridW = 4.0f * cell + 3.0f * cg, lineH = snap(k.capH * 1.4f), btnH = snap(k.capH * 1.5f);
     const float bw = snap(pad + gridW + pad), bh = snap(pad + headH + 6.0f * S + lineH + 4.0f * S + 2.0f * cell + cg + (recv ? 0.0f : 8.0f * S + btnH) + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
@@ -7765,9 +7772,9 @@ void dlv_draw(const Frame& f) {
         }
         const NativeDlvSlot& w = last.slot[i];
         if (w.item && shown(w.state)) {
-            const float a = A * (bright(w.state) ? 1.0f : 0.45f), z = snap(cell - 8.0f * S);
+            const float a = A * (bright(w.state) ? 1.0f : 0.45f), z = snap(cell - 4.0f * S);
             if (w.item == 0xFFFF) gil_coin(dev, snap(cx + cell * 0.5f), snap(cy + cell * 0.5f), z * 0.8f, a);
-            else { const u32 tex = list_icon(f, 3, w.item); if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 4.0f * S), snap(cy + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); } }
+            else { const u32 tex = list_icon(f, 3, w.item); if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 2.0f * S), snap(cy + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); } }
         }
         if (ms && ms->focused && ms->x >= cx && ms->x < cx + cell && ms->y >= cy && ms->y < cy + cell) ment = i + 1;
     }
@@ -7788,7 +7795,7 @@ void dlv_draw(const Frame& f) {
         } else g_dvB.hoverRow = 0;
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, recv ? gtr("Delivery box", "Bo\xC3\xAEte de r\xC3\xA9""ception") : gtr("Send", "Envoi"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, recv ? gtr("Delivery box", "Bo\xC3\xAEte de r\xC3\xA9""ception") : gtr("Send", "Envoi"), tz, A, sh, k.ow);
     if (!recv && last.recipient[0]) { char t[48]; _snprintf(t, sizeof(t), "%s %s", gtr("To", "\xC3\x80"), last.recipient); t[47] = 0; fo->draw_lc(dev, snap(L + gridW - fo->measure(t, tz * 0.85f)), hy, t, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     if (last.gilUp && !recv) {                                        // the gil to send : the client's value, its edited digit (its keys)
         const float vz = tz * 1.05f, vx = snap(L + 12.0f * S + k.capH), gyy = snap(gly + lineH * 0.5f);
@@ -7880,7 +7887,7 @@ void dlv_draw(const Frame& f) {
     if (block_ease(g_diB, D0.box && D0.invOpen, now, dt) && last.invVis > 0) {
         char cnt[16]; sprintf(cnt, "%d", last.invN);
         ItemsBox IL = { last.invRow, last.invN, last.invTop, last.invVis, last.invCursor, 0, last.invFocused, D0.box && D0.invOpen, gtr("Items", "Objets"), cnt, false };
-        const float rowH = snap(k.capH * 1.25f);
+        const float rowH = snap(k.tz * 1.75f);
         const float lw = keep_width(g_diB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.invVis * rowH + pad);
         float lx = snap(bx + bw + gap), ly = by;
         if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw);
@@ -7910,7 +7917,7 @@ void jobsel_draw(const Frame& f) {
     if (J0.open) last = J0;
     if (!block_ease(g_jsB, J0.open, now, dt) || last.uiW <= 0) return;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_jsB.openMs) / 1000.0f) / 0.08f);
     const float A = g_jsB.vis * tO; if (A <= 0.0f) return;
@@ -7964,7 +7971,7 @@ void jobsel_draw(const Frame& f) {
         } else g_jsB.hoverRow = 0;
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, last.sub ? gtr("Support job", "Job de soutien") : gtr("Main job", "Job principal"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, last.sub ? gtr("Support job", "Job de soutien") : gtr("Main job", "Job principal"), tz, A, sh, k.ow);
     for (int e = 1; e <= 22; ++e) {
         const int c = (e - 1) & 1, r = (e - 1) >> 1;
         const float x = snap(L + (float)c * (colW + gap)), cy = snap(gy + (float)r * rowH + rowH * 0.5f);
@@ -7989,7 +7996,7 @@ void loot_draw(const Frame& f) {
     if (X0.open) last = X0;
     if (!block_ease(g_ltB, X0.open, now, dt) || last.uiW <= 0 || last.n <= 0) { g_loB.vis = 0.0f; g_loB.wasOpen = false; return; }
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_ltB.openMs) / 1000.0f) / 0.08f);
     const float A = g_ltB.vis * tO * (last.focused || !X0.open ? 1.0f : 0.85f); if (A <= 0.0f) return;
@@ -8014,7 +8021,7 @@ void loot_draw(const Frame& f) {
         const float y = snap(ry + (float)last.cursor * rowH), r = rowH * 0.5f;
         rrect_clip_begin(dev, L, y, W, rowH, r); party_selframe(dev, L, y, W, rowH, f.t, A, 0); rrect_clip_end(dev);
         rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
-        if (last.focused && g_handTex) { const float hand = snap(k.capH * 1.25f); party_cursor(dev, g_handTex, bx - hand * 0.35f + party_cursor_bob(f.t, hand), y + rowH * 0.5f, hand, 0); }
+        if (last.focused && g_handTex) { const float hand = snap(k.tz * 1.75f); menu_hand(dev, g_handTex, bx - hand * 0.35f + party_cursor_bob(f.t, hand), y + rowH * 0.5f, hand, 0); }
     }
     for (int i = 0; i < last.n; ++i) {
         const u32 tex = list_icon(f, 3, last.row[i].item);
@@ -8042,7 +8049,7 @@ void loot_draw(const Frame& f) {
     const TreasureItem* pool = party().treasure_slots();
     const unsigned unow = (unsigned)time(0);
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, gtr("Treasure", "Tr\xC3\xA9sor"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    panel_title(fo, dev, L, hy, gtr("Treasure", "Tr\xC3\xA9sor"), tz, A, sh, k.ow);
     {   char c[16]; sprintf(c, "%d / 10", last.n); fo->draw_lc(dev, snap(L + W - fo->measure(c, tz * 0.85f)), hy, c, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     const float xName = snap(L + 8.0f * S + iz + 8.0f * S), xTime = snap(xName + wName + 14.0f * S), xBest = snap(xTime + wTime + 14.0f * S), xOwnR = snap(L + W - 8.0f * S);
     for (int i = 0; i < last.n; ++i) {
@@ -8537,7 +8544,7 @@ void item_card_fold(const Frame& f) { card_fold(f); }   // hud.cpp, after every 
 // spinner while it waits for the server, an over-wide line scrolls, the bar fades out ~3 s after its last text ========
 namespace {
 // the top bar's height (the macro bar hangs right under it)
-float topbar_height(const Metrics& k) { const float pad = snap(10.0f * k.S) + k.bi; return snap(k.capH + 2.0f * pad - 2.0f * k.S); }
+float topbar_height(const Metrics& k) { const float pad = snap(7.0f * k.S) + k.bi;   /* the standard pad (2026-11-27) */ return snap(k.capH + 2.0f * pad - 2.0f * k.S); }
 // ---- YOUR BUFF ICONS (the client's `buff`, NU_BUFF) : the party's icon set (the shared status atlas), where the client
 // puts its own -- under the top bar, from its left (the user 2026-11-20 : "remplace-la avec nos icones de buff"). The
 // game's order, 16 a row ; the name of the one under the mouse in a tip under it.
@@ -8710,7 +8717,7 @@ bool net_counts(const NativeNet& N, char* out, int cap) {
 // signal, the ping (room for "000 ms" : steady while it moves), the mail / GM count only when there is one
 float netbox_inset(const Metrics& k) { return snap(4.0f * k.S); }   // the gap between the box and the screen's right edge
 float netbox_width(const Frame& f, const Metrics& k) {
-    const float S = k.S, pad = snap(10.0f * S) + k.bi, tz = k.tz;
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz;
     const NativeNet N = net_shown(f);
     float w = pad + 4.0f * (snap(4.0f * S) + snap(2.0f * S)) + 6.0f * S;
     char sc[16]; if (N.pingMs >= 1000) sprintf(sc, "%d ms", N.pingMs); else sprintf(sc, "000 ms");
@@ -8781,7 +8788,7 @@ void topbar_draw(const Frame& f) {
     }
     if (!block_ease(g_tbB, up, now, dt)) return;
     const Metrics k = metrics(f);
-    const float S = k.S, tz = k.tz, pad = snap(10.0f * S) + k.bi;
+    const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi;
     const u32 dev = f.dev;
     const float A = g_tbB.vis; if (A <= 0.0f) return;
     // the very top of the screen, its whole width (the user 2026-11-20 : "tout en haut, toute la largeur")
@@ -8795,7 +8802,7 @@ void topbar_draw(const Frame& f) {
     const float titleW = snap(130.0f * S), L = bx + pad;
     const NativeTopLine& tl = T.title; const NativeTopLine& hl = T.help;
     if (tl.busy) tb_spinner(f, L, cy, S, A);
-    else if (tl.text[0]) tb_text_line(f, k, tl.text, L, cy, titleW, tz * 1.02f, 0xFFFFDA8Au, A, g_tbScrollT0);
+    else if (tl.text[0]) tb_text_line(f, k, tl.text, L, cy, titleW, tz, 0xFFE8D9B0u, A, g_tbScrollT0);   // the standard panel title
     // the separator, then the help line (helpwind)
     const float sepX = snap(L + titleW + 8.0f * S);
     rrect(dev, sepX, snap(by + pad), 1.0f, snap(bh - 2.0f * pad), 0.0f, with_alpha(0x40C8D6EAu, A), with_alpha(0x40C8D6EAu, A));
@@ -8835,7 +8842,7 @@ void netbox_draw(const Frame& f) {
     const NativeNet N = net_shown(f);
     if (!N.ok) { net_fps_flag(f, false); return; }
     const Metrics k = metrics(f);
-    const float S = k.S, tz = k.tz, pad = snap(10.0f * S) + k.bi;
+    const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi;
     Font* fo = f.font; const u32 dev = f.dev; const float A = 1.0f; const u32 sh = with_alpha(0xC8000000u, A);
     // inset from the screen's right edge : flush, the frame's right side was off-screen (the user 2026-11-25 : "coupe a droite")
     const float bw = netbox_width(f, k), bh = topbar_height(k), bx = snap(f.screenW - bw - netbox_inset(k)), by = 0.0f;
@@ -9019,7 +9026,7 @@ void trade_draw(const Frame& f) {
     g_trWasOpen = T0.open;
     if (T0.open) g_trLast = T0;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(10.0f * S) + k.bi, tz = k.tz;
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz;
     Font* fo = f.font; const u32 dev = f.dev;
     const u32 GOLD = 0xFFFFDA8Au, DIM = 0xFF93A6BEu, TXT = 0xFFE4EAF2u, GREEN = 0xFF7FD67Fu, WARN = 0xFFFFB45Au;
     // ---- the summary, after a completed trade (6 s, fading) ----
@@ -9062,7 +9069,7 @@ void trade_draw(const Frame& f) {
         if (g_tgEnter) { native_trade_box_event(1, 5); g_tgEnter = 0; g_tgQn = 0; g_tgQ[0] = 0; }
     } else g_tgEnter = 0;
     // ---- geometry : the panel where the client puts `trade` (top left) ----
-    const float cell = snap(34.0f * S), cg = snap(4.0f * S), colW = 4.0f * cell + 3.0f * cg, colGap = snap(24.0f * S);
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S), colW = 4.0f * cell + 3.0f * cg, colGap = snap(24.0f * S);
     const float headH = snap(k.capH * 1.1f), rowH = snap(k.capH * 1.1f), btnH = snap(k.capH * 1.35f), gap = snap(7.0f * S);
     const int nCols = T.npc ? 1 : 2;                                  // an NPC trade (handover) : your column only
     const float colsW = (float)nCols * colW + (float)(nCols - 1) * colGap;
@@ -9145,8 +9152,8 @@ void trade_draw(const Frame& f) {
                        rrect_stroke(dev, x, y, cell, cell, 5.0f * S, with_alpha(0xD8FFDA8Au, A), 1.5f * S); }
             else if (hov && (sl[s].id || mine)) rrect_stroke(dev, x, y, cell, cell, 5.0f * S, with_alpha(0x80FFDA8Au, A), 1.0f * S);
             if (sl[s].id) {
-                const u32 tex = list_icon(f, 3, sl[s].id); const float z = snap(cell - 6.0f * S);
-                if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(x + 3.0f * S), snap(y + 3.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+                const u32 tex = list_icon(f, 3, sl[s].id); const float z = snap(cell - 4.0f * S);
+                if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(x + 2.0f * S), snap(y + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
                 if (sl[s].count > 1) { char n[12]; sprintf(n, "%u", sl[s].count); fo->begin(dev);
                     fo->draw_lc(dev, snap(x + cell - 2.0f * S - fo->measure(n, tz * 0.8f)), snap(y + cell - tz * 0.5f), n, tz * 0.8f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xF0000000u, A), k.ow * 1.4f); }
                 if (mine && hov && live) {                                   // yours, under the mouse : a click takes it back
@@ -9294,7 +9301,7 @@ void dialog_draw(const Frame& f) {
     if (!block_ease(g_dlB, D0.open, now, dt) || g_dlLast.uiW <= 0 || g_dlLast.uiH <= 0) return;
     const NativeDialog& D = g_dlLast;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(12.0f * S) + k.bi, tz = k.tz;
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz;
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_dlB.openMs) / 1000.0f) / 0.08f);
     const float A = g_dlB.vis * tO; if (A <= 0.0f) return;
@@ -9414,7 +9421,7 @@ void macrobar_draw(const Frame& f) {
     if (!block_ease(g_mbB, up, now, dt) || g_mcLast.uiW <= 0 || g_mcLast.open < 1) return;
     const NativeMacro& M = g_mcLast;
     const Metrics k = metrics(f);
-    const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi;
+    const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi;
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_mbB.openMs) / 1000.0f) / 0.08f);
     const float A = g_mbB.vis * tO; if (A <= 0.0f) return;
@@ -9763,7 +9770,7 @@ void olstat_draw(const Frame& f) {
     static const char* const EN[3] = { "Online", "Away", "Invisible" };
     static const char* const FR[3] = { "En ligne", "Absent", "Invisible" };
     float lw = 0.0f; for (int i = 0; i < 3; ++i) { const float w = fo->measure(gtr(EN[i], FR[i]), k.tz * 0.9f); if (w > lw) lw = w; }
-    const float pad = snap(8.0f * S) + k.bi, tw = snap((lw > 46.0f * S ? lw : 46.0f * S) + 14.0f * S), th = snap(58.0f * S), gap = snap(5.0f * S);
+    const float pad = snap(7.0f * S) + k.bi, tw = snap((lw > 46.0f * S ? lw : 46.0f * S) + 14.0f * S), th = snap(58.0f * S), gap = snap(5.0f * S);
     const float bw = snap(pad * 2.0f + tw * 3.0f + gap * 2.0f), bh = snap(pad * 2.0f + th);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float bx = snap((float)last.rx1 * sx - bw), by = snap((float)last.ry0 * sy);           // the client's place : its right edge ...
@@ -10088,7 +10095,7 @@ void map_screen_hud(const Frame& f) {
     // the cartouche, top left : the zone, its floor, your square
     {
         const char* zn = zone_name(last.zone); char fl[24] = ""; if (last.sub > 0) sprintf(fl, gtr("Floor %d", "Niveau %d"), last.sub + 1);
-        const float tz = k.tz * 1.15f, pad = snap(10.0f * S) + k.bi;
+        const float tz = k.tz * 1.15f, pad = snap(7.0f * S) + k.bi;
         float w = fo->measure(zn && *zn ? zn : "?", tz); const float w2 = fo->measure(last.grid, k.tz) + (fl[0] ? fo->measure(fl, k.tz) + 14.0f * S : 0.0f); if (w2 > w) w = w2;
         const float bw = snap(w + 2.0f * pad), bh = snap(pad * 2.0f + k.capH * 1.9f);
         const float bx = snap(16.0f * sx), by = snap(48.0f * sy);   // the top left, under the top bar (Region Info's band)
