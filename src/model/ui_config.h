@@ -848,6 +848,10 @@ bool        profile_save(const char* name);        // write the CURRENT config u
 bool        profile_load(const char* name);        // load <name> into the live config (+ persist as current)
 bool        profile_delete(const char* name);
 bool        profile_exists(const char* name);
+bool        profile_copy(const char* src, const char* dst);            // a new profile, a copy of <src> (false if <dst> exists)
+int         profile_read_text(const char* name, char* out, int cap);  // the file's text ; -1 if unreadable / larger than cap
+bool        profile_write_text(const char* name, const char* text, int len);   // a NEW profile from text (never overwrites)
+bool        profile_mtime_text(const char* name, char* out, int cap);  // its last write, "dd/mm hh:mm" local
 void        profile_mark_clean();                  // snapshot the current config as "saved" (call on load/save)
 bool        profile_dirty();                       // true if the live config differs from that snapshot -> unsaved changes
 bool        ui_config_persist_eq(const UiConfig& a, const UiConfig& b);   // do these two agree on every PERSISTED field? (the profile_dirty comparator, exposed for the offline round-trip test -- see the .cpp for why profile_dirty itself cannot serve as that oracle)

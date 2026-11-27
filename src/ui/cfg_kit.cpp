@@ -479,11 +479,12 @@ bool chrome_close(Kit& K, int id, float x, float y, float s) {
     }
     return hov && K.click;
 }
+static void glass_text(Kit& K, float cx, float cy, const char* s, float sz, float lit, bool enabled, int tint);   // below (the keys' engraved glass)
 void chrome_tab_text(Kit& K, float cx, float cy, const char* s, bool active, float t, float sz) {
-    if (active) ink_c(K.fs, K.dev, cx, cy, s, sz, INK);
+    if (active) glass_text(K, cx, cy, s, sz, 1.0f, true, 2);   // lit green glass (the latched keys')
     else inlay_c(K.fr, K.dev, cx, cy, s, sz, m_toward(0xFFAEB6C1u, TXT_METAL, t));
 }
-u32 chrome_tab_ink(bool active, float t) { return active ? INK : m_toward(0xFFAEB6C1u, TXT_METAL, t); }
+u32 chrome_tab_ink(bool active, float t) { return active ? 0xFFB8FFC8u : m_toward(0xFFAEB6C1u, TXT_METAL, t); }   // the open tab's icon : lit green
 // a RAIL entry (the module list) : plain ; hovered a steel sheen ; the chosen one a steel plate, its name in brass
 void chrome_nav(Kit& K, float x, float y, float w, float h, const char* s, bool active, float t) {
     const u32 dev = K.dev;
@@ -759,11 +760,14 @@ float chrome_tabkey(Kit& K, int id, float x, float y, float w, float h, bool act
     const u32 dev = K.dev;
     const bool hov = !active && inrect(K.mo, x, y, w, h);
     const float t = ease(id, 0, hov ? 1.0f : 0.0f);
-    if (active) {
+    if (active) {   // the open tab : a key PUSHED IN and LIT, as every latched key (2026-11-27 : the brass face with dark
+                    // ink made the icon a black blot -- "pas tres lisible")
         cs(dev);
-        rrect(dev, x, y, w, h, K.px(4.0f), fa(m_scale(BRASS().body, 0.92f)), fa(m_scale(BRASS().bot, 0.95f)));
-        grad_quad(dev, x, y, w, h * 0.42f, MA(0x70, 0x000000u), MA(0x70, 0x000000u), 0, 0);
-        flat(dev, x + K.px(3.0f), y + h - 1.0f, w - K.px(6.0f), 1.0f, MA(0x90, BRASS().lite));
+        rrect(dev, x - K.px(1.0f), y - K.px(1.0f), w + K.px(2.0f), h + K.px(2.0f), K.px(4.5f), fa(0xFF05070Au), fa(m_scale(STEEL().lite, 0.40f)));   // the recess
+        Metal m = STEEL(); m.top = m_scale(m.top, 0.50f); m.bot = m_scale(m.bot, 0.58f); m.glint = m_scale(m.glint, 0.30f);
+        plinth(K, x, y + K.px(1.4f), w, h - K.px(1.4f), K.px(4.0f), m, 0.0f);
+        grad_quad(dev, x + K.px(1.0f), y + K.px(1.4f), w - K.px(2.0f), h * 0.40f, MA(0x90, 0x000000u), MA(0x90, 0x000000u), 0, 0);   // the recess wall's shadow
+        flat(dev, x + K.px(3.0f), y + h - 1.0f, w - K.px(6.0f), 1.0f, MA(0x50, 0x80FFA0u));     // the light leaking at its lower lip
     } else {
         Metal km = STEEL(); km.top = m_scale(km.top, 0.62f); km.bot = m_scale(km.bot, 0.55f);
         plinth(K, x, y - K.px(1.0f), w, h, K.px(4.0f), km, t);

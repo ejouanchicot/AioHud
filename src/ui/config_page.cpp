@@ -1409,7 +1409,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
 void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool click, float coX, float coW, float bodyY, float pulse) {
     const bool dirty = activeProf_[0] && profile_dirty();
     const float barY = s_ck ? bodyY - snap(42.0f) - snap(2.0f) : bodyY + snap(18.0f), barH = snap(46.0f), barCy = barY + barH * 0.5f;   // the redesign : centred on the beam's tabs
-    if (s_ck) { chrome_housing(*s_ck, coX, barY + snap(3.0f), coW - snap(8.0f), barH - snap(6.0f)); chrome_nav_group(*s_ck, coX + snap(18.0f), barCy, tr("PROFILE", "PROFIL")); }   // ONE housing for the whole group   // in the beam : a slot like the tabs'   // the redesign (no gold bar : refused beside titles)
+    if (s_ck) { chrome_housing(*s_ck, coX, barY + snap(3.0f), coW - snap(8.0f), barH - snap(6.0f)); chrome_label(*s_ck, coX + snap(18.0f), barCy, tr("PROFILE", "PROFIL"), s_ck->px(14.0f), 0); }   // light engraved metal : the muted brass of the rail titles was lost on this steel (2026-11-27)   // ONE housing for the whole group   // in the beam : a slot like the tabs'   // the redesign (no gold bar : refused beside titles)
     else {
     drop_shadow(dev, coX, barY, coW, barH, snap(4.0f), 50);
     rpanel(dev, coX, barY, coW, barH, snap(10.0f), 0x55101826, 0x550A111C, C_BORDER, snap(1.5f));
@@ -2287,6 +2287,73 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
 // ---- the PROFILE tab in the redesign's metal (2026-11-26 : "meme chose pour profil, meme style") : the rail plate (cast
 // with the beam) holds the character and the quick saves ; the right is one opening of the welded frame, the new-profile
 // field and the saved library on its floor. Same actions as the old tab, line for line -- only the drawing differs.
+// ---- SHARING a profile (2026-11-27) : one line of text -- "AIOHUD1:<name>:<base64 of the file>" -- through the
+// clipboard, pasted in a chat or a forum, imported on another machine. No server, nothing sent : the player copies.
+static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static int b64_enc(const unsigned char* in, int n, char* out, int cap) {
+    int o = 0;
+    for (int i = 0; i < n; i += 3) {
+        if (o + 4 >= cap) return -1;
+        const unsigned v = (unsigned)in[i] << 16 | (i + 1 < n ? (unsigned)in[i + 1] << 8 : 0u) | (i + 2 < n ? in[i + 2] : 0u);
+        out[o++] = B64[(v >> 18) & 63]; out[o++] = B64[(v >> 12) & 63];
+        out[o++] = i + 1 < n ? B64[(v >> 6) & 63] : '='; out[o++] = i + 2 < n ? B64[v & 63] : '=';
+    }
+    out[o] = 0; return o;
+}
+static int b64_val(char c) { const char* q = strchr(B64, c); return (c && q) ? (int)(q - B64) : -1; }
+static int b64_dec(const char* in, unsigned char* out, int cap) {
+    int o = 0; unsigned acc = 0; int bits = 0;
+    for (; *in && *in != '='; ++in) {
+        const int v = b64_val(*in); if (v < 0) { if (*in == '\r' || *in == '\n' || *in == ' ') continue; return -1; }
+        acc = (acc << 6) | (unsigned)v; bits += 6;
+        if (bits >= 8) { bits -= 8; if (o >= cap) return -1; out[o++] = (unsigned char)((acc >> bits) & 0xFF); }
+    }
+    return o;
+}
+static bool clip_set(const char* text) {
+    if (!OpenClipboard(nullptr)) return false;
+    EmptyClipboard();
+    const size_t n = strlen(text) + 1;
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, n); bool ok = false;
+    if (h) { void* d = GlobalLock(h); if (d) { memcpy(d, text, n); GlobalUnlock(h); ok = SetClipboardData(CF_TEXT, h) != nullptr; } if (!ok) GlobalFree(h); }
+    CloseClipboard(); return ok;
+}
+static int clip_get(char* out, int cap) {
+    if (!OpenClipboard(nullptr)) return -1;
+    int n = -1;
+    if (HANDLE h = GetClipboardData(CF_TEXT)) { if (const char* d = (const char*)GlobalLock(h)) { n = (int)strlen(d); if (n >= cap) n = -1; else memcpy(out, d, n + 1); GlobalUnlock(h); } }
+    CloseClipboard(); return n;
+}
+static char s_profBuf[65536]; static char s_profB64[90000];   // one export / import at a time, on a click (never per frame)
+static char s_profMsg[160]; static unsigned s_profMsgMs = 0; static bool s_profMsgErr = false;
+static void prof_msg(bool err, const char* m) { lstrcpynA(s_profMsg, m, sizeof(s_profMsg)); s_profMsgMs = GetTickCount(); s_profMsgErr = err; }
+static bool prof_free_name(const char* base, const char* suffix, char* out, int cap) {   // "<base><suffix>", then " 2".." 9"
+    _snprintf(out, cap, "%s%s", base, suffix); out[cap - 1] = 0;
+    for (int k = 2; k < 10 && profile_exists(out); ++k) { _snprintf(out, cap, "%s%s %d", base, suffix, k); out[cap - 1] = 0; }
+    return !profile_exists(out);
+}
+static void prof_export(const char* nm) {
+    const int n = profile_read_text(nm, s_profBuf, sizeof(s_profBuf));
+    if (n <= 0) { prof_msg(true, tr("Could not read that profile.", "Impossible de lire ce profil.")); return; }
+    int o = _snprintf(s_profB64, sizeof(s_profB64), "AIOHUD1:%s:", nm);
+    if (o < 0 || b64_enc((const unsigned char*)s_profBuf, n, s_profB64 + o, (int)sizeof(s_profB64) - o) < 0) { prof_msg(true, tr("Profile too large to share.", "Profil trop gros pour le partage.")); return; }
+    char m[160]; _snprintf(m, sizeof(m), tr("\"%s\" copied -- paste it to share it.", "\"%s\" copi\xC3\xA9 -- colle-le pour le partager."), nm); m[159] = 0;
+    if (clip_set(s_profB64)) prof_msg(false, m); else prof_msg(true, tr("The clipboard is busy -- try again.", "Le presse-papiers est occup\xC3\xA9 -- r\xC3\xA9""essaie."));
+}
+static bool prof_import(const char* wanted, char* outName, int cap) {
+    if (clip_get(s_profB64, sizeof(s_profB64)) <= 0 || strncmp(s_profB64, "AIOHUD1:", 8) != 0) {
+        prof_msg(true, tr("No AioHUD profile in the clipboard -- copy one with Export first.", "Pas de profil AioHUD dans le presse-papiers -- copie-en un avec Exporter.")); return false; }
+    char* nm = s_profB64 + 8; char* colon = strchr(nm, ':');
+    if (!colon || colon == nm || colon - nm > 47) { prof_msg(true, tr("That profile text is damaged.", "Ce texte de profil est ab\xC3\xAEm\xC3\xA9.")); return false; }
+    *colon = 0;
+    const int n = b64_dec(colon + 1, (unsigned char*)s_profBuf, sizeof(s_profBuf) - 1);
+    if (n <= 0) { prof_msg(true, tr("That profile text is damaged.", "Ce texte de profil est ab\xC3\xAEm\xC3\xA9.")); return false; }
+    if (!prof_free_name(wanted && wanted[0] ? wanted : nm, "", outName, cap) || !profile_write_text(outName, s_profBuf, n)) {
+        prof_msg(true, tr("Could not write the imported profile.", "Impossible d'\xC3\xA9""crire le profil import\xC3\xA9.")); return false; }
+    char m[160]; _snprintf(m, sizeof(m), tr("Imported as \"%s\".", "Import\xC3\xA9 sous \"%s\"."), outName); m[159] = 0; prof_msg(false, m);
+    return true;
+}
+
 void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                      float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e) {
     (void)pulse; (void)bodyH;
@@ -2330,7 +2397,13 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         chrome_label(K, nlx, ry0 + snap(54.0f), actl, NOTE, 1);
         if (dirty) { cs(dev); disc(dev, nlx + snap(4.0f), ry0 + snap(76.0f), snap(3.5f), fa(0xFFC88A2Cu));
             chrome_label(K, nlx + snap(14.0f), ry0 + snap(76.0f), tr("unsaved changes", "modifs non enregistr\xC3\xA9""es"), NOTE, 1); }
-        ry0 += ccH + snap(30.0f);
+        ry0 += ccH + snap(12.0f);
+        if (dirty) {   // undo the unsaved changes : back to the profile as saved
+            if (chrome_keybtn(K, CTRL_ID, cx0, ry0, cw0, snap(42.0f), tr("Discard the changes", "Annuler les modifications"), 0, !modal) && clk) {
+                char nmK[64]; lstrcpynA(nmK, activeProf_, sizeof(nmK)); profile_load(nmK); prof_msg(false, tr("Changes discarded.", "Modifications annul\xC3\xA9""es.")); }
+            ry0 += snap(42.0f) + snap(10.0f);
+        }
+        ry0 += snap(18.0f);
     }
     chrome_label(K, cx0, ry0, tr("QUICK SAVE", "SAUVEGARDE RAPIDE"), LBL, 4);
     ry0 += snap(16.0f);
@@ -2360,12 +2433,12 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
     // ===== RIGHT, on the frame's floor : the new profile, then the library =====
     const float pX = railR + snap(30.0f), pW = (Rr - bt - snap(24.0f)) - pX;
     float py = openTop + snap(30.0f);
-    chrome_label(K, pX, py, tr("Load to switch instantly. Type a name to create a new profile, or an existing name to overwrite it.",
-                                "Charge pour basculer instantan\xC3\xA9ment. Tape un nom pour cr\xC3\xA9""er un profil, ou un nom existant pour le remplacer."), NOTE, 1);
+    chrome_label(K, pX, py, tr("Type a name to create a profile (or an existing one to overwrite it). Import takes a profile someone shared.",
+                                "Tape un nom pour cr\xC3\xA9""er un profil (ou un nom existant pour le remplacer). Importer reprend un profil partag\xC3\xA9."), NOTE, 1);
     py += snap(30.0f);
     chrome_label(K, pX, py, tr("NEW PROFILE", "NOUVEAU PROFIL"), LBL, 4);
     py += snap(16.0f);
-    const float fH = snap(50.0f), btnW = snap(170.0f), fGap = snap(12.0f), fW = pW - btnW - fGap;
+    const float fH = snap(50.0f), btnW = snap(170.0f), fGap = snap(12.0f), fW = pW - 2.0f * btnW - 2.0f * fGap;
     const bool fldHov = inrect(mo, pX, py, fW, fH);
     if (clk) { const bool was = nameFocus_; nameFocus_ = fldHov; if (fldHov && !was) nameCur_ = nameLen_; }
     const float ft = ease(CTRL_ID, nameFocus_ ? 1.0f : 0.0f);
@@ -2390,8 +2463,13 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         }
         profDirty_ = true;
     }
+    {   // IMPORT : a shared profile from the clipboard, under the typed name (else its own)
+        if (chrome_keybtn(K, CTRL_ID, pX + fW + fGap + btnW + fGap, py, btnW, fH, tr("Import", "Importer"), 0, !modal) && clk) {
+            char got[64]; if (prof_import(nameBuf_, got, sizeof(got))) { nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; } }
+    }
     py += fH + snap(10.0f);
-    if (profErrMs_ && (unsigned)(GetTickCount() - profErrMs_) < 8000u) {
+    if (s_profMsgMs && (unsigned)(GetTickCount() - s_profMsgMs) < 6000u) chrome_label(K, pX, py + snap(6.0f), s_profMsg, NOTE, s_profMsgErr ? 3 : 2);
+    else if (profErrMs_ && (unsigned)(GetTickCount() - profErrMs_) < 8000u) {
         char eb[160];
         _snprintf(eb, sizeof(eb), tr("Could not save \"%s\" -- check that the plugin folder is writable.",
                                      "Impossible d'enregistrer \"%s\" -- verifie que le dossier du plugin est accessible en ecriture."), profErrName_);
@@ -2402,7 +2480,16 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
     char hdr[48]; _snprintf(hdr, sizeof(hdr), tr("SAVED  (%d)", "ENREGISTR\xC3\x89S  (%d)"), nprof); hdr[47] = 0;
     chrome_label(K, pX, py, hdr, LBL, 4);
     py += snap(18.0f);
-    const float rowH = snap(56.0f), rGap = snap(8.0f);
+    // THE LIBRARY : a ledger (the hunt board's) -- a head band, a steel plate per profile : its lamp (lit = loaded), the
+    // name, what it is (Default / auto-loaded for a job / the character's), when it was saved ; then its actions
+    const float rowH = snap(48.0f), rGap = snap(4.0f), hh = snap(30.0f);
+    const float kbw = snap(112.0f), kgap = snap(6.0f), actW = 4.0f * kbw + 3.0f * kgap;
+    const float colType = pX + pW * 0.42f, colDate = pX + pW - actW - snap(24.0f);
+    {   const char* heads[3] = { tr("Profile", "Profil"), tr("Kind", "Type"), tr("Saved", "Enregistr\xC3\xA9") };
+        const float cx3[3] = { pX + snap(32.0f), colType, colDate }; const int al3[3] = { 0, 0, 2 };
+        if (nprof > 0) chrome_ledger_head(K, pX, py, pW, hh, heads, cx3, al3, 3);
+    }
+    py += hh + snap(6.0f);
     if (nprof == 0)
         chrome_label(K, pX, py + snap(24.0f), tr("No profiles yet -- quick-save one, or type a name and Create.", "Aucun profil -- fais une sauvegarde rapide, ou tape un nom et Cr\xC3\xA9""er."), TXT, 1);
     const int maxRows = (int)(((bot - bt - snap(10.0f)) - py) / (rowH + rGap));
@@ -2411,28 +2498,40 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         const char* nm = profile_name(i);
         const bool active = activeProf_[0] && strcmp(nm, activeProf_) == 0;
         const bool isDef  = strcmp(nm, "Default") == 0;
-        const bool isChar = charName && (strcmp(nm, charName) == 0 || (strncmp(nm, charName, cnLen) == 0 && (nm[cnLen] == ' ' || nm[cnLen] == '/')));
+        const bool isCharJob = charName && strncmp(nm, charName, cnLen) == 0 && nm[cnLen] == ' ' && nm[cnLen + 1];   // "Name MAIN-SUB" (profile_default_name) : auto-loaded on that job
+        const bool isChar = charName && strcmp(nm, charName) == 0;
+        char kind[64];
+        if (isDef) lstrcpynA(kind, tr("Default", "D\xC3\xA9""faut"), sizeof(kind));
+        else if (isCharJob) { _snprintf(kind, sizeof(kind), tr("Auto : %s", "Auto : %s"), nm + cnLen + 1); kind[63] = 0; }
+        else if (isChar) lstrcpynA(kind, tr("Character", "Personnage"), sizeof(kind));
+        else lstrcpynA(kind, tr("Custom", "Perso"), sizeof(kind));
+        char when[24]; if (!profile_mtime_text(nm, when, sizeof(when))) lstrcpynA(when, "-", sizeof(when));
         const float ap = stagger(anim_, i); g_fade = e * ap;
         const float ry = py + i * (rowH + rGap) + (1.0f - ap) * snap(12.0f);
-        const bool rowHov = !modal && inrect(mo, pX, ry, pW, rowH);
-        const float rt = ease(ctrl_uid_i(CTRL_ID, i), rowHov ? 1.0f : 0.0f);
-        chrome_rowplate(K, pX, ry, pW, rowH, active, rt * 0.5f);
-        const float cy = ry + rowH * 0.5f;
-        chrome_label(K, pX + snap(20.0f), cy, nm, TXT, active ? 2 : 0);
-        float bxa = pX + snap(20.0f) + chrome_label_w(K, nm, TXT) + snap(14.0f);
-        if (active) bxa = chrome_tag(K, bxa, cy, tr("ACTIVE", "ACTIF")) + snap(6.0f);
-        if (isDef)  bxa = chrome_tag_steel(K, bxa, cy, tr("DEFAULT", "D\xC3\x89""FAUT")) + snap(6.0f);
-        if (isChar) bxa = chrome_tag_steel(K, bxa, cy, charName) + snap(6.0f);
-        const float kbw = snap(120.0f), kbh = rowH - snap(14.0f), bgap = snap(8.0f);
-        const float dX = pX + pW - kbw - snap(8.0f), lX = dX - bgap - kbw, kY = ry + (rowH - kbh) * 0.5f;
-        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, i), lX, kY, kbw, kbh, active ? tr("Loaded", "Charg\xC3\xA9") : tr("Load", "Charger"), active ? 3 : 0, !modal && !active) && clk) {   // steel : brass is kept for the ONE main action
-            profile_load(nm); record_char_profile(nm);
-            strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
-            nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;
+        const float cx3[3] = { pX + snap(32.0f), colType, colDate }; const int al3[3] = { 0, 0, 2 };
+        const char* cells[3] = { nm, kind, when };
+        (void)chrome_ledger_row(K, ctrl_uid_i(CTRL_ID, 200 + i), pX, ry, pW, rowH, cells, cx3, al3, 3, active, (i & 1) != 0);   // the plate (a click does not load : the Load key does)
+        const float kbh = rowH - snap(12.0f), kY = ry + (rowH - kbh) * 0.5f;
+        float kx = pX + pW - actW - snap(8.0f);
+        if (!active) {
+            if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 300 + i), kx, kY, kbw, kbh, tr("Load", "Charger"), 0, !modal) && clk) {
+                profile_load(nm); record_char_profile(nm);
+                strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
+                nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;
+            }
         }
+        kx += kbw + kgap;
+        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 400 + i), kx, kY, kbw, kbh, tr("Duplicate", "Dupliquer"), 0, !modal) && clk) {
+            char cp[64]; if (prof_free_name(nm, tr(" (copy)", " (copie)"), cp, sizeof(cp)) && profile_copy(nm, cp)) {
+                char m[160]; _snprintf(m, sizeof(m), tr("Copied as \"%s\".", "Copi\xC3\xA9 sous \"%s\"."), cp); m[159] = 0; prof_msg(false, m); profDirty_ = true; }
+            else prof_msg(true, tr("Could not duplicate that profile.", "Impossible de dupliquer ce profil."));
+        }
+        kx += kbw + kgap;
+        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 500 + i), kx, kY, kbw, kbh, tr("Export", "Exporter"), 0, !modal) && clk) prof_export(nm);
+        kx += kbw + kgap;
         static char delArm[64] = { 0 }; static unsigned delMs = 0;   // armed by NAME : the list can re-sort within the 4 s
         const bool delAsk = delArm[0] && strcmp(delArm, nm) == 0 && GetTickCount() - delMs < 4000u;
-        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, i), dX, kY, kbw, kbh, delAsk ? tr("Sure ?", "S\xC3\xBBr ?") : tr("Delete", "Supprimer"), delAsk ? 4 : 2, !modal) && clk) {
+        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 600 + i), kx, kY, kbw, kbh, delAsk ? tr("Sure ?", "S\xC3\xBBr ?") : tr("Delete", "Supprimer"), delAsk ? 4 : 2, !modal) && clk) {
             if (!delAsk) { strncpy(delArm, nm, sizeof(delArm) - 1); delArm[sizeof(delArm) - 1] = 0; delMs = GetTickCount(); }
             else { delArm[0] = 0;
                 if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; }

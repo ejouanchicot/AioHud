@@ -85,7 +85,7 @@ static void geo_sample(GeoState& g) {
     g = GeoState{};
     g.visible = true; g.hasLuopan = true; g.bubbleSpell = 809; g.luopanHpp = 72; g.bubbleLeftSec = 105; g.dist = 3.4f;
     g.auraSpell = 771; g.auraLeftSec = 212;
-    g.entrustSpell = 779; strcpy(g.entrustTarget, "Kaories"); g.entrustLeftSec = 280;
+    g.entrustSpell = 779; strcpy(g.entrustTarget, "Morwenaelyssira"); g.entrustLeftSec = 280;   // the target : fictional (15 letters, the game's longest)
     g.mp = 1450; g.mpp = 76;
     g.cardValid = true; g.cardDeg = 70.0f; g.cardRank = 4;
     static const struct { unsigned short abil; const char* label; int sec; bool active; } J[] = {

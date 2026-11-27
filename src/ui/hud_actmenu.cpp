@@ -9268,10 +9268,11 @@ void plates_sample(const Frame& f, float sx, float sy, float sw, float sh) {
     for (int i = 0; i < 16; ++i) { P.view[i] = (i % 5 == 0) ? 1.0f : 0.0f; P.proj[i] = P.view[i]; }
     P.ok = P.wanted = P.camOk = true;
     struct S { float x, y, size; unsigned col, tint; unsigned char lead; bool ml; const char* name; };
+    // FICTIONAL player names, 15 letters -- the longest the game accepts (never a real character : 2026-11-27)
     static const S SM[] = {
-        { 0.50f, 0.30f, 1.00f, 0xC0808080u, 0x00865F45u, 0x92, true,  "Tetsouo" },    // you : the linkshell pearl (blue), the Master Level stars
-        { 0.22f, 0.55f, 0.70f, 0xC0618080u, 0x0038FB38u, 0x92, false, "Kaories" },    // a party member (cyan), a green linkshell
-        { 0.78f, 0.55f, 0.70f, 0xC0808080u, 0, 0x9C, false, "Snicky" },              // a bazaar
+        { 0.50f, 0.30f, 1.00f, 0xC0808080u, 0x00865F45u, 0x92, true,  "Aldwynvaleskari" },    // you : the linkshell pearl (blue), the Master Level stars
+        { 0.22f, 0.55f, 0.70f, 0xC0618080u, 0x0038FB38u, 0x92, false, "Morwenaelyssira" },    // a party member (cyan), a green linkshell
+        { 0.78f, 0.55f, 0.70f, 0xC0808080u, 0, 0x9C, false, "Kestrelvanthorn" },              // a bazaar
         { 0.35f, 0.80f, 0.45f, 0xC0618061u, 0, 0, false, "Synergy Furnace" },        // an NPC, farther
         { 0.70f, 0.82f, 0.40f, 0xC0808061u, 0, 0, false, "Vampire Leech" },          // a monster, farther
     };

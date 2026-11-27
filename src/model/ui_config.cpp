@@ -1258,6 +1258,36 @@ static void profile_path(const char* name, char* out, int cap) {
     char fb[160]; name_to_file(name, fb, sizeof(fb));
     _snprintf(out, cap, "%s\\%s.txt", profile_dir(), fb); out[cap - 1] = 0;
 }
+// ---- a profile as a FILE (the Profile tab's library : copy, share, its date -- 2026-11-27) ----
+bool profile_copy(const char* src, const char* dst) {
+    if (!src || !src[0] || !dst || !dst[0] || profile_exists(dst)) return false;
+    char a[300], b[300]; profile_path(src, a, sizeof(a)); profile_path(dst, b, sizeof(b));
+    return CopyFileA(a, b, TRUE) != 0;
+}
+int profile_read_text(const char* name, char* out, int cap) {   // the file's bytes (-1 = unreadable / too big)
+    if (!name || !out || cap < 2) return -1;
+    char p[300]; profile_path(name, p, sizeof(p));
+    FILE* f = fopen(p, "rb"); if (!f) return -1;
+    const int n = (int)fread(out, 1, cap - 1, f); const bool more = fgetc(f) != EOF; fclose(f);
+    if (more) return -1;
+    out[n] = 0; return n;
+}
+bool profile_write_text(const char* name, const char* text, int len) {   // a NEW profile from text (never overwrites)
+    if (!name || !name[0] || !text || len <= 0 || profile_exists(name)) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    FILE* f = fopen(p, "wb"); if (!f) return false;
+    const bool ok = (int)fwrite(text, 1, len, f) == len; fclose(f);
+    if (!ok) DeleteFileA(p);
+    return ok;
+}
+bool profile_mtime_text(const char* name, char* out, int cap) {   // "27/11 04:56" (local time) ; false if unreadable
+    if (!name || !out || cap < 12) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    WIN32_FILE_ATTRIBUTE_DATA fa; if (!GetFileAttributesExA(p, GetFileExInfoStandard, &fa)) return false;
+    FILETIME lt; SYSTEMTIME st; FileTimeToLocalFileTime(&fa.ftLastWriteTime, &lt); FileTimeToSystemTime(&lt, &st);
+    _snprintf(out, cap, "%02d/%02d %02d:%02d", st.wDay, st.wMonth, st.wHour, st.wMinute); out[cap - 1] = 0;
+    return true;
+}
 void profile_refresh() {
     g_profCount = 0;
     char pat[300]; _snprintf(pat, sizeof(pat), "%s\\*.txt", profile_dir()); pat[sizeof(pat) - 1] = 0;
