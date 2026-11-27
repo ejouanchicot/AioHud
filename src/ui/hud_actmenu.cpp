@@ -713,8 +713,26 @@ bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
     return true;
 }
 // a menu row from an entry : its image label when the client has one (grey -> the grey look ; alt -> the toggle's other)
+// THE MENUS WHOSE NAMES ARE IMAGES ONLY (a heavier bitmap type), written in OUR type -- one look with every other menu
+// (2026-11-27). By window, the rows in the client's DISPLAY order, measured in game ; 0 : not one of them
+static const char* known_label(const char* win, int row, int n) {
+    struct K { const char* w; int n; const char* en[15]; const char* fr[15]; };
+    static const K T[] = {
+        { "configwi", 13, { "Gameplay", "Chat Filters", "Font Colors", "Windows", "Log", "Misc.", "Misc. 2", "Misc. 3", "Misc. 4", "Effects", "Mouse/Cam.", "Global", "Gamepad" },
+                          { "Jeu", "Filtres du chat", "Couleurs du texte", "Fen\xC3\xAAtres", "Journal", "Divers", "Divers 2", "Divers 3", "Divers 4", "Effets", "Souris/Cam\xC3\xA9ra", "Global", "Manette" } },
+        { "conf5m",   3, { "Shared", "Window 1", "Window 2" }, { "Commun", "Fen\xC3\xAAtre 1", "Fen\xC3\xAAtre 2" } },
+        { "conf11m",  3, { "Window 1", "Window 2", "Default" }, { "Fen\xC3\xAAtre 1", "Fen\xC3\xAAtre 2", "Par d\xC3\xA9""faut" } },
+        { "mcrmenu",  2, { "Edit Macro", "Edit Equip. Set" }, { "Modifier une macro", "Modifier un set" } },
+        { "mogcont", 15, { "Mog Safe", "Mog Safe 2", "Storage", "Mog Locker", "Mog Satchel", "Mog Sack", "Mog Case", "Mog Wardrobe", "Mog Wardrobe 2", "Mog Wardrobe 3", "Mog Wardrobe 4", "Mog Wardrobe 5", "Mog Wardrobe 6", "Mog Wardrobe 7", "Mog Wardrobe 8" },
+                          { "Coffre", "Coffre 2", "EntrepÃ´t", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe", "Garde-robe 2", "Garde-robe 3", "Garde-robe 4", "Garde-robe 5", "Garde-robe 6", "Garde-robe 7", "Garde-robe 8" } },
+        { "mcrselop", 5, { "Confirm", "Change Name", "Copy", "Paste", "Delete" }, { "Confirmer", "Renommer", "Copier", "Coller", "Supprimer" } },
+    };
+    for (const K& k : T) if (!strcmp(win, k.w)) return n == k.n && row >= 0 && row < k.n ? gtr(k.en[row], k.fr[row]) : 0;
+    return 0;
+}
 void row_image(u32 dev, const NativeEntryMenu& m, int i, RowSpec& r, bool alt = false) {
     if (i < 0 || i >= 32 || !m.sheet[i]) return;
+    if (const char* kn = known_label(m.name, i, m.n)) { r.label = kn; return; }   // a name in our type (the table above)
     if (!client_labels_ok()) return;   // the client's own label : in its language -- only when the menus speak it
     // (2026-11-27 : tried "our text first" -- Config's column then showed its HELP lines, the names are in the images only)
     const unsigned short id = alt && m.spr[i][1] ? m.spr[i][1] : m.spr[i][0];   // (grey : the normal look, dimmed by the row)
@@ -6199,13 +6217,19 @@ void gen_draw(const Frame& f) {
     for (int s = 0; s < GEN_MENUS; ++s) {
         if (!g_gnName[s][0]) continue;
         bool open = false; for (int i = 0; i < G0.n; ++i) if (!strcmp(G0.m[i].name, g_gnName[s])) open = true;
+        // a menu it opened IN ITS PLACE (the client's rect, its top right ; Config -> Windows : Shared / Window 1 / Window 2)
+        // and that has the hand REPLACES it, as in the game -- they were drawn one over the other (2026-11-27)
+        for (int i = 0; i < G0.n && open; ++i) {
+            const NativeEntryMenu& O = G0.m[i];
+            if (strcmp(O.name, g_gnName[s]) && O.focused && !last[s].focused && O.ry0 == last[s].ry0 && O.rx1 == last[s].rx1) open = false;
+        }
         const NativeEntryMenu& L = last[s];        if (!block_ease(g_gnB[s], open, now, dt) || L.n <= 0 || L.uiW <= 0) { if (!open && g_gnB[s].vis <= 0.0f) g_gnName[s][0] = 0; continue; }
         RowSpec rows[16] = {}; static char bufs[GEN_MENUS][16][48]; int cur = 0; const int n = L.n < 16 ? L.n : 16;
         for (int i = 0; i < n; ++i) {
             rows[i].label = L.label[i][0] ? L.label[i] : auc_label(lastHelp[s][i], bufs[s][i], sizeof(bufs[s][i]));
             rows[i].icon = IC_NONE; rows[i].off = L.state[i] == 5;
             if (L.entry[i] == L.cursor) cur = i + 1;
-            if (!L.label[i][0]) row_image(f.dev, L, i, rows[i]);
+            if (!L.label[i][0]) row_image(f.dev, L, i, rows[i]);   // the client's image, or a known name in our type
         }
         // a map marker's menu : entry 2 places the marker or removes it -- the client draws keytops3 #29 / #35 over it by
         // the marker's state (map-macro-re s.1.5) ; its definition's own label ("Markers") is not what it does
@@ -6538,7 +6562,7 @@ void macro_edit_draw(const Frame& f) {
         if (A > 0.0f) {
             const u32 sh = with_alpha(sh0, A);
             float bw = snap((float)(last.px1 - last.px0) * sx); if (bw < 520.0f * S) bw = snap(520.0f * S);
-            const float cellH = snap(k.capH * 1.55f), headH = snap(k.capH + k.gap), lab = snap(34.0f * S), rg = snap(4.0f * S);
+            const float cellH = snap(k.capH * 1.55f), headH = snap(k.capH + k.gap), lab = snap(34.0f * S), rg = snap(2.0f * S);
             const float bh = snap(pad + headH + cellH + rg + cellH + pad);
             float bx = snap((float)last.px0 * sx), by = snap((float)last.py0 * sy);
             if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
@@ -6549,7 +6573,7 @@ void macro_edit_draw(const Frame& f) {
             char head[64]; _snprintf(head, sizeof(head), "Macro Set %s (#%d)", last.bookTitle, last.set + 1); head[63] = 0;
             fo->begin(dev);
             fo->draw_lc(dev, snap(bx + pad), snap(by + pad + headH * 0.45f), head, tz * 0.92f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-            const float L = bx + pad + lab, W = bw - 2.0f * pad - lab, cg = snap(4.0f * S), cw = (W - 9.0f * cg) / 10.0f;
+            const float L = bx + pad + lab, W = bw - 2.0f * pad - lab, cg = snap(2.0f * S), cw = (W - 9.0f * cg) / 10.0f;
             int hovBar = -1, hovCell = 0;
             for (int bar = 0; bar < 2; ++bar) {
                 const float cy0 = snap(by + pad + headH + (float)bar * (cellH + rg));
@@ -6560,8 +6584,9 @@ void macro_edit_draw(const Frame& f) {
                     const float cx = snap(L + (float)i * (cw + cg)), cwi = snap(L + (float)(i + 1) * (cw + cg) - cg) - cx;
                     const char* nm = last.name[bar * 10 + i];
                     const bool hand = last.hand[bar] == i + 1, empty = !nm[0], lit = hand && active;
-                    const float r = snap(4.0f * S);
-                    rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(empty ? 0x14FFFFFFu : 0x22FFFFFFu, A), with_alpha(empty ? 0x0CFFFFFFu : 0x16FFFFFFu, A));
+                    const float r = snap(6.0f * S);
+                    rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(0x80101826u, A * (empty ? 0.7f : 1.0f)), with_alpha(0x80080C14u, A * (empty ? 0.7f : 1.0f)));   // the macro bar's well
+                    rrect_stroke(dev, cx, cy0, cwi, cellH, r, with_alpha(empty ? 0x22C8D6EAu : 0x40C8D6EAu, A), 1.0f);
                     if (lit) { rrect_clip_begin(dev, cx, cy0, cwi, cellH, r); party_selframe(dev, cx, cy0, cwi, cellH, f.t, A, 0); rrect_clip_end(dev); }
                     if (hand) rrect_stroke(dev, cx, cy0, cwi, cellH, r, with_alpha(lit ? 0xC8FFDA8Au : 0x50FFDA8Au, A), 1.0f);
                     char key[4]; _snprintf(key, sizeof(key), "%d", (i + 1) % 10); key[3] = 0;

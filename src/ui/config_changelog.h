@@ -696,7 +696,7 @@ static const ChangeLine CL_112[] = {
     { "*The list of a slot shows the bag it lists* (Inventory, Wardrobe 2...) on its Storage Options row.",
       "*La liste d'un emplacement indique le sac affich\xC3\xA9* (Inventaire, Garde-robe 2...) sur sa ligne Storage Options.", CK_NEW, "Game UI", "Interface du jeu" },
     { "*One look for every redrawn menu* : the same text size, row height, titles and margins as the Equipment sheet -- the main menu, its lists, Status, Quests, Missions, Key Items, Linkshell, Synthesis, the shops, the auction house, the top bar, the macro bar.",
-      "*Un seul style pour tous les menus redessin\xC3\xA9s* : la m\xC3\xAAme taille de texte, hauteur de ligne, titres et marges que la fiche \xC3\x89quipement -- menu principal, listes, Status, Quests, Missions, Key Items, Linkshell, Synth\xC3\xA8se, boutiques, h\xC3\xB4tel des ventes, barre du haut.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+      "*Un seul style pour tous les menus redessin\xC3\xA9s* : la m\xC3\xAAme taille de texte, hauteur de ligne, titres et marges que la fiche \xC3\x89quipement -- menu principal, listes, Status, Quests, Missions, Key Items, Linkshell, Synth\xC3\xA8se, boutiques, h\xC3\xB4tel des ventes, barre du haut, barre de macros.", CK_IMPROVED, "Game UI", "Interface du jeu" },
     { "*No more hand cursor in the redrawn menus* : the lit row or cell is the cursor.",
       "*Plus de main dans les menus redessin\xC3\xA9s* : la ligne ou la case allum\xC3\xA9""e est le curseur.", CK_IMPROVED, "Game UI", "Interface du jeu" },
     { "*Item cells all the same size* (Synthesis, Check, the delivery box, trade), as the Equipment grid.",
