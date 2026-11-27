@@ -82,6 +82,15 @@ static int select_row(Kit& K, int uid, float x, float& y, float w, const char* l
 int cfg_select_row(Kit& K, int uid, float x, float& y, float w, const char* label, const char* val, const char* why, void* p, int size) {
     return select_row(K, uid, x, y, w, label, val, why, p, size, nullptr);
 }
+// a HUE row : the label, and the hues as one enamel ruler on the right (the preset tints of a frame)
+int cfg_hue_row(Kit& K, int uid, float x, float& y, float w, const char* label, const u32* cols, int n, int sel, const char* why, void* p, int size) {
+    if (culled(K, y, why)) return -1;
+    const Row r = row_begin(K, x, y, w, label, why, differs(p, size, false));
+    const float sw = K.px(560.0f), sh = K.px(26.0f);
+    const int hit = chrome_hue_strip(K, uid, r.right - sw, r.cy - sh * 0.5f, sw, sh, cols, n, sel, (r.st & KS_DISABLED) != 0);
+    row_end(K, x, y, w, r, p, size);
+    return why ? -1 : hit;
+}
 void cfg_note(Kit& K, float x, float& y, const char* text) {
     const float h = K.px(34.0f);
     K.fr->begin(K.dev);
@@ -89,8 +98,8 @@ void cfg_note(Kit& K, float x, float& y, const char* text) {
     y += h;
 }
 void cfg_color_row(Kit& K, int uidBase, float x, float& y, float w, unsigned* col) {
-    const float h = color_picker_height() + K.px(12.0f);
-    if (y + h >= K.clipTop && y <= K.clipBot && color_picker(K.dev, K.fr, K.mo, ctrl_uid_i(uidBase, 0), ctrl_uid_i(uidBase, 1), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), col))
+    const float h = kit_color_picker_height(K) + K.px(12.0f);
+    if (y + h >= K.clipTop && y <= K.clipBot && kit_color_picker(K, ctrl_uid_i(uidBase, 0), ctrl_uid_i(uidBase, 1), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), col))
         save_ui_config();
     y += h;
 }
@@ -234,19 +243,13 @@ void cfg_frame_rows(Kit& K, int uidBase, float x, float& y, float w, const Frame
     if (cfg_toggle_row(K, ctrl_uid_i(uidBase, 7), x, y, w, tr("Custom colour", "Couleur perso"), *r.hue != 0, ownWhy, r.hue, 4)) {
         *r.hue = *r.hue ? 0u : (box_hue_color(var) | 0xFF000000u); save_ui_config(); }
     if (!ownWhy && *r.hue) {   // the free colour
-        if (color_picker(K.dev, K.fr, K.mo, ctrl_uid_i(uidBase, 8), ctrl_uid_i(uidBase, 9), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), r.hue)) save_ui_config();
-        y += color_picker_height() + K.px(12.0f);
-    } else if (!ownWhy) {      // the preset hues : enamel in steel bezels, the chosen one ringed in brass
-        const float s = K.px(34.0f), gap = K.px(8.0f), x0 = x + K.px(18.0f);
-        int perRow = (int)((w - K.px(36.0f) + gap) / (s + gap)); if (perRow < 1) perRow = 1;
-        const int n = box_hue_count();
-        const float gy = y + K.px(6.0f);
-        for (int i = 0; i < n; ++i) {
-            const float sx = x0 + (i % perRow) * (s + gap), sy = gy + (i / perRow) * (s + gap);
-            if (kit_swatch(K, ctrl_uid_i(uidBase, 100 + i), sx, sy, box_hue_color(i) | 0xFF000000u, i == var ? KS_FOCUS : 0)) {
-                *r.theme = window_theme_index(fam, i); save_ui_config(); }
-        }
-        y = gy + ((n + perRow - 1) / perRow) * (s + gap) + K.px(6.0f);
+        if (kit_color_picker(K, ctrl_uid_i(uidBase, 8), ctrl_uid_i(uidBase, 9), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), r.hue)) save_ui_config();
+        y += kit_color_picker_height(K) + K.px(12.0f);
+    } else if (!ownWhy) {      // the preset hues : one enamel ruler (2026-11-27 -- the grid of 31 swatches was "old school")
+        u32 cols[64]; int n = box_hue_count(); if (n > 64) n = 64;
+        for (int i = 0; i < n; ++i) cols[i] = box_hue_color(i);
+        const int hit = cfg_hue_row(K, ctrl_uid_i(uidBase, 100), x, y, w, tr("Tint", "Teinte"), cols, n, var, nullptr, nullptr, 0);
+        if (hit >= 0 && hit != var) { *r.theme = window_theme_index(fam, hit); save_ui_config(); }
     }
     float v01 = (*r.lum + 1.0f) * 0.5f; v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
     const int pct = (int)(*r.lum * 100.0f + (*r.lum >= 0.0f ? 0.5f : -0.5f));
@@ -290,8 +293,8 @@ void cfg_text_rows(Kit& K, int uidBase, float x, float& y, float w, const char* 
     if (cfg_toggle_row(K, ctrl_uid_i(uidBase, 7), x, y, w, tr("Own colour", "Couleur perso"), ts.colorOn, nullptr, &ts.colorOn, (int)sizeof(bool))) {
         ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
     if (ts.colorOn) {
-        if (color_picker(K.dev, K.fr, K.mo, ctrl_uid_i(uidBase, 8), ctrl_uid_i(uidBase, 9), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), &ts.color)) save_ui_config();
-        y += color_picker_height() + K.px(12.0f);
+        if (kit_color_picker(K, ctrl_uid_i(uidBase, 8), ctrl_uid_i(uidBase, 9), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), &ts.color)) save_ui_config();
+        y += kit_color_picker_height(K) + K.px(12.0f);
         const int a = (int)((ts.color >> 24) & 0xFFu); float v01 = a / 255.0f;
         char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(v01 * 100.0f + 0.5f)); b[15] = 0;
         if (cfg_slider_row(K, ctrl_uid_i(uidBase, 10), x, y, w, tr("Opacity", "Opacit\xC3\xA9"), &v01, b, nullptr, nullptr, 0, false)) {

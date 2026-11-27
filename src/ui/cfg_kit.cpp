@@ -822,6 +822,49 @@ void chrome_floor(Kit& K, float x, float y, float w, float h) {
     grad_quad(dev, x, y, K.px(12.0f), h, MA(0x50, 0x000000u), 0, MA(0x50, 0x000000u), 0);
 }
 
+// a BEZEL : a recess cut in the steel (an instrument's seat)
+void chrome_bezel(Kit& K, float x, float y, float w, float h, float r) { hollow(K, x, y, w, h, r, STEEL(), 0xFF07090Cu); }
+
+// ======== the HUE STRIP (2026-11-27 : the swatch grid was "old school") ========
+// One enamel band set in a steel channel, a segment per hue, joined like a colour ruler ; the chosen one framed in brass
+// and standing proud of the band ; a hovered one lit. Returns the clicked index, or -1.
+int chrome_hue_strip(Kit& K, int id, float x, float y, float w, float h, const u32* cols, int n, int sel, bool disabled) {
+    if (n < 1) return -1;
+    const u32 dev = K.dev;
+    hollow(K, x, y, w, h, K.px(4.0f), STEEL(), 0xFF07090Cu);                 // the channel
+    const float g = K.px(3.0f), ix = x + g, iy = y + g, iw = w - 2.0f * g, ih = h - 2.0f * g;
+    const float sw = iw / (float)n;
+    int hot = -1;
+    if (!disabled && K.mo && K.mo->x >= ix && K.mo->x < ix + iw && K.mo->y >= y && K.mo->y < y + h) hot = (int)((K.mo->x - ix) / sw);
+    if (hot >= n) hot = n - 1;
+    cs(dev);
+    for (int i = 0; i < n; ++i) {   // the enamel : each hue a little lighter at the top, deeper at the foot
+        const float sx = snap(ix + i * sw), ex = snap(ix + (i + 1) * sw);
+        u32 c = cols[i] | 0xFF000000u; if (disabled) c = m_toward(c, 0xFF30343Au, 0.65f);
+        q4(dev, sx, iy, ex - sx, ih, fa(m_toward(c, 0xFFFFFFFFu, 0.16f)), fa(m_toward(c, 0xFFFFFFFFu, 0.16f)), fa(m_scale(c, 0.62f)), fa(m_scale(c, 0.62f)));
+        if (i) flat(dev, sx, iy, 1.0f, ih, MA(0x70, 0x000000u));             // the joint between two segments
+    }
+    grad_quad(dev, ix, iy, iw, ih * 0.42f, MA(0x30, 0xFFFFFFu), MA(0x30, 0xFFFFFFu), 0, 0);   // the glaze
+    grad_quad(dev, ix, iy + ih * 0.7f, iw, ih * 0.3f, 0, 0, MA(0x40, 0x000000u), MA(0x40, 0x000000u));
+    if (hot >= 0 && hot != sel) {   // hovered : lit, a pale rim
+        const float sx = snap(ix + hot * sw), ex = snap(ix + (hot + 1) * sw);
+        cs_add(dev); flat(dev, sx, iy, ex - sx, ih, MA(0x30, 0xFFFFFFu)); cs(dev);
+        rrect(dev, sx - 1.0f, iy - 1.0f, ex - sx + 2.0f, ih + 2.0f, 0.0f, 0, MA(0xC0, 0xFFFFFFu));
+    }
+    if (sel >= 0 && sel < n) {      // chosen : the segment proud of the band, in a brass frame
+        const float sx = snap(ix + sel * sw), ex = snap(ix + (sel + 1) * sw), o = K.px(3.0f);
+        const float fx = sx - o, fy = y - o * 0.5f, fw = (ex - sx) + 2.0f * o, fh = h + o;
+        drop_shadow(dev, fx, fy, fw, fh, K.px(4.0f), 120);
+        rrect(dev, fx, fy, fw, fh, K.px(2.5f), fa(BRASS().lite), fa(BRASS().bot));                 // the brass frame
+        u32 c = cols[sel] | 0xFF000000u; if (disabled) c = m_toward(c, 0xFF30343Au, 0.65f);
+        const float b = K.px(2.0f);
+        q4(dev, fx + b, fy + b, fw - 2.0f * b, fh - 2.0f * b, fa(m_toward(c, 0xFFFFFFFFu, 0.22f)), fa(m_toward(c, 0xFFFFFFFFu, 0.22f)), fa(m_scale(c, 0.66f)), fa(m_scale(c, 0.66f)));
+        grad_quad(dev, fx + b, fy + b, fw - 2.0f * b, (fh - 2.0f * b) * 0.45f, MA(0x48, 0xFFFFFFu), MA(0x48, 0xFFFFFFu), 0, 0);
+    }
+    (void)id;
+    return (hot >= 0 && K.click) ? hot : -1;
+}
+
 // ======== the LEDGER (a hunt board : 2026-11-27, "comme un tableau de chasse") ========
 // In the config's metal (a flat dark table "lost the look") : a head band, then a row is a thin steel PLATE
 // raised -- its lamp set in the plate, its words in the keys' smoked glass, lit white on hover ; the chosen row is

@@ -2,6 +2,7 @@
 // (palette state + animation springs + AA primitives + the labeled controls), lifted out of
 // config_page.cpp so every module's *_config.cpp draws with the same controls and ease() namespaces.
 #include "ui/config_controls.h"
+#include "ui/cfg_kit.h"     // Kit + the metal parts (the redesign's colour picker, kit_color_picker)
 #include "gfx/window.h"      // window_tex_theme_count / window_theme_name (the FFXI skins)
 #include "ui/box_style.h"       // box_hue_count / box_hue_color (the procedural families)
 #include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
@@ -968,6 +969,133 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
         const u32 cc2 = cp_chart(col, row);
         cp_swatch(dev, sx, sy, cch, cch, cc2, ((*color) & 0x00FFFFFFu) == (cc2 & 0x00FFFFFFu),
                 inrect(mo, sx, sy, cch, cch) ? hv : 0.0f);
+    }
+    return changed;
+}
+
+// ======== the COLOUR PICKER in the forged metal (2026-11-27 : the old card -- flat blue-grey, chips -- was "old school")
+// Same instrument, same state (PickHSV, the slider latch, the favourites, the chart) ; the parts are the kit's :
+// the SV square and the hue column seated in steel bezels, a brass handle, the colour on an enamel plate ringed in
+// brass with its code cut in it, the favourites and the chart as enamel rulers (the frame's Tint row).
+namespace { const float KP_PAD = 12.0f, KP_SQ = 156.0f, KP_HUEW = 20.0f, KP_GAP = 12.0f, KP_SWH = 46.0f,
+                        KP_FAVH = 24.0f, KP_RULH = 22.0f, KP_RULG = 6.0f, KP_ROWGAP = 16.0f, KP_MAXW = 640.0f; }
+float kit_color_picker_height(const Kit& K) {
+    return K.px(KP_PAD) * 2.0f + K.px(KP_SQ) + K.px(KP_ROWGAP) + 3.0f * K.px(KP_RULH) + 2.0f * K.px(KP_RULG);
+}
+static u32 m_toward_(u32 a, u32 b, float t) { return lerpc(a, b, t); }
+static u32 MA_(u32 a, u32 col) { return (((u32)(a * g_fade)) << 24) | (col & 0x00FFFFFFu); }
+bool kit_color_picker(Kit& K, int uidSV, int uidHue, float x, float y, float w, u32* color) {
+    if (!color) return false;
+    PickHSV* p = pick_slot(uidSV, *color);
+    if (!p) return false;
+    const u32 dev = K.dev; const MouseState* mo = K.mo;
+    const u32 alpha = *color & 0xFF000000u;
+    const float W = w > K.px(KP_MAXW) ? K.px(KP_MAXW) : w, H = kit_color_picker_height(K);
+    const float pad = K.px(KP_PAD), sq = K.px(KP_SQ), hw = K.px(KP_HUEW);
+    const float cx0 = x + pad, cy0 = y + pad, cw0 = W - 2.0f * pad;
+    const float hueX = cx0 + sq + K.px(KP_GAP);
+    const float rx = hueX + hw + K.px(KP_GAP + 6.0f), rw = cx0 + cw0 - rx;
+    const float swH = K.px(KP_SWH), favLabY = cy0 + swH + K.px(14.0f), favY = favLabY + K.px(12.0f), favH = K.px(KP_FAVH);
+    const float rulY = cy0 + sq + K.px(KP_ROWGAP), rulH = K.px(KP_RULH), rulG = K.px(KP_RULG);
+    const u32 hue = hsv2rgb(p->h, 1.0f, 1.0f, 0xFF000000u);
+
+    // ---- interaction (as the old picker) ----
+    const bool hotSV = inrect(mo, cx0, cy0, sq, sq), hotHue = inrect(mo, hueX, cy0, hw, sq);
+    if (mo && mo->clicked && g_slider < 0) { if (hotSV) g_slider = uidSV; else if (hotHue) g_slider = uidHue; }
+    bool changed = false;
+    auto apply = [&](u32 nc) { nc = (nc & 0x00FFFFFFu) | alpha; if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); } };
+    if (g_slider == uidSV) {
+        if (mo && mo->down) { p->s = clampf((mo->x - cx0) / sq, 0.0f, 1.0f); p->v = clampf(1.0f - (mo->y - cy0) / sq, 0.0f, 1.0f);
+                              const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
+        else { g_slider = -1; save_ui_config(); }
+    } else if (g_slider == uidHue) {
+        if (mo && mo->down) { p->h = clampf((mo->y - cy0) / sq, 0.0f, 1.0f) * 360.0f;
+                              const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
+        else { g_slider = -1; save_ui_config(); }
+    }
+
+    // ---- the tray : the whole instrument sits in one recess ----
+    chrome_bezel(K, x, y, W, H, K.px(6.0f));
+
+    // ---- SV square, in its bezel (the exact two-pass decomposition of the old picker : no crease) ----
+    chrome_bezel(K, cx0 - K.px(3.0f), cy0 - K.px(3.0f), sq + K.px(6.0f), sq + K.px(6.0f), K.px(4.0f));
+    cs(dev);
+    q4(dev, cx0, cy0, sq, sq, 0xFFFFFFFFu, hue, 0xFFFFFFFFu, hue);
+    q4(dev, cx0, cy0, sq, sq, 0x00000000u, 0x00000000u, 0xFF000000u, 0xFF000000u);
+    {   const float cxp = cx0 + p->s * sq, cyp = cy0 + (1.0f - p->v) * sq;
+        const float ct = ease(uidSV, 3, (hotSV || g_slider == uidSV) ? 1.0f : 0.0f);
+        disc(dev, cxp, cyp + 1.0f, K.px(7.0f) + K.px(1.0f) * ct, 0x66000000u);
+        disc(dev, cxp, cyp, K.px(6.4f) + K.px(1.0f) * ct, 0xFF8E7440u);          // a brass ring
+        disc(dev, cxp, cyp, K.px(5.2f) + K.px(1.0f) * ct, 0xFFD4B574u);
+        disc(dev, cxp, cyp, K.px(3.4f) + K.px(1.0f) * ct, *color | 0xFF000000u); }
+
+    // ---- the hue column, in its channel ; a brass handle across it ----
+    chrome_bezel(K, hueX - K.px(3.0f), cy0 - K.px(3.0f), hw + K.px(6.0f), sq + K.px(6.0f), K.px(4.0f));
+    {   static const u32 HUE6[7] = { 0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFFFu, 0xFF0000FFu, 0xFFFF00FFu, 0xFFFF0000u };
+        const float segH = sq / 6.0f;
+        cs(dev);
+        for (int i = 0; i < 6; ++i) { const float sy = cy0 + i * segH; q4(dev, hueX, sy, hw, segH + 1.0f, HUE6[i], HUE6[i], HUE6[i + 1], HUE6[i + 1]); }
+        const float hcy = snap(cy0 + (p->h / 360.0f) * sq), hh = K.px(8.0f);
+        drop_shadow(dev, hueX - K.px(5.0f), hcy - hh * 0.5f, hw + K.px(10.0f), hh, K.px(2.0f), 110);
+        rrect(dev, hueX - K.px(5.0f), hcy - hh * 0.5f, hw + K.px(10.0f), hh, K.px(2.5f), fa(0xFFE2C482u), fa(0xFF8E7440u));
+        flat(dev, hueX - K.px(3.0f), hcy - hh * 0.5f + 1.0f, hw + K.px(6.0f), 1.0f, MA_(0x90, 0xFFF0C8u)); }
+
+    // ---- the colour : an enamel plate in a brass ring, its code cut in it ----
+    {   const u32 cur = *color | 0xFF000000u;
+        rrect(dev, rx, cy0, rw, swH, K.px(5.0f), fa(0xFFD4B574u), fa(0xFF5E4A26u));                 // the brass ring
+        const float b = K.px(3.0f);
+        q4(dev, rx + b, cy0 + b, rw - 2.0f * b, swH - 2.0f * b, fa(shade(cur, 0.08f)), fa(shade(cur, 0.08f)), fa(shade(cur, -0.22f)), fa(shade(cur, -0.22f)));
+        grad_quad(dev, rx + b, cy0 + b, rw - 2.0f * b, (swH - 2.0f * b) * 0.40f, MA_(0x26, 0xFFFFFFu), MA_(0x26, 0xFFFFFFu), 0, 0);
+        char hb[10]; sprintf(hb, "#%06X", (unsigned)(*color & 0x00FFFFFFu));
+        const int lum = (77 * (int)((cur >> 16) & 0xFF) + 150 * (int)((cur >> 8) & 0xFF) + 29 * (int)(cur & 0xFF)) >> 8;
+        const bool darkTxt = lum > 140;
+        K.fs->begin(dev);
+        K.fs->draw_c(dev, snap(rx + rw * 0.5f), snap(cy0 + swH * 0.5f) + (darkTxt ? 1.0f : -1.0f), hb, K.px(15.0f), darkTxt ? MA_(0x60, 0xFFFFFFu) : MA_(0xA0, 0x000000u), 0, 0.0f);   // the cut's lip
+        K.fs->draw_c(dev, snap(rx + rw * 0.5f), snap(cy0 + swH * 0.5f), hb, K.px(15.0f), fa(darkTxt ? 0xFF14100Au : 0xFFF4EEE4u), 0, 0.0f); }
+
+    // ---- favourites : a "+" key (keeps the colour), then the kept colours as one enamel ruler ; right-click drops one ----
+    chrome_label(K, rx, favLabY + K.px(4.0f), tr("FAVOURITES", "FAVORIS"), K.px(11.5f), 4);
+    {   const float kw = favH;   // a SQUARE key, the ruler's height (2026-11-27 : a smaller key with a font "+" was "rate")
+        if (chrome_keybtn(K, ctrl_uid_i(uidSV, 40), rx, favY, kw, favH, "", 0, true, true) && K.click) { if (ui_config().fav_color_add(*color)) save_ui_config(); }
+        {   // the "+" : two strokes CUT in the key, glass at the bottom of the cut -- smoked at rest, lit on hover (the keys' words)
+            const bool hov = inrect(mo, rx, favY, kw, favH), press = hov && mo && mo->down;
+            const float t = ease(uidSV, 4, hov ? 1.0f : 0.0f), d = press ? K.px(1.2f) : 0.0f;
+            const float pcx = snap(rx + kw * 0.5f), pcy = snap(favY + favH * 0.5f + d * 0.5f), L = K.px(6.5f), T = K.px(2.6f);
+            cs(dev);
+            auto bars = [&](float ox, float oy, u32 c) {
+                flat(dev, snap(pcx - L + ox), snap(pcy - T * 0.5f + oy), snap(2.0f * L), snap(T), c);
+                flat(dev, snap(pcx - T * 0.5f + ox), snap(pcy - L + oy), snap(T), snap(2.0f * L), c); };
+            bars(0.0f,  1.0f, MA_((u32)(0x40 * (1.0f - t * 0.5f)), 0xFFFFFFu));            // the cut's lit lower lip
+            bars(0.0f, -1.0f, MA_(0xD0, 0x000000u));                                      // the upper wall's shadow
+            if (t > 0.01f) { cs_add(dev); bars(0.0f, 0.0f, MA_((u32)(0x30 * t), 0xC8DCFFu)); for (int k = 0; k < 4; ++k) bars((k & 1 ? 1.0f : -1.0f) * K.px(1.4f), (k & 2 ? 1.0f : -1.0f) * K.px(1.4f), MA_((u32)(0x14 * t), 0xC8DCFFu)); cs(dev); }
+            bars(0.0f, 0.0f, fa(m_toward_(0xFF2A2E34u, 0xFFF6FAFFu, t)));                  // the glass
+        }
+        const int nF = ui_config().favColorN;
+        const float fx = rx + kw + K.px(6.0f), fw = rw - kw - K.px(6.0f);
+        if (nF <= 0) {
+            K.fr->begin(dev);
+            K.fr->draw_lc(dev, fx + K.px(4.0f), favY + favH * 0.5f, tr("+ keeps this colour", "+ garde cette couleur"), K.px(12.0f), fa(C_DIM), 0, 0.0f);
+        } else {
+            u32 fc[UiConfig::FAV_COLOR_MAX]; int sel = -1;
+            for (int i = 0; i < nF; ++i) { fc[i] = ui_config().favColors[i]; if ((fc[i] & 0x00FFFFFFu) == (*color & 0x00FFFFFFu)) sel = i; }
+            const float segW = fw / (float)UiConfig::FAV_COLOR_MAX, stripW = segW * nF;   // a segment keeps its width as the ruler fills
+            const int hit = chrome_hue_strip(K, ctrl_uid_i(uidSV, 41), fx, favY, stripW, favH, fc, nF, sel, false);
+            if (hit >= 0) apply(fc[hit]);
+            if (mo && mo->rightClicked && inrect(mo, fx, favY, stripW, favH)) {
+                const int i = (int)((mo->x - fx - K.px(3.0f)) / ((stripW - K.px(6.0f)) / nF));
+                if (i >= 0 && i < nF) { ui_config().fav_color_remove(i); save_ui_config(); }
+            }
+        }
+        K.fr->begin(dev);
+        K.fr->draw_lc(dev, rx, favY + favH + K.px(14.0f), tr("Right-click a favourite to remove it", "Clic droit sur un favori pour le retirer"), K.px(11.5f), fa(C_MUTE), 0, 0.0f);
+    }
+
+    // ---- the chart : three enamel rulers -- light, true, deep -- across the tray ----
+    for (int row = 0; row < CP_ROWS; ++row) {
+        u32 rc[CP_COLS]; int sel = -1;
+        for (int c = 0; c < CP_COLS; ++c) { rc[c] = cp_chart(c, row); if ((rc[c] & 0x00FFFFFFu) == (*color & 0x00FFFFFFu)) sel = c; }
+        const int hit = chrome_hue_strip(K, ctrl_uid_i(uidSV, 50 + row), cx0, rulY + row * (rulH + rulG), cw0, rulH, rc, CP_COLS, sel, false);
+        if (hit >= 0 && g_slider < 0) apply(rc[hit]);
     }
     return changed;
 }

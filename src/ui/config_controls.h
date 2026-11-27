@@ -228,6 +228,9 @@ bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
 bool  color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                    float x, float y, float w, u32* color);
 float color_picker_height();
+struct Kit;
+bool  kit_color_picker(Kit& K, int uidSV, int uidHue, float x, float y, float w, u32* color);   // the same picker in the forged metal (the redesign's pages)
+float kit_color_picker_height(const Kit& K);
 bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                  float x, float y, float w, float h, const char* label, bool on);
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,

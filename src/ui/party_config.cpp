@@ -296,16 +296,16 @@ void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool cl
                 const int hov = (bsHot_ >= 0 && bsHot_ < nRun) ? bsHot_ : -1;   // last frame's, see bsHot_
                 const int nam = (hov >= 0) ? hov : bsSel_;
                 if (nam < 0) lstrcpynA(lb, atGroups ? tr("Drag a block to move it  -  double-click a group to open it",
-                                                        "Glisse un bloc pour le deplacer  -  double-clic sur un groupe pour l'ouvrir")
-                                                    : tr("Drag a buff to move it", "Glisse un buff pour le deplacer"), sizeof(lb));
+                                                        "Glisse un bloc pour le d\xC3\xA9placer  -  double-clic sur un groupe pour l'ouvrir")
+                                                    : tr("Drag a buff to move it", "Glisse un buff pour le d\xC3\xA9placer"), sizeof(lb));
                 else {
                     const char* n2 = atGroups ? tr(BUFF_GROUP_EN[runs[nam].grp], BUFF_GROUP_FR[runs[nam].grp])
                                               : buff_status_name(runs[nam].ic[0]);
                     if (!n2) n2 = "?";
-                    const char* fm = !atGroups        ? tr("%s  -  drag to move", "%s  -  glisse pour deplacer")
+                    const char* fm = !atGroups        ? tr("%s  -  drag to move", "%s  -  glisse pour d\xC3\xA9placer")
                                    : (hov < 0)        ? tr("%s  -  click again to open", "%s  -  clique encore pour ouvrir")
                                                       : tr("%s  -  drag to move, double-click to open",
-                                                           "%s  -  glisse pour deplacer, double-clic pour ouvrir");
+                                                           "%s  -  glisse pour d\xC3\xA9placer, double-clic pour ouvrir");
                     _snprintf(lb, sizeof(lb), fm, n2);
                     lb[sizeof(lb) - 1] = 0;   // _snprintf does not terminate on truncation
                 }
@@ -571,8 +571,8 @@ void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool cl
             { ROW_BAND(24.0f)
                 char lb2[140];
                 if (!atGroups && innerTotal > innerN) { _snprintf(lb2, sizeof(lb2), tr("+%d more, in the game's order", "+%d autres, dans l'ordre du jeu"), innerTotal - innerN); lb2[sizeof(lb2) - 1] = 0; }
-                else lstrcpynA(lb2, tr("The rightmost block sits against the member row",
-                                       "Le bloc le plus a droite est contre la ligne du membre"), sizeof(lb2));
+                else lstrcpynA(lb2, tr("The rightmost block is the nearest to the member row",   // true on either side (Buffs side)
+                                       "Le bloc le plus \xC3\xA0 droite est le plus proche de la ligne du membre"), sizeof(lb2));
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, ts_micro(), fa(C_MUTE), fa(C_STROKE), 1.0f);
             }
@@ -1144,15 +1144,15 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (adv) {   // the MASTER frame : the theme every box that "follows the Party" takes
+    if (v2_section(K, ctrl_uid_i(base, 4), 1, "Party", "Groupe", x, ry, w, cfg_count_modified(G_PARTY, NOPT(G_PARTY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 5), G_PARTY, NOPT(G_PARTY), x, ry, w);
+    if (adv) {   // (after the Party section : the same order as every page -- 2026-11-27) the MASTER frame : the theme every box that "follows the Party" takes
         const FrameRefs fr = { nullptr, nullptr, &c.skinBoxAlpha, nullptr, nullptr, &c.skinTheme, &c.skinHue, &c.skinLum, &c.border[0] };
         if (v2_section(K, ctrl_uid_i(base, 1), 19, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr) + cfg_count_modified(G_PARTY_FRAME_X, 1, true))) {
             cfg_frame_rows(K, ctrl_uid_i(base, 2), x, ry, w, fr);
             v2_rows(K, ctrl_uid_i(base, 3), G_PARTY_FRAME_X, 1, x, ry, w);
         }
     }
-    if (v2_section(K, ctrl_uid_i(base, 4), 1, "Party", "Groupe", x, ry, w, cfg_count_modified(G_PARTY, NOPT(G_PARTY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 5), G_PARTY, NOPT(G_PARTY), x, ry, w);
     if (adv) {
         if (v2_section(K, ctrl_uid_i(base, 6), 17, "Party rows", "Lignes du groupe", x, ry, w, cfg_count_modified(G_PARTY_ROWS, NOPT(G_PARTY_ROWS), true))) {
             cfg_rows(K, ctrl_uid_i(base, 7), G_PARTY_ROWS, NOPT(G_PARTY_ROWS), x, ry, w, true);
@@ -1216,9 +1216,14 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
                 v2_end(K, ry);
             }
         }
-    } else {   // SIMPLE : the buffs' side too -- many players want it (2026-11-27) ; the rest of Buffs is Advanced
-        if (v2_section(K, ctrl_uid_i(base, 24), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), false)))
+    } else {   // SIMPLE : the buffs' side and their ORDER too -- most players set both (2026-11-27) ; the sizes stay Advanced
+        if (v2_section(K, ctrl_uid_i(base, 24), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), false))) {
             v2_rows(K, ctrl_uid_i(base, 25), G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), x, ry, w);
+            g_fade = e;
+            draw_buff_band(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);   // the order : the same drag-and-drop band as Advanced
+            g_fade = e;
+            v2_end(K, ry);
+        }
         v2_simple_note(K, x, ry);
     }
     g_fade = e;

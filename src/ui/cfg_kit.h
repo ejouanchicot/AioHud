@@ -85,6 +85,8 @@ float chrome_tabkey(Kit& K, int id, float x, float y, float w, float h, bool act
 void  chrome_transom(Kit& K, float x, float y, float w, float h);                          // the horizontal bar between two openings
 void  chrome_weld(Kit& K, float ax, float ay, float bx, float by);                         // a weld seam along a joint
 void  chrome_floor(Kit& K, float x, float y, float w, float h);
+void  chrome_bezel(Kit& K, float x, float y, float w, float h, float r);   // a recess cut in the steel
+int   chrome_hue_strip(Kit& K, int id, float x, float y, float w, float h, const u32* cols, int n, int sel, bool disabled);   // a colour ruler ; clicked index / -1
 u32   kit_ground_alpha();   // the config ground's alpha (Interface : Background)
 // the LEDGER (a hunt board) : its column heads (a band), a row (lamp + engraved-glass cells ; colAlign 0 left / 2 right)
 void  chrome_ledger_head(Kit& K, float x, float y, float w, float h, const char* const* cols, const float* colX, const int* colAlign, int n);
