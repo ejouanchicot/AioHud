@@ -102,7 +102,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
 // ======== THE NEW TREASURE POOL PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// Display / Frame / Content / Text, like the old page.
+// Display / Frame / Item list / Text (the old page's Content, named by its element).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const OptDef TP_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(tpShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -136,7 +136,7 @@ void ConfigPage::draw_tp_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
     }
-    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(TP_CONTENT, NOPT(TP_CONTENT), adv)))
+    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Item list", "Liste des items", x, ry, w, cfg_count_modified(TP_CONTENT, NOPT(TP_CONTENT), adv)))
         v2_rows(K, ctrl_uid_i(base, 6), TP_CONTENT, NOPT(TP_CONTENT), x, ry, w);
     if (adv) {
         const char* lab[TP_TE_COUNT] = { tr("Index", "Index"), tr("Name", "Nom"), tr("Timer", "Timer"), tr("Top lot", "Meilleur lot") };

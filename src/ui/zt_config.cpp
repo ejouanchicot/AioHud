@@ -231,9 +231,10 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 }
 
 
-// ======== THE NEW ZONE TRACKER PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// Display / Frame / Content / Text, as the old page. The Preview zone picks WHICH zone's switches Content and Text list
-// (a choice's own sub-form) ; inside a zone, a size whose element is off is GREYED with the reason.
+// ======== THE NEW ZONE TRACKER PAGE (the config redesign, milestone 3, 2026-11-26 ; restructured 2026-11-27) ========
+// Advanced : Display / Frame (the ONE box, every zone), then a zone switch (Dynamis | Abyssea | ... -- it also picks the
+// preview) and THAT zone's own section, its Behaviour (Sortie only), its Text. No zone's rows are on the page at once ;
+// inside a zone, a row whose element is off is GREYED with the reason. Simple : the old Display table (Preview zone row).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const Z_ZN_EN[7] = { "Dynamis", "Abyssea", "Omen", "Nyzul", "Sheol", "Limbus", "Sortie" };
 static const char* const Z_ZN_FR[7] = { "Dynamis", "Abyssea", "Omen", "Nyzul", "Sheol", "Limbus", "Sortie" };
@@ -241,15 +242,22 @@ static const char* zw_dyt(const UiConfig& c) { return c.ztDyTimer ? nullptr : tr
 static const char* zw_dyk(const UiConfig& c) { return c.ztDyKi ? nullptr : tr("inactive : key items off", "inactif : objets cl\xC3\xA9s coup\xC3\xA9s"); }
 static const char* zw_abt(const UiConfig& c) { return c.ztAbTimer ? nullptr : tr("inactive : visitant timer off", "inactif : timer visitant coup\xC3\xA9"); }
 static const char* zw_abl(const UiConfig& c) { return c.ztAbLights ? nullptr : tr("inactive : lights off", "inactif : lumi\xC3\xA8res coup\xC3\xA9""es"); }
+// Sheol : the family name, the icon / puck sizes and the Cruel Joke line are all drawn INSIDE the resistance block
+// (hud_zonetracker.cpp : haveRes gates them), so with Resistances off they are inert
+static const char* zw_shr(const UiConfig& c) { return c.ztSheolRes ? nullptr : tr("inactive : resistances off", "inactif : r\xC3\xA9sistances coup\xC3\xA9""es"); }
 
-static const OptDef ZT_DISPLAY[] = {
+static const OptDef ZT_DISPLAY[] = {   // Simple : the zone is a row here (Advanced has the switch instead)
     { "Preview zone", "Zone de l'aper\xC3\xA7u", OK_SELECT, OL_SIMPLE, F_(ztVariant), 0, 0, Z_ZN_EN, Z_ZN_FR, 7, nullptr, 0 },
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(ztShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(ztScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_ZT },
 };
-static const OptDef ZT_HEAD[] = {
-    { "Show title", "Afficher le titre", OK_TOGGLE, OL_ADV, F_(ztHeader), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+static const OptDef ZT_DISPLAY_ADV[] = {   // Advanced : the box itself, the same in every zone -- the title row is one of them
+    { "Show", "Afficher", OK_TOGGLE, OL_ADV, F_(ztShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_ADV, F_(ztScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_ZT },
+    { "Title (zone name)", "Titre (nom de la zone)", OK_TOGGLE, OL_ADV, F_(ztHeader), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", OK_NOTE, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 static const OptDef ZT_DY[] = {   // Dynamis
     { "Run timer", "Timer de run", OK_TOGGLE, OL_ADV, F_(ztDyTimer), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -283,10 +291,10 @@ static const OptDef ZT_NY[] = {   // Nyzul Isle
 static const OptDef ZT_SH[] = {   // Sheol (Odyssey)
     { "Segments", "Segments", OK_TOGGLE, OL_ADV, F_(ztSheolSeg), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Resistances", "R\xC3\xA9sistances", OK_TOGGLE, OL_ADV, F_(ztSheolRes), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Family name", "Nom de famille", OK_TOGGLE, OL_ADV, F_(ztShFam), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Weapon icon size", "Taille ic\xC3\xB4nes armes", OK_PCT, OL_ADV, F_(ztShIcon), 0.50f, 2.50f, nullptr, nullptr, 0, nullptr, 0 },
-    { "Element dot size", "Taille pastilles \xC3\xA9l\xC3\xA9ments", OK_PCT, OL_ADV, F_(ztShDot), 0.50f, 2.50f, nullptr, nullptr, 0, nullptr, 0 },
-    { "Cruel Joke", "Cruel Joke", OK_TOGGLE, OL_ADV, F_(ztSheolJoke), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Family name", "Nom de famille", OK_TOGGLE, OL_ADV, F_(ztShFam), 0, 0, nullptr, nullptr, 0, zw_shr, 0 },
+    { "Weapon icon size", "Taille ic\xC3\xB4nes armes", OK_PCT, OL_ADV, F_(ztShIcon), 0.50f, 2.50f, nullptr, nullptr, 0, zw_shr, 0 },
+    { "Element dot size", "Taille pastilles \xC3\xA9l\xC3\xA9ments", OK_PCT, OL_ADV, F_(ztShDot), 0.50f, 2.50f, nullptr, nullptr, 0, zw_shr, 0 },
+    { "Cruel Joke", "Cruel Joke", OK_TOGGLE, OL_ADV, F_(ztSheolJoke), 0, 0, nullptr, nullptr, 0, zw_shr, 0 },
 };
 static const OptDef ZT_LB[] = {   // Limbus
     { "Area & level", "Zone et niveau", OK_TOGGLE, OL_ADV, F_(ztLbName), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -303,10 +311,9 @@ static const OptDef ZT_SO[] = {   // Sortie
     { "Coffers and NM", "Coffres et NM", OK_TOGGLE, OL_ADV, F_(ztSoCof), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Items obtained", "Objets obtenus", OK_TOGGLE, OL_ADV, F_(ztSoLoot), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Wing NM / bitzer", "NM / bitzer de l'aile", OK_TOGGLE, OL_ADV, F_(ztSoNav), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Auto Widescan track", "Track Widescan auto", OK_TOGGLE, OL_ADV, F_(ztSoTrack), 0, 0, nullptr, nullptr, 0, nullptr, 0 },   // sent by the aioupdate addon
 };
-static const OptDef ZT_NOTE[] = {
-    { "Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", OK_NOTE, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+static const OptDef ZT_SO_BEHAV[] = {   // Sortie's one BEHAVIOUR : not a line of the box, a request the aioupdate addon sends
+    { "Auto Widescan track (wing NM)", "Track Widescan auto (NM de l'aile)", OK_TOGGLE, OL_ADV, F_(ztSoTrack), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 #undef F_
 #define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
@@ -325,65 +332,85 @@ void ConfigPage::draw_zt_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(ZT_DISPLAY, NOPT(ZT_DISPLAY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 2), ZT_DISPLAY, NOPT(ZT_DISPLAY), x, ry, w);
-    if (adv) {
+    if (!adv) {   // SIMPLE : unchanged -- Display (Preview zone / Show / Size / Grows toward), then the footer note
+        if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(ZT_DISPLAY, NOPT(ZT_DISPLAY), false)))
+            v2_rows(K, ctrl_uid_i(base, 2), ZT_DISPLAY, NOPT(ZT_DISPLAY), x, ry, w);
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
+    }
+    // ---- ADVANCED (2026-11-27 restructure) : the box (every zone), then ONE zone switch, then that zone alone ----
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(ZT_DISPLAY_ADV, NOPT(ZT_DISPLAY_ADV), true)))
+        v2_rows(K, ctrl_uid_i(base, 17), ZT_DISPLAY_ADV, NOPT(ZT_DISPLAY_ADV), x, ry, w);
+    {   // FRAME : the shared block
         BoxStyle& bs = c.ztBox;
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
-        // Content : the title, then the PREVIEW zone's own switches (the old page's rule)
-        const int zv = (c.ztVariant < 0 || c.ztVariant > 6) ? 1 : c.ztVariant;
-        const int nMod = cfg_count_modified(ZT_HEAD, NOPT(ZT_HEAD), true) + cfg_count_modified(ZT_ZONE[zv], ZT_ZONE_N[zv], true);
-        if (v2_section(K, ctrl_uid_i(base, 5), 15, "Content", "Contenu", x, ry, w, nMod)) {
-            cfg_rows(K, ctrl_uid_i(base, 6), ZT_HEAD, NOPT(ZT_HEAD), x, ry, w, true);
-            cfg_rows(K, ctrl_uid_i(base, 7 + zv), ZT_ZONE[zv], ZT_ZONE_N[zv], x, ry, w, true);   // 7..13 : one uid block per zone
-            v2_rows(K, ctrl_uid_i(base, 14), ZT_NOTE, NOPT(ZT_NOTE), x, ry, w);
-        }
-        // Text : Header, then the preview zone's own elements (the selector walks THIS list)
+    }
+    // ---- THE ZONE : one switch (it is also the preview's zone) -- the seven zones' rows were one "Content" list behind a
+    //      selector row ; now the switch says which zone every section below belongs to ----
+    v2_close(K.mo, ry);   // the Frame section ends HERE, not under the switch (its hover band must not cover it)
+    {   const char* zl[7]; for (int k = 0; k < 7; ++k) zl[k] = tr(Z_ZN_EN[k], Z_ZN_FR[k]);
+        float segW = (w - K.px(36.0f)) / 7.0f; if (segW > K.px(130.0f)) segW = K.px(130.0f);
+        const float sh = K.px(36.0f);
+        const int Z = (c.ztVariant < 0 || c.ztVariant > 6) ? 1 : c.ztVariant;
+        const int hit = chrome_segment(K, ctrl_uid_i(base, 18), x + (w - 7.0f * segW) * 0.5f, ry + K.px(4.0f), segW, sh, zl, 7, Z);
+        if (hit >= 0 && hit != Z) { c.ztVariant = hit; save_ui_config(); }
+        ry += sh + K.px(16.0f);
+    }
+    const int zv = (c.ztVariant < 0 || c.ztVariant > 6) ? 1 : c.ztVariant;
+    // the zone's section, titled with the zone : what its box shows, top to bottom, each size under its element
+    if (v2_section(K, ctrl_uid_i(base, 5), 15, Z_ZN_EN[zv], Z_ZN_FR[zv], x, ry, w, cfg_count_modified(ZT_ZONE[zv], ZT_ZONE_N[zv], true)))
+        v2_rows(K, ctrl_uid_i(base, 7 + zv), ZT_ZONE[zv], ZT_ZONE_N[zv], x, ry, w);   // 7..13 : one uid block per zone
+    if (zv == 6 && v2_section(K, ctrl_uid_i(base, 19), 7, "Behaviour", "Comportement", x, ry, w, cfg_count_modified(ZT_SO_BEHAV, NOPT(ZT_SO_BEHAV), true)))
+        v2_rows(K, ctrl_uid_i(base, 20), ZT_SO_BEHAV, NOPT(ZT_SO_BEHAV), x, ry, w);   // Sortie only
+    {   // TEXT : the zone's elements that are SHOWN (no dead element -- the Target page's rule) ; the selector walks THIS list
         int el[ZT_TE_COUNT]; const char* lab[ZT_TE_COUNT]; int n = 0;
-        el[n] = ZT_HEADER; lab[n++] = tr("Header", "Titre");
+        auto add = [&](bool on, int id, const char* en, const char* frl) { if (on && n < ZT_TE_COUNT) { el[n] = id; lab[n] = tr(en, frl); ++n; } };
+        add(true, ZT_HEADER, "Header", "Titre");   // always : Limbus' currency line takes its "here" colour from it, title or not
         if (zv == 0) {
-            el[n] = ZT_DY_TIMER; lab[n++] = tr("Run timer", "Timer de run");
-            el[n] = ZT_DY_KI;    lab[n++] = tr("Key items", "Objets cl\xC3\xA9s");
+            add(c.ztDyTimer != 0, ZT_DY_TIMER, "Run timer", "Timer de run");
+            add(c.ztDyKi != 0,    ZT_DY_KI,    "Key items", "Objets cl\xC3\xA9s");
         }
         if (zv == 1) {
-            el[n] = ZT_AB_TIMER; lab[n++] = tr("Visitant timer", "Timer visitant");
-            el[n] = ZT_AB_LIGHT; lab[n++] = tr("Light labels", "Labels lumi\xC3\xA8res");
-            el[n] = ZT_AB_VAL;   lab[n++] = tr("Light values", "Valeurs lumi\xC3\xA8res");
+            add(c.ztAbTimer != 0,  ZT_AB_TIMER, "Visitant timer", "Timer visitant");
+            add(c.ztAbLights != 0, ZT_AB_LIGHT, "Light labels", "Labels lumi\xC3\xA8res");
+            add(c.ztAbLights != 0, ZT_AB_VAL,   "Light values", "Valeurs lumi\xC3\xA8res");
         }
         if (zv == 2) {
-            el[n] = ZT_OM_OBJ;   lab[n++] = tr("Floor objective", "Objectif d'\xC3\xA9tage");
-            el[n] = ZT_OM_COUNT; lab[n++] = tr("Omens + bonus", "Omens + bonus");
-            el[n] = ZT_OM_ROW;   lab[n++] = tr("Objective rows", "Lignes d'objectifs");
+            add(c.ztOmObj != 0,   ZT_OM_OBJ,   "Floor objective", "Objectif d'\xC3\xA9tage");
+            add(c.ztOmCount != 0, ZT_OM_COUNT, "Omens + bonus", "Omens + bonus");
+            add(c.ztOmRows != 0,  ZT_OM_ROW,   "Objective rows", "Lignes d'objectifs");
         }
         if (zv == 3) {
-            el[n] = ZT_NY_FLOOR; lab[n++] = tr("Floor", "\xC3\x89tage");
-            el[n] = ZT_NY_TIME;  lab[n++] = tr("Floor timer", "Timer d'\xC3\xA9tage");
-            el[n] = ZT_NY_OBJ;   lab[n++] = tr("Objective", "Objectif");
-            el[n] = ZT_NY_RESTR; lab[n++] = tr("Restriction", "Restriction");
-            el[n] = ZT_NY_STATS; lab[n++] = tr("Stat rows", "Lignes de stats");
+            add(c.ztNyFloor != 0, ZT_NY_FLOOR, "Floor", "\xC3\x89tage");
+            add(c.ztNyTime != 0,  ZT_NY_TIME,  "Floor timer", "Timer d'\xC3\xA9tage");
+            add(c.ztNyObj != 0,   ZT_NY_OBJ,   "Objective", "Objectif");
+            add(c.ztNyRestr != 0, ZT_NY_RESTR, "Restriction", "Restriction");
+            add(c.ztNyComp || c.ztNyRate || c.ztNyTok, ZT_NY_STATS, "Stat rows", "Lignes de stats");   // cleared / rate / tokens share it
         }
         if (zv == 4) {
-            el[n] = ZT_SH_SEG;  lab[n++] = tr("Segments", "Segments");
-            el[n] = ZT_SH_FAM;  lab[n++] = tr("Family name", "Nom de famille");
-            el[n] = ZT_SH_RES;  lab[n++] = tr("Resistances", "R\xC3\xA9sistances");
-            el[n] = ZT_SH_JOKE; lab[n++] = tr("Cruel Joke", "Cruel Joke");
+            const bool res = c.ztSheolRes != 0;   // family and Cruel Joke are drawn inside the resistance block
+            add(c.ztSheolSeg != 0,       ZT_SH_SEG,  "Segments", "Segments");
+            add(res && c.ztShFam,        ZT_SH_FAM,  "Family name", "Nom de famille");
+            add(res,                     ZT_SH_RES,  "Resistances", "R\xC3\xA9sistances");
+            add(res && c.ztSheolJoke,    ZT_SH_JOKE, "Cruel Joke", "Cruel Joke");
         }
         if (zv == 5) {
-            el[n] = ZT_BODY;     lab[n++] = tr("Area & level", "Zone et niveau");
-            el[n] = ZT_LB_GAUGE; lab[n++] = tr("Gauge", "Jauge");
-            el[n] = ZT_LB_CUR;   lab[n++] = tr("Currencies", "Monnaies");
-            el[n] = ZT_LB_RUN;   lab[n++] = tr("Run total", "Total du run");
-            el[n] = ZT_LB_CHIP;  lab[n++] = tr("Dot labels", "Labels pastilles");
+            add(c.ztLbName != 0,  ZT_BODY,     "Area & level", "Zone et niveau");
+            add(true,             ZT_LB_GAUGE, "Gauge", "Jauge");   // always drawn (no switch)
+            add(c.ztLbCur != 0,   ZT_LB_CUR,   "Currencies", "Monnaies");
+            add(c.ztLbRun != 0,   ZT_LB_RUN,   "Run total", "Total du run");
+            add(c.ztLbChips != 0, ZT_LB_CHIP,  "Dot labels", "Labels pastilles");
         }
-        if (zv == 6) {
-            el[n] = ZT_SO_GAL;  lab[n++] = tr("Gallimaufry", "Gallimaufry");
-            el[n] = ZT_SO_BOSS; lab[n++] = tr("Boss letters", "Lettres des boss");
-            el[n] = ZT_SO_LINE; lab[n++] = tr("Coffers and items", "Coffres et objets");
+        if (zv == 6) {   // the wing-NM card draws with all three (its tag / name / distance), so it keeps each one listed
+            add(c.ztSoGal || c.ztSoNav,                              ZT_SO_GAL,  "Gallimaufry", "Gallimaufry");
+            add(c.ztSoBoss || c.ztSoNav,                             ZT_SO_BOSS, "Boss letters", "Lettres des boss");
+            add(c.ztSoGal || c.ztSoCof || c.ztSoLoot || c.ztSoNav,   ZT_SO_LINE, "Coffers and items", "Coffres et objets");
         }
         TextStyle* ts[ZT_TE_COUNT]; for (int i = 0; i < n; ++i) ts[i] = &c.ztText[el[i]];
-        if (v2_section(K, ctrl_uid_i(base, 15), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) { cfg_text_rows(K, ctrl_uid_i(base, 16), x, ry, w, lab, ts, n, &cfgZtTextElem_); v2_end(K, ry); }
-    } else v2_simple_note(K, x, ry);
+        if (n > 0 && v2_section(K, ctrl_uid_i(base, 15), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) { cfg_text_rows(K, ctrl_uid_i(base, 16), x, ry, w, lab, ts, n, &cfgZtTextElem_); v2_end(K, ry); }
+    }
     g_fade = e;
 }
 #undef NOPT

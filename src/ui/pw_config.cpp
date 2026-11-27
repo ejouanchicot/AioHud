@@ -116,7 +116,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
 // ======== THE NEW POINTWATCH PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// Display / Frame / Content / Text, as the old page.
+// Display / Frame / Progress bars / Text (the old page's Content, named by its element).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const W_LY_EN[2] = { "Vertical", "Horizontal" },                                 * const W_LY_FR[2] = { "Vertical", "Horizontal" };
 static const char* const W_MD_EN[4] = { "Auto", "XP (leveling)", "CP (capacity)", "Master (ML)" }, * const W_MD_FR[4] = { "Auto", "XP (level)", "CP (capacit\xC3\xA9)", "Master (ML)" };
@@ -132,7 +132,7 @@ static const OptDef PW_CONTENT[] = {
     { "Progression", "Progression", OK_SELECT, OL_SIMPLE, F_(pwMode), 0, 0, W_MD_EN, W_MD_FR, 4, nullptr, 0 },
     { "Shows", "Affiche", OK_SELECT, OL_SIMPLE, F_(pwDisplay), 0, 0, W_DS_EN, W_DS_FR, 3, nullptr, 0 },
     { "Show rate (X/h)", "Afficher le taux (X/h)", OK_TOGGLE, OL_SIMPLE, F_(pwRate), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP a\xCC\x80 99, ML si master. + Merits.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP \xC3\xA0 99, ML si master. + Merits.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 #undef F_
 #define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
@@ -156,13 +156,32 @@ void ConfigPage::draw_pw_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
     }
-    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(PW_CONTENT, NOPT(PW_CONTENT), adv)))
-        v2_rows(K, ctrl_uid_i(base, 6), PW_CONTENT, NOPT(PW_CONTENT), x, ry, w);
-    if (adv) {
-        const char* lab[PW_TE_COUNT] = { tr("Label", "Label"), tr("Value", "Valeur"), tr("Rate", "Taux") };
-        TextStyle* ts[PW_TE_COUNT]; for (int i = 0; i < PW_TE_COUNT; ++i) ts[i] = &c.pwText[i];
-        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, PW_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, PW_TE_COUNT, &cfgPwTextElem_); v2_end(K, ry); }
-    } else v2_simple_note(K, x, ry);
+    if (!adv) {   // Simple : one card, as before
+        if (v2_section(K, ctrl_uid_i(base, 5), 21, "Progress bars", "Barres de progression", x, ry, w, cfg_count_modified(PW_CONTENT, NOPT(PW_CONTENT), false)))
+            v2_rows(K, ctrl_uid_i(base, 6), PW_CONTENT, NOPT(PW_CONTENT), x, ry, w);
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
+    }
+    // ADVANCED : "Bar only" draws no text line, so its rate row and the Text section do not exist then (hidden, not greyed).
+    // Slices of PW_CONTENT : [0..1] progression + shows, [2] the rate, [3] the note.
+    static_assert(NOPT(PW_CONTENT) == 4, "the slices below index PW_CONTENT");
+    const bool head = c.pwDisplay != 2;
+    if (v2_section(K, ctrl_uid_i(base, 9), 21, "Progress bars", "Barres de progression", x, ry, w,
+                   cfg_count_modified(PW_CONTENT, 2, true) + (head ? cfg_count_modified(PW_CONTENT + 2, 1, true) : 0))) {
+        cfg_rows(K, ctrl_uid_i(base, 10), PW_CONTENT, 2, x, ry, w, true);
+        if (head) cfg_rows(K, ctrl_uid_i(base, 11), PW_CONTENT + 2, 1, x, ry, w, true);
+        cfg_rows(K, ctrl_uid_i(base, 12), PW_CONTENT + 3, 1, x, ry, w, true);
+        v2_end(K, ry);
+    }
+    if (head) {   // TEXT : the element list follows what is shown (no dead element)
+        const char* lab[PW_TE_COUNT]; TextStyle* ts[PW_TE_COUNT]; int n = 0;
+        auto add = [&](const char* en, const char* frl, int i) { if (n < PW_TE_COUNT) { lab[n] = tr(en, frl); ts[n] = &c.pwText[i]; ++n; } };
+        add("Label", "Label", PW_LABEL);
+        add("Value", "Valeur", PW_VALUE);
+        if (c.pwRate) add("Rate", "Taux", PW_RATE);
+        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, n, &cfgPwTextElem_); v2_end(K, ry); }
+    }
     g_fade = e;
 }
 #undef NOPT

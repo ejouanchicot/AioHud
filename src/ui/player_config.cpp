@@ -342,9 +342,11 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
 // ======== THE NEW PLAYER PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// Every option described once (OptDef, cfg_engine.h) ; the same grammar as Target : Display / Frame / Content /
-// the module's own sections / Text. A dependency GREYS its rows with the reason (the old page hid whole sections) ;
-// only a sub-form that belongs to a choice (a colour picker, the standalone equipment's frame) appears with it.
+// Every option described once (OptDef, cfg_engine.h). Simple : Display + Content (the on/off list). Advanced
+// (2026-11-27 restructure, the Target pattern) : Display / Frame / one section per ELEMENT the player looks for
+// (Identity, Bars, Spell, Buffs, Equipment and gil) holding that element's on/off AND its settings / Text. A simple
+// dependency GREYS its rows with the reason ; rows that belong to one MODE (docked / standalone equipment) exist only
+// in that mode, and the "shown + how" pairs are ONE choice (Equipment : Off / In the box / Standalone).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const P_EQM_EN[2] = { "In the Player box", "Standalone" },   * const P_EQM_FR[2] = { "Dans la box Joueur", "Autonome" };
 static const char* const P_PL_EN[9] = { "Box \xC2\xB7 Center", "Box \xC2\xB7 Left", "Box \xC2\xB7 Right", "Dock Left", "Dock Right", "Dock Top", "Dock Bottom", "Box \xC2\xB7 Side Left", "Box \xC2\xB7 Side Right" };
@@ -356,17 +358,13 @@ static const char* pw_cast(const UiConfig& c)   { return c.plrCast ? nullptr : t
 static const char* pw_emblem(const UiConfig& c) { return c.plrEmblem ? nullptr : tr("inactive : emblem off", "inactif : embl\xC3\xA8me coup\xC3\xA9"); }
 static const char* pw_bars(const UiConfig& c)   { return (c.plrHp || c.plrMp || c.plrTp) ? nullptr : tr("inactive : HP, MP and TP off", "inactif : PV, PM et TP coup\xC3\xA9s"); }
 static const char* pw_buffs(const UiConfig& c)  { return c.plrBuffs ? nullptr : tr("inactive : buffs off", "inactif : buffs coup\xC3\xA9s"); }
-static const char* pw_equip(const UiConfig& c)  { return c.plrEquip ? nullptr : tr("inactive : equipment off", "inactif : \xC3\xA9quipement coup\xC3\xA9"); }
-static const char* pw_docked(const UiConfig& c) { return !c.plrEquip ? pw_equip(c) : (c.plrEquipDetach ? tr("inactive : the equipment is standalone", "inactif : \xC3\xA9quipement autonome") : nullptr); }
-static const char* pw_alone(const UiConfig& c)  { return !c.plrEquip ? pw_equip(c) : (!c.plrEquipDetach ? tr("inactive : the equipment is in the Player box", "inactif : \xC3\xA9quipement dans la box Joueur") : nullptr); }
-static const char* pw_gilpos(const UiConfig& c) { if (const char* w = pw_alone(c)) return w; return c.plrGil ? nullptr : tr("inactive : gil off", "inactif : gil coup\xC3\xA9"); }
 
 static const OptDef PLR_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(plrShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(plrScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "To move it : Edit Layout (top tab).", "Pour la d\xC3\xA9placer : onglet \xC3\x89""diter dispo.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
-static const OptDef PLR_CONTENT[] = {
+static const OptDef PLR_CONTENT[] = {   // SIMPLE only : the on/off list (Advanced puts each one in its element's section)
     { "Emblem", "Embl\xC3\xA8me", OK_TOGGLE, OL_SIMPLE, F_(plrEmblem), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Name", "Nom", OK_TOGGLE, OL_SIMPLE, F_(plrName), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Level", "Niveau", OK_TOGGLE, OL_SIMPLE, F_(plrLvl), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -375,33 +373,47 @@ static const OptDef PLR_CONTENT[] = {
     { "TP", "TP", OK_TOGGLE, OL_SIMPLE, F_(plrTp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Speed", "Vitesse", OK_TOGGLE, OL_SIMPLE, F_(plrSpeed), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "The spell you cast", "Le sort que tu lances", OK_TOGGLE, OL_SIMPLE, F_(plrCast), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Sample spell (to place it)", "Sort d'exemple (pour le placer)", OK_TOGGLE, OL_ADV, F_(plrCastDemo), 0, 0, nullptr, nullptr, 0, pw_cast, 0 },
     { "Buffs", "Buffs", OK_TOGGLE, OL_SIMPLE, F_(plrBuffs), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Equipment", "\xC3\x89quipement", OK_TOGGLE, OL_SIMPLE, F_(plrEquip), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Gil", "Gil", OK_TOGGLE, OL_SIMPLE, F_(plrGil), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
-static const OptDef PLR_IDENTITY[] = {
+// ---- ADVANCED : one table per element section ----
+static const OptDef PLR_IDENTITY[] = {   // the identity row : emblem / name / level, and the speed it hosts (left)
+    { "Emblem", "Embl\xC3\xA8me", OK_TOGGLE, OL_ADV, F_(plrEmblem), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Emblem size", "Taille de l'embl\xC3\xA8me", OK_PCT, OL_ADV, F_(plrEmblemSz), 0.5f, 2.0f, nullptr, nullptr, 0, pw_emblem, 0 },
+    { "Name", "Nom", OK_TOGGLE, OL_ADV, F_(plrName), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Level", "Niveau", OK_TOGGLE, OL_ADV, F_(plrLvl), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Movement speed", "Vitesse de d\xC3\xA9placement", OK_TOGGLE, OL_ADV, F_(plrSpeed), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 static const OptDef PLR_BARS[] = {
+    { "HP", "PV", OK_TOGGLE, OL_ADV, F_(plrHp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "MP", "PM", OK_TOGGLE, OL_ADV, F_(plrMp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "TP", "TP", OK_TOGGLE, OL_ADV, F_(plrTp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Bar height", "Hauteur des barres", OK_PCT, OL_ADV, F_(plrBarH), 0.5f, 2.0f, nullptr, nullptr, 0, pw_bars, 0 },
     { "Bar width", "Largeur des barres", OK_PCT, OL_ADV, F_(plrBarW), 0.4f, 1.0f, nullptr, nullptr, 0, pw_bars, 0 },
     { "Bar spacing", "Espacement des barres", OK_PCT, OL_ADV, F_(plrBarGap), 0.0f, 3.0f, nullptr, nullptr, 0, pw_bars, 0 },
 };
+static const OptDef PLR_SPELL[] = {   // the action bar (own spell / ability / weaponskill)
+    { "The spell you cast", "Le sort que tu lances", OK_TOGGLE, OL_ADV, F_(plrCast), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Sample spell (to place it)", "Sort d'exemple (pour le placer)", OK_TOGGLE, OL_ADV, F_(plrCastDemo), 0, 0, nullptr, nullptr, 0, pw_cast, 0 },
+};
 static const OptDef PLR_BUFFS[] = {
+    { "Buffs", "Buffs", OK_TOGGLE, OL_ADV, F_(plrBuffs), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Max buffs", "Buffs max", OK_INT, OL_ADV, F_(plrBuffMax), 1, 32, nullptr, nullptr, 0, pw_buffs, 0 },
     { "Buff size", "Taille des buffs", OK_PCT, OL_ADV, F_(plrIconSz), 0.5f, 2.0f, nullptr, nullptr, 0, pw_buffs, 0 },
 };
-static const OptDef PLR_EQUIP_A[] = {
-    { "Mode", "Mode", OK_SELECT, OL_ADV, F_(plrEquipDetach), 0, 0, P_EQM_EN, P_EQM_FR, 2, pw_equip, 0 },
-    { "Placement", "Placement", OK_SELECT, OL_ADV, F_(plrEqPlace), 0, 0, P_PL_EN, P_PL_FR, 9, pw_docked, 0 },
-    { "Size", "Taille", OK_PCT, OL_ADV, F_(plrEquipScale), 0.5f, 2.0f, nullptr, nullptr, 0, pw_alone, 0 },
-    { "Gil position", "Position du gil", OK_SELECT, OL_ADV, F_(plrEqGilPlace), 0, 0, P_GP_EN, P_GP_FR, 4, pw_gilpos, 0 },
-    { "Cell size", "Taille des cases", OK_PCT, OL_ADV, F_(plrEqCell), 0.5f, 2.0f, nullptr, nullptr, 0, pw_equip, 0 },
-    { "Cell border", "Bordure des cases", OK_SELECT, OL_ADV, F_(plrEqThemeBorder), 0, 0, P_CB_EN, P_CB_FR, 2, pw_equip, 0 },
+static const OptDef PLR_EQ_DOCK[] = {    // equipment IN the Player box only
+    { "Placement", "Placement", OK_SELECT, OL_ADV, F_(plrEqPlace), 0, 0, P_PL_EN, P_PL_FR, 9, nullptr, 0 },
 };
-static const OptDef PLR_EQUIP_B[] = {
-    { "Cell background", "Fond des cases", OK_SELECT, OL_ADV, F_(plrEqCellBgCustom), 0, 0, P_BG_EN, P_BG_FR, 2, pw_equip, 0 },
+static const OptDef PLR_EQ_ALONE[] = {   // standalone equipment only (its position : Edit Layout)
+    { "Size", "Taille", OK_PCT, OL_ADV, F_(plrEquipScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef PLR_EQ_CELLS[] = {   // either mode
+    { "Cell size", "Taille des cases", OK_PCT, OL_ADV, F_(plrEqCell), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Cell border", "Bordure des cases", OK_SELECT, OL_ADV, F_(plrEqThemeBorder), 0, 0, P_CB_EN, P_CB_FR, 2, nullptr, 0 },
+};
+static const OptDef PLR_EQ_BG[] = {
+    { "Cell background", "Fond des cases", OK_SELECT, OL_ADV, F_(plrEqCellBgCustom), 0, 0, P_BG_EN, P_BG_FR, 2, nullptr, 0 },
 };
 #undef F_
 #define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
@@ -418,38 +430,88 @@ void ConfigPage::draw_player_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(PLR_DISPLAY, NOPT(PLR_DISPLAY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 2), PLR_DISPLAY, NOPT(PLR_DISPLAY), x, ry, w);
-    if (adv) {
-        const FrameRefs fr = { &c.plrBox, &c.plrBorder, &c.plrBoxAlpha, &c.plrAlphaOwn, &c.plrThemeCopy, &c.plrTheme, &c.plrHue, &c.plrLum };
-        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+    if (!adv) {   // SIMPLE : Display + the on/off list, then where the rest is
+        if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(PLR_DISPLAY, NOPT(PLR_DISPLAY), false)))
+            v2_rows(K, ctrl_uid_i(base, 2), PLR_DISPLAY, NOPT(PLR_DISPLAY), x, ry, w);
+        if (v2_section(K, ctrl_uid_i(base, 5), 7, "Content", "Contenu", x, ry, w, cfg_count_modified(PLR_CONTENT, NOPT(PLR_CONTENT), false)))
+            v2_rows(K, ctrl_uid_i(base, 6), PLR_CONTENT, NOPT(PLR_CONTENT), x, ry, w);
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
     }
-    if (v2_section(K, ctrl_uid_i(base, 5), 7, "Content", "Contenu", x, ry, w, cfg_count_modified(PLR_CONTENT, NOPT(PLR_CONTENT), adv)))
-        v2_rows(K, ctrl_uid_i(base, 6), PLR_CONTENT, NOPT(PLR_CONTENT), x, ry, w);
-    if (adv) {
-        if (v2_section(K, ctrl_uid_i(base, 7), 11, "Identity", "Identit\xC3\xA9", x, ry, w, cfg_count_modified(PLR_IDENTITY, NOPT(PLR_IDENTITY), true)))
-            v2_rows(K, ctrl_uid_i(base, 8), PLR_IDENTITY, NOPT(PLR_IDENTITY), x, ry, w);
-        if (v2_section(K, ctrl_uid_i(base, 9), 8, "Bars", "Barres", x, ry, w, cfg_count_modified(PLR_BARS, NOPT(PLR_BARS), true)))
-            v2_rows(K, ctrl_uid_i(base, 10), PLR_BARS, NOPT(PLR_BARS), x, ry, w);
-        if (v2_section(K, ctrl_uid_i(base, 11), 9, "Buffs", "Buffs", x, ry, w, cfg_count_modified(PLR_BUFFS, NOPT(PLR_BUFFS), true)))
-            v2_rows(K, ctrl_uid_i(base, 12), PLR_BUFFS, NOPT(PLR_BUFFS), x, ry, w);
-        const int nEq = cfg_count_modified(PLR_EQUIP_A, NOPT(PLR_EQUIP_A), true) + cfg_count_modified(PLR_EQUIP_B, NOPT(PLR_EQUIP_B), true);
-        if (v2_section(K, ctrl_uid_i(base, 13), 12, "Equipment", "\xC3\x89quipement", x, ry, w, nEq)) {
-            cfg_rows(K, ctrl_uid_i(base, 14), PLR_EQUIP_A, NOPT(PLR_EQUIP_A), x, ry, w, true);
-            if (c.plrEquip && !c.plrEqThemeBorder) cfg_color_row(K, ctrl_uid_i(base, 15), x, ry, w, &c.plrEqColor);   // the custom border colour
-            cfg_rows(K, ctrl_uid_i(base, 16), PLR_EQUIP_B, NOPT(PLR_EQUIP_B), x, ry, w, true);
-            if (c.plrEquip && c.plrEqCellBgCustom) cfg_color_row(K, ctrl_uid_i(base, 17), x, ry, w, &c.plrEqCellBg);   // the custom background
+    // ADVANCED (2026-11-27 restructure, the Target pattern) : Display / Frame / a section per ELEMENT (its on/off and its
+    // settings together) / Text. No catch-all "Content" list : every toggle lives with the rows it governs.
+    static const UiConfig D{};
+    // ONE choice for "shown or not, and how" : 0 = Off, k = mode k-1 (the same helper as the Target page)
+    auto choice = [&](int uid, const char* en, const char* frl, int& on, int& mode, const char* const* men, const char* const* mfr, int n, const char* why, int dOn) {
+        const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int k = 0; k < n && k < 7; ++k) lab[k + 1] = tr(men[k], mfr[k]);
+        int v = on ? 1 + (mode < 0 || mode >= n ? 0 : mode) : 0;
+        void* mark = (on != dOn) ? (void*)&on : (void*)&mode;   // the marker / right-click reset : the field that differs
+        if (int d = cfg_select_row(K, uid, x, ry, w, tr(en, frl), lab[v], why, mark, 4)) {
+            v = wrap(v + d, n + 1); on = v > 0 ? 1 : 0; if (v > 0) mode = v - 1; save_ui_config(); }
+    };
+    auto diff2 = [&](int on, int mode, int dOn, int dMode) { return (on != dOn) || (on && mode != dMode) ? 1 : 0; };
+    if (v2_section(K, ctrl_uid_i(base, 30), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(PLR_DISPLAY, NOPT(PLR_DISPLAY), true)))
+        v2_rows(K, ctrl_uid_i(base, 31), PLR_DISPLAY, NOPT(PLR_DISPLAY), x, ry, w);
+    {   // FRAME : the shared block
+        const FrameRefs fr = { &c.plrBox, &c.plrBorder, &c.plrBoxAlpha, &c.plrAlphaOwn, &c.plrThemeCopy, &c.plrTheme, &c.plrHue, &c.plrLum };
+        if (v2_section(K, ctrl_uid_i(base, 32), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 33), x, ry, w, fr); v2_end(K, ry); }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 34), 11, "Identity", "Identit\xC3\xA9", x, ry, w, cfg_count_modified(PLR_IDENTITY, NOPT(PLR_IDENTITY), true)))
+        v2_rows(K, ctrl_uid_i(base, 35), PLR_IDENTITY, NOPT(PLR_IDENTITY), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 36), 8, "Bars", "Barres", x, ry, w, cfg_count_modified(PLR_BARS, NOPT(PLR_BARS), true)))
+        v2_rows(K, ctrl_uid_i(base, 37), PLR_BARS, NOPT(PLR_BARS), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 38), 10, "Spell", "Sort", x, ry, w, cfg_count_modified(PLR_SPELL, NOPT(PLR_SPELL), true)))
+        v2_rows(K, ctrl_uid_i(base, 39), PLR_SPELL, NOPT(PLR_SPELL), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 40), 9, "Buffs", "Buffs", x, ry, w, cfg_count_modified(PLR_BUFFS, NOPT(PLR_BUFFS), true)))
+        v2_rows(K, ctrl_uid_i(base, 41), PLR_BUFFS, NOPT(PLR_BUFFS), x, ry, w);
+    {   // EQUIPMENT AND GIL : where the grid goes (Off / in the box / standalone), that mode's rows, then the gil -- which
+        // rides the equipment (under the docked grid, beside the standalone one) or the identity row with no equipment
+        const bool eqOn = c.plrEquip != 0, alone = eqOn && c.plrEquipDetach;
+        int nMod = diff2(c.plrEquip, c.plrEquipDetach, D.plrEquip, D.plrEquipDetach);
+        if (eqOn) nMod += (alone ? cfg_count_modified(PLR_EQ_ALONE, NOPT(PLR_EQ_ALONE), true) : cfg_count_modified(PLR_EQ_DOCK, NOPT(PLR_EQ_DOCK), true))
+                        + cfg_count_modified(PLR_EQ_CELLS, NOPT(PLR_EQ_CELLS), true) + cfg_count_modified(PLR_EQ_BG, NOPT(PLR_EQ_BG), true);
+        nMod += alone ? diff2(c.plrGil, c.plrEqGilPlace, D.plrGil, D.plrEqGilPlace) : (c.plrGil != D.plrGil ? 1 : 0);
+        if (v2_section(K, ctrl_uid_i(base, 42), 12, "Equipment and gil", "\xC3\x89quipement et gil", x, ry, w, nMod)) {
+            choice(ctrl_uid_i(base, 43), "Equipment", "\xC3\x89quipement", c.plrEquip, c.plrEquipDetach, P_EQM_EN, P_EQM_FR, 2, nullptr, D.plrEquip);
+            if (eqOn) {
+                if (alone) cfg_rows(K, ctrl_uid_i(base, 44), PLR_EQ_ALONE, NOPT(PLR_EQ_ALONE), x, ry, w, true);
+                else       cfg_rows(K, ctrl_uid_i(base, 45), PLR_EQ_DOCK, NOPT(PLR_EQ_DOCK), x, ry, w, true);
+                cfg_rows(K, ctrl_uid_i(base, 46), PLR_EQ_CELLS, NOPT(PLR_EQ_CELLS), x, ry, w, true);
+                if (!c.plrEqThemeBorder) cfg_color_row(K, ctrl_uid_i(base, 47), x, ry, w, &c.plrEqColor);   // the custom border colour
+                cfg_rows(K, ctrl_uid_i(base, 48), PLR_EQ_BG, NOPT(PLR_EQ_BG), x, ry, w, true);
+                if (c.plrEqCellBgCustom) cfg_color_row(K, ctrl_uid_i(base, 49), x, ry, w, &c.plrEqCellBg);   // the custom background
+            }
+            if (alone) choice(ctrl_uid_i(base, 50), "Gil", "Gil", c.plrGil, c.plrEqGilPlace, P_GP_EN, P_GP_FR, 4, nullptr, D.plrGil);   // Off / Below / Above / Left / Right
+            else if (cfg_toggle_row(K, ctrl_uid_i(base, 51), x, ry, w, tr("Gil", "Gil"), c.plrGil != 0, nullptr, &c.plrGil, 4)) { c.plrGil = !c.plrGil; save_ui_config(); }
             v2_end(K, ry);
         }
-        if (c.plrEquip && c.plrEquipDetach) {   // the standalone equipment's own frame : exists only in that mode
+        if (alone) {   // the standalone equipment's own frame : exists only in that mode
             BoxStyle& bs = c.plrEqBox;
             const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
-            if (v2_section(K, ctrl_uid_i(base, 18), 21, "Equipment frame", "Cadre de l'\xC3\xA9quipement", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 19), x, ry, w, fr); v2_end(K, ry); }
+            if (v2_section(K, ctrl_uid_i(base, 52), 21, "Equipment frame", "Cadre de l'\xC3\xA9quipement", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 53), x, ry, w, fr); v2_end(K, ry); }
         }
-        const char* lab[PLR_TE_COUNT] = { tr("Name", "Nom"), tr("Level", "Niveau"), tr("Gil", "Gil"), tr("Speed", "Vitesse"), "HP", "MP", "TP", tr("Spell", "Sort") };
-        TextStyle* ts[PLR_TE_COUNT]; for (int i = 0; i < PLR_TE_COUNT; ++i) ts[i] = &c.plrText[i];
-        if (v2_section(K, ctrl_uid_i(base, 20), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, PLR_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 21), x, ry, w, lab, ts, PLR_TE_COUNT, &cfgPlrTextElem_); v2_end(K, ry); }
-    } else v2_simple_note(K, x, ry);
+    }
+    {   // TEXT : the element list follows what is shown (no dead element) ; cfgPlrTextElem_ stays a PLR_* index
+        const char* lab[PLR_TE_COUNT]; TextStyle* ts[PLR_TE_COUNT]; int idx[PLR_TE_COUNT]; int n = 0, sel = 0;
+        auto add = [&](int k, const char* en, const char* frl, bool shown) {
+            if (!shown) return;
+            if (k == cfgPlrTextElem_) sel = n;
+            lab[n] = tr(en, frl); ts[n] = &c.plrText[k]; idx[n] = k; ++n; };
+        add(PLR_NAME,  "Name", "Nom", c.plrName != 0);
+        add(PLR_LVL,   "Level", "Niveau", c.plrLvl != 0);
+        add(PLR_SPEED, "Speed", "Vitesse", c.plrSpeed != 0);
+        add(PLR_HP,    "HP", "PV", c.plrHp != 0);
+        add(PLR_MP,    "MP", "PM", c.plrMp != 0);
+        add(PLR_TP,    "TP", "TP", c.plrTp != 0);
+        add(PLR_CAST,  "Spell", "Sort", c.plrCast != 0);
+        add(PLR_GIL,   "Gil", "Gil", c.plrGil != 0);
+        if (n > 0 && v2_section(K, ctrl_uid_i(base, 54), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) {
+            cfg_text_rows(K, ctrl_uid_i(base, 55), x, ry, w, lab, ts, n, &sel);
+            cfgPlrTextElem_ = idx[sel < 0 || sel >= n ? 0 : sel];
+            v2_end(K, ry);
+        }
+    }
     g_fade = e;
 }
 #undef NOPT

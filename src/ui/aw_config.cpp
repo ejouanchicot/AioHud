@@ -181,9 +181,8 @@ void ConfigPage::draw_aw_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
     }
-    const int nC = cfg_count_modified(AW_CONTENT_A, NOPT(AW_CONTENT_A), adv) + cfg_count_modified_bytes(&c.awScreen, 4) + cfg_count_modified_bytes(&c.awMemory, 4);
-    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, nC)) {
-        cfg_rows(K, ctrl_uid_i(base, 6), AW_CONTENT_A, NOPT(AW_CONTENT_A), x, ry, w, adv);
+    // the two time sliders (their own units, their coupling) : Simple's Content, Advanced's Behaviour
+    auto timeRows = [&]() {
         {   // Red alert after : seconds without a new Absorb-TP before that caster's row turns red (10..600, step 5)
             const float lo = 10.0f, hi = 600.0f; char b[16]; _snprintf(b, sizeof(b), "%ds", c.awScreen); b[15] = 0;
             float v01 = ((float)c.awScreen - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -199,9 +198,35 @@ void ConfigPage::draw_aw_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
                 if (c.awScreen > c.awMemory) c.awScreen = c.awMemory; }   // ... and the alert never outlives it
         }
         cfg_rows(K, ctrl_uid_i(base, 9), AW_CONTENT_B, NOPT(AW_CONTENT_B), x, ry, w, adv);
-        v2_end(K, ry);
+    };
+    const int nTime = cfg_count_modified_bytes(&c.awScreen, 4) + cfg_count_modified_bytes(&c.awMemory, 4);
+    if (!adv) {   // Simple : one Content card, as before
+        if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(AW_CONTENT_A, NOPT(AW_CONTENT_A), false) + nTime)) {
+            cfg_rows(K, ctrl_uid_i(base, 6), AW_CONTENT_A, NOPT(AW_CONTENT_A), x, ry, w, false);
+            timeRows();
+            v2_end(K, ry);
+        }
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
     }
-    if (!adv) v2_simple_note(K, x, ry);
+    // ADVANCED (2026-11-27) : sections by ELEMENT. The animated list's rows exist only in that style (shown only then, not
+    // greyed) ; the orb only with a beacon. Slices of AW_CONTENT_A : [0..1] layout + text, [2] orb, [3..6] badges + animation,
+    // [7..9] the caster rows (both styles).
+    static_assert(NOPT(AW_CONTENT_A) == 10, "the Advanced slices below index AW_CONTENT_A");
+    if (c.awStyle == 0) {
+        const bool orb = c.awLayout != 2;
+        const int nL = cfg_count_modified(AW_CONTENT_A, 2, true) + (orb ? cfg_count_modified(AW_CONTENT_A + 2, 1, true) : 0) + cfg_count_modified(AW_CONTENT_A + 3, 4, true);
+        if (v2_section(K, ctrl_uid_i(base, 10), 21, "Animated list", "Liste anim\xC3\xA9""e", x, ry, w, nL)) {
+            cfg_rows(K, ctrl_uid_i(base, 11), AW_CONTENT_A, 2, x, ry, w, true);
+            if (orb) cfg_rows(K, ctrl_uid_i(base, 12), AW_CONTENT_A + 2, 1, x, ry, w, true);
+            cfg_rows(K, ctrl_uid_i(base, 13), AW_CONTENT_A + 3, 4, x, ry, w, true);
+            v2_end(K, ry);
+        }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 14), 23, "Caster rows", "Lignes des lanceurs", x, ry, w, cfg_count_modified(AW_CONTENT_A + 7, 3, true)))
+        v2_rows(K, ctrl_uid_i(base, 15), AW_CONTENT_A + 7, 3, x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 16), 22, "Behaviour", "Comportement", x, ry, w, nTime)) { timeRows(); v2_end(K, ry); }
     g_fade = e;
 }
 #undef NOPT

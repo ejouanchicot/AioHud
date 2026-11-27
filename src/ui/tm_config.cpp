@@ -495,9 +495,10 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
 // ======== THE NEW TIMERS PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// The old page's sections in its order : Display / Frame / Content / Rows / Alerts / Buff filter / Text. The rows are on
-// the engine ; the Buff filter checklist is the old editor, unchanged (tm_buff_filter_grid) -- a grid of 4-state dots,
-// not a row. The buff source keeps its old mapping (an out-of-range value reads All ; tmOthers follows it).
+// Simple : Display / Content. Advanced (restructured 2026-11-27) : Display / Frame / Duration (buffs) / Recast / Rows (both
+// columns) / Buff filter / Alerts / Text -- each list named by its column's title. The rows are on the engine ; the Buff
+// filter checklist is the old editor, unchanged (tm_buff_filter_grid) -- a grid of 4-state dots, not a row. The buff
+// source keeps its old mapping (an out-of-range value reads All ; tmOthers follows it).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const T_LY_EN[2] = { "Separate", "Fused" },                       * const T_LY_FR[2] = { "S\xC3\xA9par\xC3\xA9", "Fusionn\xC3\xA9" };
 static const char* const T_DM_EN[3] = { "Icon", "Name", "Both" },                    * const T_DM_FR[3] = { "Ic\xC3\xB4ne", "Nom", "Les deux" };
@@ -518,10 +519,16 @@ static const OptDef TM_CONTENT_A[] = {
 static const OptDef TM_CONTENT_B[] = {
     { "My buffs on allies", "Mes buffs sur alli\xC3\xA9s", OK_TOGGLE, OL_SIMPLE, F_(tmMine), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
-static const OptDef TM_ROWS[] = {
-    { "Duration: show", "Dur\xC3\xA9""e : afficher", OK_SELECT, OL_ADV, F_(tmDurMode), 0, 0, T_DM_EN, T_DM_FR, 3, nullptr, 0 },
-    { "Duration order", "Ordre Dur\xC3\xA9""e", OK_SELECT, OL_ADV, F_(tmSortDur), 0, 0, T_SD_EN, T_SD_FR, 2, nullptr, 0 },
-    { "Recast order", "Ordre Recast", OK_SELECT, OL_ADV, F_(tmSortRec), 0, 0, T_SR_EN, T_SR_FR, 2, nullptr, 0 },
+// Advanced : each LIST by its column's name (Duration / Recast), then what both lists share
+static const OptDef TM_DUR[] = {   // the Duration column (after the buff source and "my buffs on allies")
+    { "Each buff shows", "Chaque buff montre", OK_SELECT, OL_ADV, F_(tmDurMode), 0, 0, T_DM_EN, T_DM_FR, 3, nullptr, 0 },
+    { "Order", "Ordre", OK_SELECT, OL_ADV, F_(tmSortDur), 0, 0, T_SD_EN, T_SD_FR, 2, nullptr, 0 },
+};
+static const OptDef TM_REC[] = {   // the Recast column
+    { "Order", "Ordre", OK_SELECT, OL_ADV, F_(tmSortRec), 0, 0, T_SR_EN, T_SR_FR, 2, nullptr, 0 },
+};
+static const OptDef TM_ROWS[] = {  // both columns (hud_timers.cpp : the title, the row pitch and the tmMax clamp are shared)
+    { "Column titles", "Titres des colonnes", OK_TOGGLE, OL_ADV, F_(tmTitle), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Max per column", "Max par colonne", OK_INT, OL_ADV, F_(tmMax), 1, 50, nullptr, nullptr, 0, nullptr, 0 },
     { "Icon size", "Taille ic\xC3\xB4nes", OK_PCT, OL_ADV, F_(tmIconScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "Row spacing", "Espacement lignes", OK_PCT, OL_ADV, F_(tmRowGap), 0.6f, 3.0f, nullptr, nullptr, 0, nullptr, 0 },
@@ -544,33 +551,64 @@ void ConfigPage::draw_tm_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
     const bool adv = c.cfgAdv != 0;
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
+    // whose buffs on YOU : the old mapping (out of range reads All) ; the legacy tmOthers follows it (both views draw it)
+    auto buffSrc = [&](int k) {
+        const int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr("Buff source", "Source des buffs"), tr(T_SRC_EN[s], T_SRC_FR[s]), nullptr, &c.tmBuffSrc, 4)) {
+            c.tmBuffSrc = wrap(s + d, 4); save_ui_config(); }
+        const int oth = (c.tmBuffSrc != TMSRC_MINE) ? 1 : 0;   // (a right-click reset writes tmBuffSrc alone)
+        if (c.tmOthers != oth) { c.tmOthers = oth; save_ui_config(); }
+    };
     ry += K.px(6.0f);
-    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(TM_DISPLAY, NOPT(TM_DISPLAY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 2), TM_DISPLAY, NOPT(TM_DISPLAY), x, ry, w);
-    if (adv) {
+    if (!adv) {   // ======== SIMPLE : Display, Content (as before) ========
+        if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(TM_DISPLAY, NOPT(TM_DISPLAY), false)))
+            v2_rows(K, ctrl_uid_i(base, 2), TM_DISPLAY, NOPT(TM_DISPLAY), x, ry, w);
+        const int nCt = cfg_count_modified(TM_CONTENT_A, NOPT(TM_CONTENT_A), false) + cfg_count_modified_bytes(&c.tmBuffSrc, 4) + cfg_count_modified(TM_CONTENT_B, NOPT(TM_CONTENT_B), false);
+        if (v2_section(K, ctrl_uid_i(base, 5), 13, "Content", "Contenu", x, ry, w, nCt)) {
+            cfg_rows(K, ctrl_uid_i(base, 6), TM_CONTENT_A, NOPT(TM_CONTENT_A), x, ry, w, false);
+            buffSrc(7);
+            cfg_rows(K, ctrl_uid_i(base, 8), TM_CONTENT_B, NOPT(TM_CONTENT_B), x, ry, w, false);
+            v2_end(K, ry);
+        }
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
+    }
+    // ======== ADVANCED (2026-11-27 restructure) : Display / Frame / Duration / Recast / Rows / Buff filter / Alerts / Text.
+    // The lists are named by their COLUMN's title (what the player reads on the box) : the old "Content" and "Rows" mixed
+    // the Duration column's settings with the Recast column's and with what both share.
+    if (v2_section(K, ctrl_uid_i(base, 20), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(TM_DISPLAY, NOPT(TM_DISPLAY), true)))
+        v2_rows(K, ctrl_uid_i(base, 21), TM_DISPLAY, NOPT(TM_DISPLAY), x, ry, w);
+    {
         BoxStyle& bs = c.tmBox;
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
-        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+        if (v2_section(K, ctrl_uid_i(base, 22), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 23), x, ry, w, fr); v2_end(K, ry); }
     }
-    const int nCt = cfg_count_modified(TM_CONTENT_A, NOPT(TM_CONTENT_A), adv) + cfg_count_modified_bytes(&c.tmBuffSrc, 4) + cfg_count_modified(TM_CONTENT_B, NOPT(TM_CONTENT_B), adv);
-    if (v2_section(K, ctrl_uid_i(base, 5), 13, "Content", "Contenu", x, ry, w, nCt)) {
-        cfg_rows(K, ctrl_uid_i(base, 6), TM_CONTENT_A, NOPT(TM_CONTENT_A), x, ry, w, adv);
-        {   // whose buffs on YOU : the old mapping (out of range reads All) ; the legacy tmOthers follows it
-            const int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
-            if (int d = cfg_select_row(K, ctrl_uid_i(base, 7), x, ry, w, tr("Buff source", "Source des buffs"), tr(T_SRC_EN[s], T_SRC_FR[s]), nullptr, &c.tmBuffSrc, 4)) {
-                c.tmBuffSrc = wrap(s + d, 4); save_ui_config(); }
-            const int oth = (c.tmBuffSrc != TMSRC_MINE) ? 1 : 0;   // (a right-click reset writes tmBuffSrc alone)
-            if (c.tmOthers != oth) { c.tmOthers = oth; save_ui_config(); }
+    {   // DURATION : your buffs (whose, and yours on allies), how a row reads, the order
+        const int nMod = cfg_count_modified_bytes(&c.tmBuffSrc, 4) + cfg_count_modified(TM_CONTENT_B, NOPT(TM_CONTENT_B), true) + cfg_count_modified(TM_DUR, NOPT(TM_DUR), true);
+        if (v2_section(K, ctrl_uid_i(base, 24), 13, "Duration (buffs)", "Dur\xC3\xA9""e (buffs)", x, ry, w, nMod)) {
+            buffSrc(25);
+            cfg_rows(K, ctrl_uid_i(base, 26), TM_CONTENT_B, NOPT(TM_CONTENT_B), x, ry, w, true);
+            v2_rows(K, ctrl_uid_i(base, 27), TM_DUR, NOPT(TM_DUR), x, ry, w);
         }
-        cfg_rows(K, ctrl_uid_i(base, 8), TM_CONTENT_B, NOPT(TM_CONTENT_B), x, ry, w, adv);
-        v2_end(K, ry);
     }
-    if (adv) {
-        if (v2_section(K, ctrl_uid_i(base, 9), 14, "Rows", "Lignes", x, ry, w, cfg_count_modified(TM_ROWS, NOPT(TM_ROWS), true)))
-            v2_rows(K, ctrl_uid_i(base, 10), TM_ROWS, NOPT(TM_ROWS), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 28), 15, "Recast", "Recast", x, ry, w, cfg_count_modified(TM_REC, NOPT(TM_REC), true)))
+        v2_rows(K, ctrl_uid_i(base, 29), TM_REC, NOPT(TM_REC), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 30), 14, "Rows (both columns)", "Lignes (les deux colonnes)", x, ry, w, cfg_count_modified(TM_ROWS, NOPT(TM_ROWS), true)))
+        v2_rows(K, ctrl_uid_i(base, 31), TM_ROWS, NOPT(TM_ROWS), x, ry, w);
+    {   // BUFF FILTER : its own open flag (trkSecOpen_, not a catOpen_ slot) ; the checklist is the old editor
+        v2_close(mo, ry);   // (the previous section ends here : the preview's hot section must not run over the grid)
+        if (cfg_section(K, ctrl_uid_i(base, 32), x, ry, w, tr("Buff filter", "Filtre de buffs"), &trkSecOpen_, 0, true)) {
+            g_fade = e;
+            tm_buff_filter_grid(dev, fo, mo, click, ry, ri, e, bandX, bandW, x, w, x, w, anim_, trkCatOpen_, jaJobOpen_);
+            g_fade = e;
+            v2_end(K, ry);
+        } else ry += K.px(6.0f);
+    }
+    {   // ALERTS : the "+ alert" states the filter above sets, the SP blink, the //aio out numbers, the reset
         const int nAl = cfg_count_modified(TM_ALERTS, NOPT(TM_ALERTS), true) + cfg_count_modified_bytes(&c.tmFocusWarn, 4) + cfg_count_modified_bytes(&c.tmFocusHold, 4);
-        if (v2_section(K, ctrl_uid_i(base, 11), 7, "Alerts", "Alertes", x, ry, w, nAl)) {
-            cfg_rows(K, ctrl_uid_i(base, 12), TM_ALERTS, NOPT(TM_ALERTS), x, ry, w, true);
+        if (v2_section(K, ctrl_uid_i(base, 33), 7, "Alerts", "Alertes", x, ry, w, nAl)) {
+            cfg_rows(K, ctrl_uid_i(base, 34), TM_ALERTS, NOPT(TM_ALERTS), x, ry, w, true);
             // seconds, in steps of 5 (the old sliders' clamps)
             auto secs = [&](int k, const char* en, const char* frl, int* f, int lo, int hi) {
                 char b[16]; _snprintf(b, sizeof(b), "%ds", *f); b[15] = 0;
@@ -578,32 +616,24 @@ void ConfigPage::draw_tm_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
                 if (cfg_slider_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), &v01, b, nullptr, f, 4, false)) {
                     int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; *f = v < lo ? lo : (v > hi ? hi : v); }
             };
-            secs(13, "Alert under", "Alerter sous", &c.tmFocusWarn, 10, 300);
-            secs(14, "Alert duration", "Dur\xC3\xA9""e de l'alerte", &c.tmFocusHold, 5, 300);
+            secs(35, "Alert under", "Alerter sous", &c.tmFocusWarn, 10, 300);
+            secs(36, "Alert duration", "Dur\xC3\xA9""e de l'alerte", &c.tmFocusHold, 5, 300);
             cfg_note(K, x, ry, tr("These tune the \"+ alert\" states (when they blink / appear).", "R\xC3\xA8gle les \xC3\xA9tats \"+ alerte\" (quand ils clignotent / apparaissent)."));
             {   // flush the live buff / recast timers + the focus "OUT" alerts (a stuck row) ; same as //aio timers reset
                 const float h = K.px(52.0f), bw = K.px(190.0f);
                 if (ry + h >= K.clipTop && ry <= K.clipBot) {
                     kit_row(K, x, ry, w, h, 0);
                     kit_label(K, x + K.px(18.0f), ry + h * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), 0);
-                    if (kit_button(K, ctrl_uid_i(base, 15), x + w - K.px(18.0f) - bw, ry + (h - K.px(42.0f)) * 0.5f, bw, tr("Reset now", "R\xC3\xA9initialiser"), 1, 0)) timers_reset();
+                    if (kit_button(K, ctrl_uid_i(base, 37), x + w - K.px(18.0f) - bw, ry + (h - K.px(42.0f)) * 0.5f, bw, tr("Reset now", "R\xC3\xA9initialiser"), 1, 0)) timers_reset();
                 }
                 ry += h + K.px(4.0f);
             }
             v2_end(K, ry);
         }
-        {   // BUFF FILTER : its own open flag (trkSecOpen_, not a catOpen_ slot) ; the checklist is the old editor
-            if (cfg_section(K, ctrl_uid_i(base, 16), x, ry, w, tr("Buff filter", "Filtre de buffs"), &trkSecOpen_, 0, true)) {
-                g_fade = e;
-                tm_buff_filter_grid(dev, fo, mo, click, ry, ri, e, bandX, bandW, x, w, x, w, anim_, trkCatOpen_, jaJobOpen_);
-                g_fade = e;
-                v2_end(K, ry);
-            } else ry += K.px(6.0f);
-        }
-        const char* lab[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
-        TextStyle* ts[TM_TE_COUNT]; for (int i = 0; i < TM_TE_COUNT; ++i) ts[i] = &c.tmText[i];
-        if (v2_section(K, ctrl_uid_i(base, 17), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, TM_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 18), x, ry, w, lab, ts, TM_TE_COUNT, &cfgTmTextElem_); v2_end(K, ry); }
-    } else v2_simple_note(K, x, ry);
+    }
+    const char* lab[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
+    TextStyle* ts[TM_TE_COUNT]; for (int i = 0; i < TM_TE_COUNT; ++i) ts[i] = &c.tmText[i];
+    if (v2_section(K, ctrl_uid_i(base, 38), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, TM_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 39), x, ry, w, lab, ts, TM_TE_COUNT, &cfgTmTextElem_); v2_end(K, ry); }
     g_fade = e;
 }
 #undef NOPT

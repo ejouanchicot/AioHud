@@ -33,12 +33,12 @@ static const HelpItem HELP_GENERAL[] = {
         "*Debug* liste les bugs connus et le travail pr\xC3\xA9vu."},
 
     {0, "Simple or Advanced", "Simple ou Avanc\xC3\xA9"},
-    {1, "*Settings shown* (*Simple / Advanced*), on the *Interface* page under *Config window*, sets how deep every page goes. Simple shows each module's essential settings, always open. Advanced adds the frame, the text styles and the fine sizes. Nothing is lost when you switch : a setting hidden in Simple keeps its value.",
-        "*R\xC3\xA9glages affich\xC3\xA9s* (*Simple / Avanc\xC3\xA9*), sur la page *Interface* sous *Fen\xC3\xAAtre de config*, r\xC3\xA8gle la profondeur de chaque page. Simple montre les r\xC3\xA9glages essentiels de chaque module, toujours ouverts. Avanc\xC3\xA9 ajoute le cadre, les styles de texte et les tailles fines. Rien n'est perdu quand tu bascules : un r\xC3\xA9glage cach\xC3\xA9 en Simple garde sa valeur."},
+    {1, "The *Simple / Advanced* switch, at the top right (also on the *Interface* page), sets how deep every page goes. Simple shows each module's essential settings, always open. Advanced adds the frame, the text styles and the fine sizes. Nothing is lost when you switch : a setting hidden in Simple keeps its value.",
+        "Le bouton *Simple / Avanc\xC3\xA9*, en haut \xC3\xA0 droite (aussi sur la page *Interface*), r\xC3\xA8gle la profondeur de chaque page. Simple montre les r\xC3\xA9glages essentiels de chaque module, toujours ouverts. Avanc\xC3\xA9 ajoute le cadre, les styles de texte et les tailles fines. Rien n'est perdu quand tu bascules : un r\xC3\xA9glage cach\xC3\xA9 en Simple garde sa valeur."},
 
     {0, "Language", "Langue"},
-    {1, "*Language*, on the *Interface* page under *Config window*, switches the whole interface between English and French. Your choice is saved.",
-        "*Langue*, sur la page *Interface* sous *Fen\xC3\xAAtre de config*, bascule toute l'interface entre l'anglais et le fran\xC3\xA7""ais. Ton choix est sauvegard\xC3\xA9."},
+    {1, "The *EN / FR* button at the top right (also on the *Interface* page) switches the whole interface between English and French. Your choice is saved.",
+        "Le bouton *EN / FR* en haut \xC3\xA0 droite (aussi sur la page *Interface*) bascule toute l'interface entre l'anglais et le fran\xC3\xA7""ais. Ton choix est sauvegard\xC3\xA9."},
 
     {0, "Profiles", "Profils"},
     {1, "A profile stores every setting under a name. Load one to switch your whole setup at once. They are handy for a per-character or per-job look.",

@@ -265,9 +265,10 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 }
 
 // ======== THE NEW CHAT PAGE (the config redesign, milestone 3, 2026-11-27) ========
-// The same sections as the old page : the box selector, then Display [6] / Frame [20] / Content [21] / Behaviour [22] /
-// History [24] / Banned players [25] / Text [5]. The tables edit the box picked at the top (their field getters read
-// g_chatCfgBox). A row the old page hid behind a choice is greyed with it. //aio config v1 : the old page.
+// The box switch (Advanced : a segment, Simple : a selector), then Display [6] / Frame [20] / Tabs and header [21] /
+// Messages [23] / History [24] / Banned players [25] / Behaviour [22] / Text [5] (Simple : one Content card [21]). The
+// tables edit the box picked at the top (their field getters read g_chatCfgBox). The input line is the Chat box's
+// alone : Advanced shows it only on that box. //aio config v1 : the old page.
 static int chb() { return g_chatCfgBox == 1 ? 1 : 0; }
 #define F_(name)  [](UiConfig& c) -> void* { return &c.name; }
 #define FB_(name) [](UiConfig& c) -> void* { return &c.name[chb()]; }
@@ -326,10 +327,17 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
     };
     char v[32];
     ry += K.px(6.0f);
-    {   // WHICH BOX every section below edits : once, above them
+    {   // WHICH BOX every section below edits : once, above them (Advanced : the Party page's switch)
         const char* BOXL[2] = { tr("Chat", "Discussion"), tr("Battle", "Combat") };
-        if (int d = cfg_select_row(K, ctrl_uid_i(base, 1), x, ry, w, tr("Box edited below", "Box r\xC3\xA9""gl\xC3\xA9""e ci-dessous"), BOXL[b], nullptr, nullptr, 0)) g_chatCfgBox = wrap(b + d, 2);
-        ry += K.px(8.0f);
+        if (adv) {
+            const float segW = K.px(170.0f), sh = K.px(36.0f);
+            const int hit = chrome_segment(K, ctrl_uid_i(base, 40), x + (w - 2.0f * segW) * 0.5f, ry + K.px(4.0f), segW, sh, BOXL, 2, b);
+            if (hit >= 0) g_chatCfgBox = hit;
+            ry += sh + K.px(16.0f);
+        } else {
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 1), x, ry, w, tr("Box edited below", "Box r\xC3\xA9""gl\xC3\xA9""e ci-dessous"), BOXL[b], nullptr, nullptr, 0)) g_chatCfgBox = wrap(b + d, 2);
+            ry += K.px(8.0f);
+        }
     }
     {   // ---- Display (shown, size, its geometry) ----
         const int nMod = cfg_count_modified(CH_DISPLAY, NOPT(CH_DISPLAY), adv) + cfg_count_modified_bytes(&c.chW[b], 4) + cfg_count_modified_bytes(&c.chH[b], 4) + cfg_count_modified_bytes(&c.chMaxLines[b], 4);
@@ -361,28 +369,22 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 8), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 9), x, ry, w, fr); v2_end(K, ry); }
     }
-    if (v2_section(K, ctrl_uid_i(base, 10), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(CH_CONTENT, NOPT(CH_CONTENT), adv)))
-        v2_rows(K, ctrl_uid_i(base, 11), CH_CONTENT, NOPT(CH_CONTENT), x, ry, w);
-    if (adv) {
-        // ---- Behaviour : when nothing happens, collapse and / or fade, each on its own delay (chBehave bits 2 / 1) ----
-        const int nMod = cfg_count_modified_bytes(&c.chBehave[b], 4) + cfg_count_modified_bytes(&c.chIdle[b], 4) + cfg_count_modified_bytes(&c.chFoldLines[b], 4)
-                       + cfg_count_modified_bytes(&c.chFadeIdle[b], 4) + cfg_count_modified_bytes(&c.chFadeTo[b], 4);
-        if (v2_section(K, ctrl_uid_i(base, 12), 22, "Behaviour", "Comportement", x, ry, w, nMod)) {
-            // the two bits share one int : no per-row marker / reset (the section count still sees them)
-            if (cfg_toggle_row(K, ctrl_uid_i(base, 13), x, ry, w, tr("Collapse when idle", "Repli au repos"), (c.chBehave[b] & 2) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 2; save_ui_config(); }
-            const char* noFold = (c.chBehave[b] & 2) ? nullptr : tr("inactive : collapse off", "inactif : repli coup\xC3\xA9");
-            _snprintf(v, sizeof(v), "%d s", c.chIdle[b]); v[31] = 0;
-            islider(ctrl_uid_i(base, 14), tr("Each line stays", "Chaque ligne reste"), &c.chIdle[b], c.chIdle[b], 3, 120, 1, v, noFold);
-            _snprintf(v, sizeof(v), "%d", c.chFoldLines[b]); v[31] = 0;
-            islider(ctrl_uid_i(base, 15), tr("Lines kept", "Lignes gard\xC3\xA9""es"), &c.chFoldLines[b], c.chFoldLines[b], 1, 20, 1, v, noFold);
-            if (cfg_toggle_row(K, ctrl_uid_i(base, 16), x, ry, w, tr("Fade when idle", "Fondu au repos"), (c.chBehave[b] & 1) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 1; save_ui_config(); }
-            const char* noFade = (c.chBehave[b] & 1) ? nullptr : tr("inactive : fade off", "inactif : fondu coup\xC3\xA9");
-            _snprintf(v, sizeof(v), "%d s", c.chFadeIdle[b]); v[31] = 0;
-            islider(ctrl_uid_i(base, 17), tr("Fade after", "Fondu apr\xC3\xA8s"), &c.chFadeIdle[b], c.chFadeIdle[b], 3, 120, 1, v, noFade);
-            _snprintf(v, sizeof(v), "%d%%", c.chFadeTo[b]); v[31] = 0;
-            islider(ctrl_uid_i(base, 18), tr("Faded opacity", "Opacit\xC3\xA9 au repos"), &c.chFadeTo[b], c.chFadeTo[b], 0, 80, 1, v, noFade);
+    if (!adv) {   // Simple : one Content card, as before
+        if (v2_section(K, ctrl_uid_i(base, 10), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(CH_CONTENT, NOPT(CH_CONTENT), false)))
+            v2_rows(K, ctrl_uid_i(base, 11), CH_CONTENT, NOPT(CH_CONTENT), x, ry, w);
+    } else {   // Advanced : by ELEMENT. Slices of CH_CONTENT : [0..1] tabs + header, [2..3] density + stamps, [4] the input line --
+               // the Chat box's alone : shown only on that box, not greyed on the other
+        static_assert(NOPT(CH_CONTENT) == 5, "the slices below index CH_CONTENT");
+        if (v2_section(K, ctrl_uid_i(base, 41), 21, "Tabs and header", "Onglets et en-t\xC3\xAAte", x, ry, w, cfg_count_modified(CH_CONTENT, 2, true)))
+            v2_rows(K, ctrl_uid_i(base, 42), CH_CONTENT, 2, x, ry, w);
+        const int nMsg = cfg_count_modified(CH_CONTENT + 2, 2, true) + (b == 0 ? cfg_count_modified(CH_CONTENT + 4, 1, true) : 0);
+        if (v2_section(K, ctrl_uid_i(base, 43), 23, "Messages", "Messages", x, ry, w, nMsg)) {
+            cfg_rows(K, ctrl_uid_i(base, 44), CH_CONTENT + 2, 2, x, ry, w, true);
+            if (b == 0) cfg_rows(K, ctrl_uid_i(base, 45), CH_CONTENT + 4, 1, x, ry, w, true);
             v2_end(K, ry);
         }
+    }
+    if (adv) {
         // ---- History : what was said, to a text file (the Battle box : the combat log too) ----
         if (v2_section(K, ctrl_uid_i(base, 19), 24, "History", "Historique", x, ry, w, 0)) {
             if (btn_row(ctrl_uid_i(base, 20), tr("Export the history", "Exporter l'historique"), tr("Export", "Exporter"), false)) {
@@ -412,6 +414,26 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
                 if (btn_row(ctrl_uid_i(ubase, k), chat_ban_name(k), tr("Unban", "D\xC3\xA9""bannir"), false)) unban = k;
             if (unban >= 0) { char nm[20]; lstrcpynA(nm, chat_ban_name(unban), sizeof(nm)); chat_ban_remove(nm); }   // after the loop : the list moves
             v2_end(K, ry);
+        }
+        {   // ---- Behaviour : when nothing happens, collapse and / or fade, each on its own delay (chBehave bits 2 / 1) ----
+            const int nMod = cfg_count_modified_bytes(&c.chBehave[b], 4) + cfg_count_modified_bytes(&c.chIdle[b], 4) + cfg_count_modified_bytes(&c.chFoldLines[b], 4)
+                           + cfg_count_modified_bytes(&c.chFadeIdle[b], 4) + cfg_count_modified_bytes(&c.chFadeTo[b], 4);
+            if (v2_section(K, ctrl_uid_i(base, 12), 22, "Behaviour", "Comportement", x, ry, w, nMod)) {
+                // the two bits share one int : no per-row marker / reset (the section count still sees them)
+                if (cfg_toggle_row(K, ctrl_uid_i(base, 13), x, ry, w, tr("Collapse when idle", "Repli au repos"), (c.chBehave[b] & 2) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 2; save_ui_config(); }
+                const char* noFold = (c.chBehave[b] & 2) ? nullptr : tr("inactive : collapse off", "inactif : repli coup\xC3\xA9");
+                _snprintf(v, sizeof(v), "%d s", c.chIdle[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 14), tr("Each line stays", "Chaque ligne reste"), &c.chIdle[b], c.chIdle[b], 3, 120, 1, v, noFold);
+                _snprintf(v, sizeof(v), "%d", c.chFoldLines[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 15), tr("Lines kept", "Lignes gard\xC3\xA9""es"), &c.chFoldLines[b], c.chFoldLines[b], 1, 20, 1, v, noFold);
+                if (cfg_toggle_row(K, ctrl_uid_i(base, 16), x, ry, w, tr("Fade when idle", "Fondu au repos"), (c.chBehave[b] & 1) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 1; save_ui_config(); }
+                const char* noFade = (c.chBehave[b] & 1) ? nullptr : tr("inactive : fade off", "inactif : fondu coup\xC3\xA9");
+                _snprintf(v, sizeof(v), "%d s", c.chFadeIdle[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 17), tr("Fade after", "Fondu apr\xC3\xA8s"), &c.chFadeIdle[b], c.chFadeIdle[b], 3, 120, 1, v, noFade);
+                _snprintf(v, sizeof(v), "%d%%", c.chFadeTo[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 18), tr("Faded opacity", "Opacit\xC3\xA9 au repos"), &c.chFadeTo[b], c.chFadeTo[b], 0, 80, 1, v, noFade);
+                v2_end(K, ry);
+            }
         }
         // ---- Text (of the box picked at the top) + the auto-translated words' colour (both boxes) ----
         const char* lab[1] = { b == 1 ? tr("Battle", "Combat") : tr("Chat", "Discussion") };

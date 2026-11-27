@@ -106,7 +106,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
 // ======== THE NEW HATE LIST PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// Display / Frame / Content / Text, like the old page.
+// Display / Frame / Mob list / Text (the old page's Content, named by its element).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const OptDef HL_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(hlShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -141,12 +141,16 @@ void ConfigPage::draw_hl_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
         if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
     }
-    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(HL_CONTENT, NOPT(HL_CONTENT), adv)))
+    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Mob list", "Liste des mobs", x, ry, w, cfg_count_modified(HL_CONTENT, NOPT(HL_CONTENT), adv)))
         v2_rows(K, ctrl_uid_i(base, 6), HL_CONTENT, NOPT(HL_CONTENT), x, ry, w);
-    if (adv) {
-        const char* lab[HL_TE_COUNT] = { tr("Distance", "Distance"), tr("Name", "Nom"), tr("HP%", "PV%"), tr("Target", "Cible") };
-        TextStyle* ts[HL_TE_COUNT]; for (int i = 0; i < HL_TE_COUNT; ++i) ts[i] = &c.hlText[i];
-        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, HL_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, HL_TE_COUNT, &cfgHlTextElem_); v2_end(K, ry); }
+    if (adv) {   // TEXT : the element list follows the columns shown (no dead element)
+        const char* lab[HL_TE_COUNT]; TextStyle* ts[HL_TE_COUNT]; int n = 0;
+        auto add = [&](const char* en, const char* frl, int i) { if (n < HL_TE_COUNT) { lab[n] = tr(en, frl); ts[n] = &c.hlText[i]; ++n; } };
+        if (c.hlDist) add("Distance", "Distance", HL_DIST);
+        add("Name", "Nom", HL_NAME);
+        add("HP%", "PV%", HL_PCT);
+        if (c.hlTgt) add("Target", "Cible", HL_TARGET);
+        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, n, &cfgHlTextElem_); v2_end(K, ry); }
     } else v2_simple_note(K, x, ry);
     g_fade = e;
 }

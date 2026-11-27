@@ -306,11 +306,12 @@ if (ui_config().cfgAdv && c.mmClock) {   // Advanced only ; and only with the cl
 
 
 // ======== THE NEW MINIMAP PAGE (the config redesign, milestone 3, 2026-11-26) ========
-// The old page's sections in its order : Display / Shape & Frame / Clock (+ the clock box's frame) / Markers / Text. A row
-// the old page hid behind a dependency is GREYED with its reason ; a colour picker appears with its switch, the clock's
-// frame and text with the clock. The Dial's module switches (time / day / moon / map square) MOVE to its modules' group
-// when Day dial = Disc, as on the old page (one row per setting, never two). Old mappings kept : Day dial / Info band
-// read 1 / 2 when out of range, a module's place skips the taken places, the Dial forces the clock and the bezel on.
+// Simple : Display / Shape & Frame. Advanced (restructured 2026-11-27) : Display (+ Layout, Shape) / Frame / Box frame /
+// Clock (Classic, Compact) or Dial (the Dial layout) / Info band (Compact) / Markers / Text. The LAYOUT and the SHAPE
+// decide which rows exist (a Dial-only row appears only on the Dial) ; a plain dependency keeps its grey + reason ; a
+// colour picker appears with its switch. "Shown + where" is one choice (the clock and its side, each Dial module and its
+// place). Old mappings kept : Day dial / Info band read 1 / 2 when out of range, a module's place skips the taken places,
+// the Dial forces the clock and the bezel on.
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const M_SH_EN[2] = { "Square", "Round" },                  * const M_SH_FR[2] = { "Carr\xC3\xA9", "Rond" };
 static const char* const M_FR_EN[3] = { "None", "Box Theme", "Custom" },      * const M_FR_FR[3] = { "Aucun", "Th\xC3\xA8me box", "Perso" };
@@ -350,9 +351,6 @@ static const char* mw_sqborder(const UiConfig& c) {   // the square's border : r
     if (c.mmLayout == 2) return tr("inactive : the Dial has its case", "inactif : le Cadran a son bo\xC3\xAEtier");
     return c.mmFrame == 2 ? nullptr : tr("inactive : frame not Custom", "inactif : cadre pas Perso");
 }
-static const char* mw_dial(const UiConfig& c)    { return c.mmLayout == 2 ? nullptr : tr("inactive : not the Dial layout", "inactif : disposition autre que Cadran"); }
-static const char* mw_disc(const UiConfig& c)    { if (const char* w = mw_dial(c)) return w; return c.mmDayDial == 2 ? nullptr : tr("inactive : Day dial is not Disc", "inactif : cadran du jour autre que Disque"); }
-static const char* mw_compact(const UiConfig& c) { return c.mmLayout == 1 ? nullptr : tr("inactive : not the Compact layout", "inactif : disposition autre que Compact"); }
 
 static const OptDef MM_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(mmShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -369,6 +367,14 @@ static const OptDef MM_BEZEL[] = {
 static const OptDef MM_BEZEL2[] = {
     { "Cardinal size", "Taille cardinaux", OK_PCT, OL_SIMPLE, F_(mmCardSz), 0.5f, 2.0f, nullptr, nullptr, 0, mw_card, 0 },
     { "Border width", "Largeur bordure", OK_PCT, OL_SIMPLE, F_(mmSqBorder), 0.5f, 2.0f, nullptr, nullptr, 0, mw_sqborder, 0 },
+};
+// Advanced : the MODEL (layout + shape decide which rows exist below) and the frame's style
+static const OptDef MM_MODEL[] = {
+    { "Layout", "Disposition", OK_SELECT, OL_ADV, F_(mmLayout), 0, 0, M_LL_EN, M_LL_FR, 3, nullptr, 0 },
+    { "Shape", "Forme", OK_SELECT, OL_ADV, F_(mmShape), 0, 0, M_SH_EN, M_SH_FR, 2, nullptr, 0 },
+};
+static const OptDef MM_FRSTYLE[] = {
+    { "Frame style", "Style du cadre", OK_SELECT, OL_ADV, F_(mmFrame), 0, 0, M_FR_EN, M_FR_FR, 3, nullptr, 0 },
 };
 static const OptDef MM_MARK_A[] = {
     { "Marker style", "Style des marqueurs", OK_SELECT, OL_ADV, F_(mmMarkStyle), 0, 0, M_MS_EN, M_MS_FR, 2, nullptr, 0 },
@@ -410,142 +416,205 @@ void ConfigPage::draw_minimap_v2(u32 dev, Font* fo, const MouseState* mo, bool c
         if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), tr(chEn[v], chFr[v]), why, f, 4)) { *f = wrap(v + d, n); save_ui_config(); }
     };
     auto mod = [](const void* p) { return cfg_count_modified_bytes(p, 4); };
+    static const UiConfig D{};   // the factory values : a choice's marker, a float's
+    auto fmod_ = [](float v, float d) { return fabsf(v - d) > 0.0005f ? 1 : 0; };   // a float row's marker (the slider row's own test)
     const bool dialM = c.mmLayout == 2, disc = dialM && c.mmDayDial == 2;
+    const bool dialSqC = dialM && c.mmShape == 0;   // the square watch case (minimap.cpp dialSq) : mmBezelW is its band
+    // a 50 .. 200 % slider, snapped to 5 % (the bezel / case width, the cardinals, the square's border)
+    auto pct = [&](int k, const char* lab, float* f, const char* why) {
+        float v01 = clampf((*f - 0.5f) / 1.5f, 0.0f, 1.0f);
+        char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(*f * 100.0f + 0.5f)); b[15] = 0;
+        if (cfg_slider_row(K, ctrl_uid_i(base, k), x, ry, w, lab, &v01, b, why, f, 4, true)) {
+            const float v = floorf((0.5f + v01 * 1.5f) / 0.05f + 0.5f) * 0.05f; *f = clampf(v, 0.5f, 2.0f); }
+    };
+    auto zoom = [&](int k) {   // Zoom 1x .. 24x : BOUNDED print of a value that comes from a FILE (see the old page : a 1e30 smashed the stack once)
+        const float lo = 1.0f, hi = 24.0f;
+        char b[16]; _snprintf(b, sizeof(b), "%.1fx", clampf(c.mmZoom, lo, hi)); b[sizeof(b) - 1] = 0;
+        float v01 = clampf((c.mmZoom - lo) / (hi - lo), 0.0f, 1.0f);
+        if (cfg_slider_row(K, ctrl_uid_i(base, k), x, ry, w, tr("Zoom", "Zoom"), &v01, b, nullptr, &c.mmZoom, 4, true)) c.mmZoom = clampf(lo + v01 * (hi - lo), lo, hi);
+    };
+    auto bg = [&](int k) {     // the backdrop's opacity (0 = the game shows through) : a themed square frame paints its own interior
+        char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(c.mmBgAlpha * 100.0f + 0.5f)); b[15] = 0;
+        float v01 = clampf(c.mmBgAlpha, 0.0f, 1.0f);
+        if (cfg_slider_row(K, ctrl_uid_i(base, k), x, ry, w, tr("Map background", "Fond carte"), &v01, b, mw_bg(c), &c.mmBgAlpha, 4, true)) c.mmBgAlpha = v01;
+    };
     ry += K.px(6.0f);
 
-    // ===== DISPLAY =====
-    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(MM_DISPLAY, NOPT(MM_DISPLAY), adv) + mod(&c.mmZoom) + mod(&c.mmBgAlpha))) {
-        cfg_rows(K, ctrl_uid_i(base, 2), MM_DISPLAY, NOPT(MM_DISPLAY), x, ry, w, adv);
-        {   // Zoom 1x .. 24x : BOUNDED print of a value that comes from a FILE (see the old page : a 1e30 smashed the stack once)
-            const float lo = 1.0f, hi = 24.0f;
-            char b[16]; _snprintf(b, sizeof(b), "%.1fx", clampf(c.mmZoom, lo, hi)); b[sizeof(b) - 1] = 0;
-            float v01 = clampf((c.mmZoom - lo) / (hi - lo), 0.0f, 1.0f);
-            if (cfg_slider_row(K, ctrl_uid_i(base, 3), x, ry, w, tr("Zoom", "Zoom"), &v01, b, nullptr, &c.mmZoom, 4, true)) c.mmZoom = clampf(lo + v01 * (hi - lo), lo, hi);
-        }
-        {   // the backdrop's opacity (0 = the game shows through) : a themed square frame paints its own interior
-            char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(c.mmBgAlpha * 100.0f + 0.5f)); b[15] = 0;
-            float v01 = clampf(c.mmBgAlpha, 0.0f, 1.0f);
-            if (cfg_slider_row(K, ctrl_uid_i(base, 4), x, ry, w, tr("Map background", "Fond carte"), &v01, b, mw_bg(c), &c.mmBgAlpha, 4, true)) c.mmBgAlpha = v01;
-        }
-        v2_end(K, ry);
-    }
-    // ===== SHAPE & FRAME =====
-    const bool dialSqC = dialM && c.mmShape == 0;   // the square watch case (minimap.cpp dialSq) : mmBezelW is its band
-    const int nSh = cfg_count_modified(MM_SHAPE, NOPT(MM_SHAPE), adv) + cfg_count_modified(MM_BEZEL, NOPT(MM_BEZEL), adv) + mod(&c.mmBezelW)
-                  + cfg_count_modified(MM_BEZEL2, NOPT(MM_BEZEL2), adv);
-    if (v2_section(K, ctrl_uid_i(base, 5), 7, "Shape & Frame", "Forme & Cadre", x, ry, w, nSh)) {
-        cfg_rows(K, ctrl_uid_i(base, 6), MM_SHAPE, NOPT(MM_SHAPE), x, ry, w, adv);
-        if (c.mmFrame == 2) cfg_color_row(K, ctrl_uid_i(base, 7), x, ry, w, &c.mmFrameColor);   // the custom frame colour
-        cfg_rows(K, ctrl_uid_i(base, 8), MM_BEZEL, NOPT(MM_BEZEL), x, ry, w, adv);
-        {   // one field, two names : the round's bezel ring, the square Dial's case band
-            float v01 = clampf((c.mmBezelW - 0.5f) / 1.5f, 0.0f, 1.0f);
-            char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(c.mmBezelW * 100.0f + 0.5f)); b[15] = 0;
-            const char* lab = dialSqC ? tr("Case width", "Largeur du bo\xC3\xAEtier") : tr("Bezel width", "Largeur anneau");
-            if (cfg_slider_row(K, ctrl_uid_i(base, 9), x, ry, w, lab, &v01, b, dialSqC ? nullptr : mw_card(c), &c.mmBezelW, 4, true)) {
-                const float v = floorf((0.5f + v01 * 1.5f) / 0.05f + 0.5f) * 0.05f; c.mmBezelW = clampf(v, 0.5f, 2.0f); }
-        }
-        cfg_rows(K, ctrl_uid_i(base, 10), MM_BEZEL2, NOPT(MM_BEZEL2), x, ry, w, adv);
-        v2_end(K, ry);
-    }
-    if (adv) {
-        // ===== CLOCK =====
-        const int nCk = mod(&c.mmLayout) + mod(&c.mmDayDial) + mod(&c.mmPodHP) + mod(&c.mmPodDay) + mod(&c.mmPodMoon) + mod(&c.mmSkyShow) + mod(&c.mmPodSky)
-                      + mod(&c.mmWxShow) + mod(&c.mmPodWx) + mod(&c.mmGem) + mod(&c.mmInfoBand) + mod(&c.mmInfoDist) + mod(&c.mmClock) + mod(&c.mmClkTime)
-                      + mod(&c.mmClkDay) + mod(&c.mmClkMoon) + mod(&c.mmClkReal) + mod(c.mmLayout == 1 ? (const void*)&c.mmClkBand : (const void*)&c.mmClockPos) + (disc ? mod(&c.mmGrid) : 0);
-        if (v2_section(K, ctrl_uid_i(base, 11), 9, "Clock", "Horloge", x, ry, w, nCk)) {
-            sel(12, "Layout", "Disposition", &c.mmLayout, M_LL_EN, M_LL_FR, 3, 0, nullptr);
-            sel(13, "Day dial", "Cadran du jour", &c.mmDayDial, M_DD_EN, M_DD_FR, 3, 1, mw_dial(c));
-            {   // the Dial's MODULES around the compass (Day dial = Disc) : each one's switch, then its place
-                const char* wDisc = mw_disc(c);
-                const bool sqS = c.mmShape == 0;
-                auto shown = [&](int v) { return sqS ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };   // the round folds 7 / 8 onto its sides
-                auto taken = [&](int slot, int self) {           // a place held by another module (Off holds none)
-                    if (slot == 6) return false;
-                    const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
-                    const bool on[4] = { c.mmClkDay != 0, c.mmClkMoon != 0, c.mmSkyShow != 0, c.mmWxShow != 0 };
-                    for (int q = 0; q < 4; ++q) if (q != self && on[q] && shown(m[q]) == slot) return true;
-                    return false;
-                };
-                auto place = [&](int k, int& field, int self, int def, const char* why) {   // steps through the shape's places, skips the taken
-                    const int* ord = sqS ? M_ORD_S : M_ORD_R; const int n = (sqS ? 9 : 7) - 1;   // (no module offers Off here)
-                    int cur = (field < 0 || field > 8) ? def : shown(field); if (cur == 6) cur = def;
-                    int idx = 0; for (int q = 0; q < n; ++q) if (ord[q] == cur) idx = q;
-                    const char* lab = sqS ? tr(M_SQ_EN[cur], M_SQ_FR[cur]) : tr(M_SL_EN[cur], M_SL_FR[cur]);
-                    if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr("  Place", "  Emplacement"), lab, why, &field, 4)) {
-                        int k2 = idx;
-                        for (int t = 0; t < n; ++t) { k2 = (k2 + d + n) % n; if (!taken(ord[k2], self)) break; }
-                        field = ord[k2]; save_ui_config();
-                    }
-                };
-                auto offWhy = [&](int on, const char* en, const char* frl) { return wDisc ? wDisc : (on ? nullptr : tr(en, frl)); };
-                if (disc) {
-                    tog(14, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, nullptr);
-                    tog(15, "Map square (F-10)", "Case de carte (F-10)", &c.mmGrid, nullptr);
-                }
-                sel(16, "Hour / map square", "Heure / case de carte", &c.mmPodHP, M_HP_EN, M_HP_FR, 2, 0,
-                    offWhy(c.mmClkTime || c.mmGrid, "inactive : hour and map square off", "inactif : heure et case coup\xC3\xA9""es"));
-                if (disc) tog(17, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, nullptr);
-                place(18, c.mmPodDay, 0, 3, offWhy(c.mmClkDay, "inactive : elemental day off", "inactif : jour \xC3\xA9l\xC3\xA9mentaire coup\xC3\xA9"));
-                if (disc) tog(19, "Moon phase", "Phase de lune", &c.mmClkMoon, nullptr);
-                place(20, c.mmPodMoon, 1, 2, offWhy(c.mmClkMoon, "inactive : moon phase off", "inactif : phase de lune coup\xC3\xA9""e"));
-                tog(21, "Day / night", "Jour / nuit", &c.mmSkyShow, wDisc);
-                place(22, c.mmPodSky, 2, 5, offWhy(c.mmSkyShow, "inactive : day / night off", "inactif : jour / nuit coup\xC3\xA9"));
-                tog(23, "Weather", "M\xC3\xA9t\xC3\xA9o", &c.mmWxShow, wDisc);
-                place(24, c.mmPodWx, 3, 4, offWhy(c.mmWxShow, "inactive : weather off", "inactif : m\xC3\xA9t\xC3\xA9o coup\xC3\xA9""e"));
-                sel(25, "Gem (zone without a map)", "Pierre (zone sans carte)", &c.mmGem, M_GM_EN, M_GM_FR, 6, 0, wDisc);
-            }
-            sel(26, "Info band (square, zoom, targets)", "Bande infos (case, zoom, cibles)", &c.mmInfoBand, M_IB_EN, M_IB_FR, 3, 2, mw_compact(c));
-            {   const char* wc = mw_compact(c);
-                tog(27, "Distances (target, Wide Scan)", "Distances (cible, Wide Scan)", &c.mmInfoDist,
-                    wc ? wc : (c.mmInfoBand > 0 ? nullptr : tr("inactive : info band off", "inactif : bande infos coup\xC3\xA9""e"))); }
-            // THE DIAL needs the clock and the bezel (turning either off made the whole Dial vanish) : forced on
-            if (dialM && (!c.mmClock || !c.mmBezel)) { c.mmClock = 1; c.mmBezel = 1; save_ui_config(); }
-            tog(28, "Clock header", "En-t\xC3\xAAte horloge", &c.mmClock, dialM ? tr("inactive : always on the Dial", "inactif : toujours sur le Cadran") : nullptr);
-            const char* wClk = mw_clock(c);
-            if (!disc) {   // (the Dial's modules : their switches sit with their places above)
-                tog(29, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, wClk);
-                tog(30, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, wClk);
-                tog(31, "Moon phase", "Phase de lune", &c.mmClkMoon, wClk);
-            }
-            const char* wNoDial = wClk ? wClk : (dialM ? tr("inactive : not on the Dial", "inactif : absent du Cadran") : nullptr);
-            tog(32, "Real / GMT time", "Heure r\xC3\xA9""elle / GMT", &c.mmClkReal, wNoDial);
-            if (c.mmLayout == 1) sel(33, "Clock position", "Position horloge", &c.mmClkBand, M_PL_EN, M_PL_FR, 2, 0, wNoDial);   // Compact : the band above / below the map
-            else                 sel(34, "Clock position", "Position horloge", &c.mmClockPos, M_PL_EN, M_PL_FR, 4, 0, wNoDial);
+    if (!adv) {   // ======== SIMPLE : Display, Shape & Frame (as before) ========
+        if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(MM_DISPLAY, NOPT(MM_DISPLAY), false) + fmod_(c.mmZoom, D.mmZoom) + fmod_(c.mmBgAlpha, D.mmBgAlpha))) {
+            cfg_rows(K, ctrl_uid_i(base, 2), MM_DISPLAY, NOPT(MM_DISPLAY), x, ry, w, false);
+            zoom(3);
+            bg(4);
             v2_end(K, ry);
         }
-        if (c.mmClock) {   // the clock box's own frame : exists with the clock header
-            BoxStyle& bs = c.mmBox;
-            const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
-            if (v2_section(K, ctrl_uid_i(base, 35), 24, "Clock frame", "Cadre de l'horloge", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 36), x, ry, w, fr); v2_end(K, ry); }
+        const int nSh = cfg_count_modified(MM_SHAPE, NOPT(MM_SHAPE), false) + cfg_count_modified(MM_BEZEL, NOPT(MM_BEZEL), false) + fmod_(c.mmBezelW, D.mmBezelW)
+                      + cfg_count_modified(MM_BEZEL2, NOPT(MM_BEZEL2), false);
+        if (v2_section(K, ctrl_uid_i(base, 5), 7, "Shape & Frame", "Forme & Cadre", x, ry, w, nSh)) {
+            cfg_rows(K, ctrl_uid_i(base, 6), MM_SHAPE, NOPT(MM_SHAPE), x, ry, w, false);
+            if (c.mmFrame == 2) cfg_color_row(K, ctrl_uid_i(base, 7), x, ry, w, &c.mmFrameColor);   // the custom frame colour
+            cfg_rows(K, ctrl_uid_i(base, 8), MM_BEZEL, NOPT(MM_BEZEL), x, ry, w, false);
+            // one field, two names : the round's bezel ring, the square Dial's case band
+            pct(9, dialSqC ? tr("Case width", "Largeur du bo\xC3\xAEtier") : tr("Bezel width", "Largeur anneau"), &c.mmBezelW, dialSqC ? nullptr : mw_card(c));
+            cfg_rows(K, ctrl_uid_i(base, 10), MM_BEZEL2, NOPT(MM_BEZEL2), x, ry, w, false);
+            v2_end(K, ry);
         }
-        // ===== MARKERS =====
-        const int nMk = cfg_count_modified(MM_MARK_A, NOPT(MM_MARK_A), true) + cfg_count_modified(MM_MARK_RING, NOPT(MM_MARK_RING), true) + mod(&c.mmRingR)
-                      + cfg_count_modified(MM_MARK_SCAN, NOPT(MM_MARK_SCAN), true) + (disc ? 0 : cfg_count_modified(MM_MARK_GRID, NOPT(MM_MARK_GRID), true));
-        if (v2_section(K, ctrl_uid_i(base, 37), 8, "Markers", "Marqueurs", x, ry, w, nMk)) {
-            cfg_rows(K, ctrl_uid_i(base, 38), MM_MARK_A, NOPT(MM_MARK_A), x, ry, w, true);
-            if (c.mmTgtLine) cfg_color_row(K, ctrl_uid_i(base, 39), x, ry, w, &c.mmTgtLineCol);
-            cfg_rows(K, ctrl_uid_i(base, 40), MM_MARK_RING, NOPT(MM_MARK_RING), x, ry, w, true);
+        v2_simple_note(K, x, ry);
+        g_fade = e;
+        return;
+    }
+
+    // ======== ADVANCED (2026-11-27 restructure) : Display / Frame / Box frame / Clock or Dial / Info band / Markers / Text.
+    // The LAYOUT decides which sections exist : a row that only one layout or shape draws appears only there (no more
+    // "inactive : not the Dial layout") ; a plain dependency (the clock off, the frame not Custom) keeps its grey + reason.
+    // "Shown or not, and where" is ONE choice (the clock and its position, each Dial module and its place).
+    if (dialM && (!c.mmClock || !c.mmBezel)) { c.mmClock = 1; c.mmBezel = 1; save_ui_config(); }   // THE DIAL needs both (either off made it vanish)
+    const bool round = c.mmShape == 1;
+    // a choice's marker / right-click reset : the switch when it differs (or reads Off), else the mode
+    auto markOf = [](int& on, int& mode, int dOn) -> void* { return (on != dOn || !on) ? (void*)&on : (void*)&mode; };
+    auto chMod = [&](int& on, int& mode, int dOn) { return mod(markOf(on, mode, dOn)); };
+    auto choice = [&](int k, const char* en, const char* frl, int& on, int& mode, const char* const* men, const char* const* mfr, int n, int dOn) {
+        const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int q = 0; q < n && q < 7; ++q) lab[q + 1] = tr(men[q], mfr[q]);
+        const int v = on ? 1 + ((mode < 0 || mode >= n) ? 0 : mode) : 0;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), lab[v], nullptr, markOf(on, mode, dOn), 4)) {
+            const int nv = wrap(v + d, n + 1); on = nv > 0 ? 1 : 0; if (nv > 0) mode = nv - 1; save_ui_config(); }
+    };
+    const char* wClk = c.mmClock ? nullptr : tr("inactive : clock off", "inactif : horloge coup\xC3\xA9""e");
+
+    // ===== DISPLAY : the map itself, and the model (layout + shape) the rest of the page follows =====
+    if (v2_section(K, ctrl_uid_i(base, 50), 6, "Display", "Affichage", x, ry, w,
+                   cfg_count_modified(MM_DISPLAY, NOPT(MM_DISPLAY), true) + fmod_(c.mmZoom, D.mmZoom) + cfg_count_modified(MM_MODEL, NOPT(MM_MODEL), true))) {
+        cfg_rows(K, ctrl_uid_i(base, 51), MM_DISPLAY, NOPT(MM_DISPLAY), x, ry, w, true);
+        zoom(52);
+        cfg_rows(K, ctrl_uid_i(base, 53), MM_MODEL, NOPT(MM_MODEL), x, ry, w, true);
+        v2_end(K, ry);
+    }
+    // ===== FRAME : the map's frame -- each width row only for the shape / layout that draws it =====
+    {
+        const bool bezelRow = round && !dialM;           // the round's ring switch (the Dial IS its bezel)
+        const bool widthRow = round || dialSqC;          // the ring's width, or the square Dial's case band (one field)
+        const bool cardRow  = round || dialM;            // the ring's medallions, or the Dial's engraved letters
+        const bool bordRow  = !round && !dialM;          // the plain square's border
+        const char* wRing = dialM ? nullptr : (wClk ? wClk : (c.mmBezel ? nullptr : tr("inactive : bezel ring off", "inactif : anneau coup\xC3\xA9")));
+        const int nMod = cfg_count_modified(MM_FRSTYLE, NOPT(MM_FRSTYLE), true) + (bezelRow ? mod(&c.mmBezel) : 0) + (widthRow ? fmod_(c.mmBezelW, D.mmBezelW) : 0)
+                       + (cardRow ? fmod_(c.mmCardSz, D.mmCardSz) : 0) + (bordRow ? fmod_(c.mmSqBorder, D.mmSqBorder) : 0) + fmod_(c.mmBgAlpha, D.mmBgAlpha) + mod(&c.mmGem);
+        if (v2_section(K, ctrl_uid_i(base, 54), 7, "Frame", "Cadre", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 55), MM_FRSTYLE, NOPT(MM_FRSTYLE), x, ry, w, true);
+            if (c.mmFrame == 2) cfg_color_row(K, ctrl_uid_i(base, 56), x, ry, w, &c.mmFrameColor);   // the custom frame colour
+            if (bezelRow) tog(57, "Bezel ring", "Anneau bordure", &c.mmBezel, wClk);   // (drawn with the clock only : minimap.cpp astralRing)
+            if (widthRow) pct(58, dialSqC ? tr("Case width", "Largeur du bo\xC3\xAEtier") : tr("Bezel width", "Largeur anneau"), &c.mmBezelW, wRing);
+            if (cardRow)  pct(59, tr("Cardinal size", "Taille cardinaux"), &c.mmCardSz, wRing);
+            if (bordRow)  pct(60, tr("Border width", "Largeur bordure"), &c.mmSqBorder, c.mmFrame == 2 ? nullptr : tr("inactive : frame not Custom", "inactif : cadre pas Perso"));
+            bg(61);
+            // the plate that closes the lens in a zone without a map : every layout draws it (minimap.cpp noMap)
+            sel(62, "Gem (zone without a map)", "Pierre (zone sans carte)", &c.mmGem, M_GM_EN, M_GM_FR, 6, 0, nullptr);
+            v2_end(K, ry);
+        }
+    }
+    // ===== BOX FRAME : the themed box round the clock and the map -- it exists only when there is a box (minimap.cpp hasClock) =====
+    if (c.mmClock || (c.mmLayout == 1 && c.mmInfoBand > 0)) {
+        BoxStyle& bs = c.mmBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 63), 24, "Box frame", "Cadre de la bo\xC3\xAEte", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 64), x, ry, w, fr); v2_end(K, ry); }
+    }
+    if (!dialM) {
+        // ===== CLOCK (Classic / Compact) : one choice "Off / where", then what it shows =====
+        const bool cmp = c.mmLayout == 1;   // Compact : a band above / below the map ; Classic : a header on any side
+        int& pos = cmp ? c.mmClkBand : c.mmClockPos;
+        const int nMod = chMod(c.mmClock, pos, D.mmClock) + mod(&c.mmClkTime) + mod(&c.mmClkDay) + mod(&c.mmClkMoon) + mod(&c.mmClkReal);
+        if (v2_section(K, ctrl_uid_i(base, 65), 9, "Clock", "Horloge", x, ry, w, nMod)) {
+            if (cmp) choice(66, "Clock band", "Bande horloge", c.mmClock, c.mmClkBand, M_PL_EN, M_PL_FR, 2, D.mmClock);
+            else     choice(67, "Clock", "Horloge", c.mmClock, c.mmClockPos, M_PL_EN, M_PL_FR, 4, D.mmClock);
+            tog(68, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, wClk);
+            tog(69, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, wClk);
+            tog(70, "Moon phase", "Phase de lune", &c.mmClkMoon, wClk);
+            tog(71, "Real / GMT time", "Heure r\xC3\xA9""elle / GMT", &c.mmClkReal, wClk);
+            v2_end(K, ry);
+        }
+    } else {
+        // ===== DIAL : its day subdial, then its pieces -- the corner subdials, or (Disc) the modules round the compass =====
+        const bool sqS = c.mmShape == 0;
+        auto shown = [&](int v) { return sqS ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };   // the round folds 7 / 8 onto its sides
+        auto taken = [&](int slot, int self) {           // a place held by another module (Off holds none)
+            if (slot == 6) return false;
+            const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
+            const bool on[4] = { c.mmClkDay != 0, c.mmClkMoon != 0, c.mmSkyShow != 0, c.mmWxShow != 0 };
+            for (int q = 0; q < 4; ++q) if (q != self && on[q] && shown(m[q]) == slot) return true;
+            return false;
+        };
+        // a module : ONE choice "Off / its place" -- steps through the shape's places, skipping the ones another module holds
+        auto module = [&](int k, const char* en, const char* frl, int& on, int& field, int self, int def, int dOn) {
+            const int* ord = sqS ? M_ORD_S : M_ORD_R; const int n = (sqS ? 9 : 7) - 1;   // the places (the trailing 6 = Off is the switch)
+            int cur = (field < 0 || field > 8) ? def : shown(field); if (cur == 6) cur = def;
+            int idx = 0; for (int q = 0; q < n; ++q) if (ord[q] == cur) idx = q;
+            const int v = on ? idx + 1 : 0;
+            const char* lab = !on ? tr("Off", "D\xC3\xA9sactiv\xC3\xA9") : (sqS ? tr(M_SQ_EN[cur], M_SQ_FR[cur]) : tr(M_SL_EN[cur], M_SL_FR[cur]));
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), lab, nullptr, markOf(on, field, dOn), 4)) {
+                int nv = v;
+                for (int t = 0; t <= n; ++t) { nv = (nv + d + n + 1) % (n + 1); if (nv == 0 || !taken(ord[nv - 1], self)) break; }
+                on = nv > 0 ? 1 : 0; if (nv > 0) field = ord[nv - 1]; save_ui_config();
+            }
+        };
+        const int nMod = mod(&c.mmDayDial) + mod(&c.mmClkTime)
+                       + (disc ? mod(&c.mmGrid) + mod(&c.mmPodHP) + chMod(c.mmClkDay, c.mmPodDay, D.mmClkDay) + chMod(c.mmClkMoon, c.mmPodMoon, D.mmClkMoon)
+                                 + chMod(c.mmSkyShow, c.mmPodSky, D.mmSkyShow) + chMod(c.mmWxShow, c.mmPodWx, D.mmWxShow)
+                               : mod(&c.mmClkDay) + mod(&c.mmClkMoon));
+        if (v2_section(K, ctrl_uid_i(base, 72), 9, "Dial", "Cadran", x, ry, w, nMod)) {
+            sel(73, "Day dial", "Cadran du jour", &c.mmDayDial, M_DD_EN, M_DD_FR, 3, 1, nullptr);
+            if (!disc) {   // the corner subdials
+                tog(74, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, nullptr);
+                tog(75, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, nullptr);
+                tog(76, "Moon phase", "Phase de lune", &c.mmClkMoon, nullptr);
+            } else {       // the modules
+                tog(77, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, nullptr);
+                tog(78, "Map square (F-10)", "Case de carte (F-10)", &c.mmGrid, nullptr);
+                sel(79, "Hour / map square", "Heure / case de carte", &c.mmPodHP, M_HP_EN, M_HP_FR, 2, 0,
+                    (c.mmClkTime || c.mmGrid) ? nullptr : tr("inactive : hour and map square off", "inactif : heure et case coup\xC3\xA9""es"));
+                module(80, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", c.mmClkDay, c.mmPodDay, 0, 3, D.mmClkDay);
+                module(81, "Moon phase", "Phase de lune", c.mmClkMoon, c.mmPodMoon, 1, 2, D.mmClkMoon);
+                module(82, "Day / night", "Jour / nuit", c.mmSkyShow, c.mmPodSky, 2, 5, D.mmSkyShow);
+                module(83, "Weather", "M\xC3\xA9t\xC3\xA9o", c.mmWxShow, c.mmPodWx, 3, 4, D.mmWxShow);
+            }
+            v2_end(K, ry);
+        }
+    }
+    // ===== INFO BAND : the Compact layout's second band (map square | zoom | distances) =====
+    if (c.mmLayout == 1 && v2_section(K, ctrl_uid_i(base, 84), 11, "Info band", "Bande d'infos", x, ry, w, mod(&c.mmInfoBand) + mod(&c.mmInfoDist))) {
+        sel(85, "Position", "Position", &c.mmInfoBand, M_IB_EN, M_IB_FR, 3, 2, nullptr);
+        tog(86, "Distances (target, Wide Scan)", "Distances (cible, Wide Scan)", &c.mmInfoDist, c.mmInfoBand > 0 ? nullptr : tr("inactive : info band off", "inactif : bande infos coup\xC3\xA9""e"));
+        v2_end(K, ry);
+    }
+    // ===== MARKERS : who is on the map, the lines and the ring you draw over it =====
+    {
+        const int nMk = cfg_count_modified(MM_MARK_A, NOPT(MM_MARK_A), true) + cfg_count_modified(MM_MARK_RING, NOPT(MM_MARK_RING), true) + fmod_(c.mmRingR, D.mmRingR)
+                      + cfg_count_modified(MM_MARK_SCAN, NOPT(MM_MARK_SCAN), true) + (dialM ? mod(&c.mmInfoDist) : 0)
+                      + (disc ? 0 : cfg_count_modified(MM_MARK_GRID, NOPT(MM_MARK_GRID), true));
+        if (v2_section(K, ctrl_uid_i(base, 87), 8, "Markers", "Marqueurs", x, ry, w, nMk)) {
+            cfg_rows(K, ctrl_uid_i(base, 88), MM_MARK_A, NOPT(MM_MARK_A), x, ry, w, true);
+            if (c.mmTgtLine) cfg_color_row(K, ctrl_uid_i(base, 89), x, ry, w, &c.mmTgtLineCol);
+            cfg_rows(K, ctrl_uid_i(base, 90), MM_MARK_RING, NOPT(MM_MARK_RING), x, ry, w, true);
             {   // radius 3 .. 50 yalms
                 const float lo = 3.0f, hi = 50.0f; char b[16]; _snprintf(b, sizeof(b), "%d", (int)(c.mmRingR + 0.5f)); b[15] = 0;
                 float v01 = clampf((c.mmRingR - lo) / (hi - lo), 0.0f, 1.0f);
-                if (cfg_slider_row(K, ctrl_uid_i(base, 41), x, ry, w, tr("Radius", "Rayon"), &v01, b,
+                if (cfg_slider_row(K, ctrl_uid_i(base, 91), x, ry, w, tr("Radius", "Rayon"), &v01, b,
                                    c.mmRing ? nullptr : tr("inactive : range ring off", "inactif : anneau de port\xC3\xA9""e coup\xC3\xA9"), &c.mmRingR, 4, true))
                     c.mmRingR = clampf(lo + v01 * (hi - lo), lo, hi);
             }
-            if (c.mmRing) cfg_color_row(K, ctrl_uid_i(base, 42), x, ry, w, &c.mmRingCol);
-            cfg_rows(K, ctrl_uid_i(base, 43), MM_MARK_SCAN, NOPT(MM_MARK_SCAN), x, ry, w, true);
-            if (c.mmScan) cfg_color_row(K, ctrl_uid_i(base, 44), x, ry, w, &c.mmScanCol);
-            if (!disc) cfg_rows(K, ctrl_uid_i(base, 45), MM_MARK_GRID, NOPT(MM_MARK_GRID), x, ry, w, true);
+            if (c.mmRing) cfg_color_row(K, ctrl_uid_i(base, 92), x, ry, w, &c.mmRingCol);
+            cfg_rows(K, ctrl_uid_i(base, 93), MM_MARK_SCAN, NOPT(MM_MARK_SCAN), x, ry, w, true);
+            if (c.mmScan) cfg_color_row(K, ctrl_uid_i(base, 94), x, ry, w, &c.mmScanCol);
+            // the Dial writes the distance ON the target / the Wide Scan mark (minimap.cpp : dial && mmInfoDist) ; Compact : in its info band
+            if (dialM) tog(95, "Distances on the marks (target, Wide Scan)", "Distances sur les marques (cible, Wide Scan)", &c.mmInfoDist, nullptr);
+            if (!disc) cfg_rows(K, ctrl_uid_i(base, 96), MM_MARK_GRID, NOPT(MM_MARK_GRID), x, ry, w, true);   // (Disc : a module, in the Dial section)
             v2_end(K, ry);
         }
-        // ===== TEXT (the clock's typography : exists with the clock header) =====
-        if (c.mmClock) {
-            const char* lab[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
-            TextStyle* ts[MM_TE_COUNT]; for (int i = 0; i < MM_TE_COUNT; ++i) ts[i] = &c.mmText[i];
-            const int nTe = dialM ? MM_REAL : MM_TE_COUNT;   // the Dial has no Real / GMT line (MM_REAL is the last element)
-            if (v2_section(K, ctrl_uid_i(base, 46), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, nTe))) { cfg_text_rows(K, ctrl_uid_i(base, 47), x, ry, w, lab, ts, nTe, &cfgMmTextElem_); v2_end(K, ry); }
-        }
-    } else v2_simple_note(K, x, ry);
+    }
+    // ===== TEXT (the clock's typography : exists with the clock) =====
+    if (c.mmClock) {
+        const char* lab[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
+        TextStyle* ts[MM_TE_COUNT]; for (int i = 0; i < MM_TE_COUNT; ++i) ts[i] = &c.mmText[i];
+        const int nTe = dialM ? MM_REAL : MM_TE_COUNT;   // the Dial has no Real / GMT line (MM_REAL is the last element)
+        if (v2_section(K, ctrl_uid_i(base, 97), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, nTe))) { cfg_text_rows(K, ctrl_uid_i(base, 98), x, ry, w, lab, ts, nTe, &cfgMmTextElem_); v2_end(K, ry); }
+    }
     g_fade = e;
 }
 #undef NOPT

@@ -929,9 +929,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     {
         const float lh = snap(26.0f), segW = snap(34.0f), lw = segW * 2.0f;
         const float lx = cbX - snap(12.0f) - lw, ly = cbY + (cbS - lh) * 0.5f;
-        if (s_ck) {   // the redesign : no switches here -- Language and Simple / Advanced are on the Interface page
-                      // (Config window), with the config's other preferences (2026-11-27, the user's call)
+        if (s_ck) {   // the redesign : two steel slots, the chosen segment a brass block -- on the masthead, always at hand
+                      // (removed then restored 2026-11-27 : "Simple / Advanced et FR / EN doivent rester en haut") ; the
+                      // Interface page keeps them too, beside the config's other preferences
             (void)lx; (void)ly;
+            static const char* LG[2] = { "EN", "FR" };
+            const float lh2 = snap(30.0f), ly2 = cbY + (cbS - lh2) * 0.5f, sg2 = snap(42.0f), lx2 = cbX - snap(14.0f) - 2.0f * sg2;
+            const int hl = chrome_segment(*s_ck, CTRL_ID, lx2, ly2, sg2, lh2, LG, 2, ui_config().lang);
+            if (hl >= 0) { ui_config().lang = hl; save_ui_config(); }
+            const char* DS[2] = { tr("Simple", "Simple"), tr("Advanced", "Avanc\xC3\xA9") };
+            const float dsW2 = snap(100.0f), dx2 = lx2 - snap(12.0f) - 2.0f * dsW2;
+            const int hd = chrome_segment(*s_ck, CTRL_ID, dx2, ly2, dsW2, lh2, DS, 2, ui_config().cfgAdv);
+            if (hd >= 0) { ui_config().cfgAdv = hd; save_ui_config(); }
         } else {
         rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B,
                (C_METAL & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
@@ -2482,8 +2491,8 @@ void ConfigPage::v2_rows(Kit& K, int uid, const OptDef* d, int n, float x, float
 void ConfigPage::v2_end(Kit& K, float& ry) { ry += K.px(18.0f); }
 void ConfigPage::v2_simple_note(Kit& K, float x, float& ry) {
     K.fr->begin(K.dev);
-    K.fr->draw_lc(K.dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced (Interface page). Right-click a modified setting to reset it.",
-                  "Cadre, texte, tailles fines : Avanc\xC3\xA9 (page Interface). Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+    K.fr->draw_lc(K.dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
+                  "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
                   K.px(13.5f), fa(C_DIM), 0, 0.0f);
     ry += K.px(40.0f);
 }

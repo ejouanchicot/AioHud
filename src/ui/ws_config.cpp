@@ -90,7 +90,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 }
 
 // ======== THE NEW ARCADE WS PAGE (the config redesign, milestone 3, 2026-11-27) ========
-// The same sections as the old page : Display [6] / Content [21] / Text [7]. The three colours : which one, then its
+// The old page's sections : Display [6] / Effects [21] (its Content, named by its element) / Text [7]. The three colours : which one, then its
 // picker (the Party page's distance colours). //aio config v1 : the old page (draw_ws_config).
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const OptDef WS_DISPLAY[] = {
@@ -118,7 +118,7 @@ void ConfigPage::draw_ws_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
     ry += K.px(6.0f);
     if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(WS_DISPLAY, NOPT(WS_DISPLAY), adv)))
         v2_rows(K, ctrl_uid_i(base, 2), WS_DISPLAY, NOPT(WS_DISPLAY), x, ry, w);
-    if (v2_section(K, ctrl_uid_i(base, 3), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(WS_CONTENT, NOPT(WS_CONTENT), adv)))
+    if (v2_section(K, ctrl_uid_i(base, 3), 21, "Effects", "Effets", x, ry, w, cfg_count_modified(WS_CONTENT, NOPT(WS_CONTENT), adv)))
         v2_rows(K, ctrl_uid_i(base, 4), WS_CONTENT, NOPT(WS_CONTENT), x, ry, w);
     if (adv) {
         unsigned* col[3] = { &c.wsNameCol, &c.wsDmgCol1, &c.wsDmgCol2 };   // the number flashes between A and B

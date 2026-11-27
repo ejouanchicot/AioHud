@@ -474,17 +474,14 @@ static const char* const C_DD_EN[3] = { "Icon", "Name", "Icon + name" },       *
 // the reasons : what greys a row, said in a few words
 static const char* w_debuffs(const UiConfig& c)   { return c.tgtDebuffs ? nullptr : tr("inactive : debuffs off", "inactif : debuffs coup\xC3\xA9s"); }
 static const char* w_inbox(const UiConfig& c)     { return !c.tgtDebuffs ? tr("inactive : debuffs off", "inactif : debuffs coup\xC3\xA9s") : (c.dbShow ? tr("inactive : debuffs in their own box", "inactif : debuffs dans leur propre box") : nullptr); }
-static const char* w_range(const UiConfig& c)     { return c.tgtRange ? nullptr : tr("inactive : distance off", "inactif : distance coup\xC3\xA9""e"); }
 static const char* w_gauge(const UiConfig& c)     { return !c.tgtRange ? tr("inactive : distance off", "inactif : distance coup\xC3\xA9""e") : (c.tgtRangeMin ? tr("inactive : minimal distance", "inactif : distance minimale") : nullptr); }
-static const char* w_speed(const UiConfig& c)     { return c.tgtSpeed ? nullptr : tr("inactive : speed off", "inactif : vitesse coup\xC3\xA9""e"); }
-static const char* w_th(const UiConfig& c)        { return c.tgtTH ? nullptr : tr("inactive : Treasure Hunter off", "inactif : Treasure Hunter coup\xC3\xA9"); }
-static const char* w_icons(const UiConfig& c)     { return (c.tgtSpeed && c.tgtSpeedIcon) || (c.tgtTH && c.tgtThIcon) ? nullptr : tr("inactive : speed and TH shown as text", "inactif : vitesse et TH en texte"); }
-static const char* w_sub(const UiConfig& c)       { return c.tgtSub ? nullptr : tr("inactive : sub-target box off", "inactif : box de sous-cible coup\xC3\xA9""e"); }
+static const char* w_icons(const UiConfig& c)     { return (c.tgtSpeed && c.tgtSpeedIcon) || (c.tgtTH && c.tgtThIcon) ? nullptr : tr("inactive : neither speed nor TH as an icon", "inactif : ni vitesse ni TH en ic\xC3\xB4ne"); }
 static const char* w_cast(const UiConfig& c)      { return c.tgtCast ? nullptr : tr("inactive : spell off", "inactif : sort coup\xC3\xA9"); }
 
 static const OptDef TGT_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(tgtShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(tgtScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Name colour", "Couleur du nom", OK_SELECT, OL_ADV, F_(tgtNameHostile), 0, 0, C_TF_EN, C_TF_FR, 2, nullptr, 0 },
     { "To move it : Edit Layout (top tab). Dragged to the screen centre, it stays centred.", "Pour la d\xC3\xA9placer : onglet \xC3\x89""diter dispo. Gliss\xC3\xA9""e au centre de l'\xC3\xA9""cran, elle y reste.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 static const OptDef TGT_SHOWS[] = {   // Simple's second card
@@ -498,25 +495,17 @@ static const OptDef TGT_SHOWS[] = {   // Simple's second card
 static const OptDef TGT_BARS[] = {
     { "Bar height", "Hauteur de la barre", OK_PCT, OL_ADV, F_(tgtBarH), 0.6f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "Bar width", "Largeur de la barre", OK_PCT, OL_ADV, F_(tgtBarW), 0.4f, 1.0f, nullptr, nullptr, 0, nullptr, 0 },
-    { "Distance bar height", "Hauteur de la jauge distance", OK_PCT, OL_ADV, F_(tgtRangeH), 0.6f, 2.0f, nullptr, nullptr, 0, w_gauge, 0 },
 };
-static const OptDef TGT_DETAIL[] = {
-    { "Name colour", "Couleur du nom", OK_SELECT, OL_ADV, F_(tgtNameHostile), 0, 0, C_TF_EN, C_TF_FR, 2, nullptr, 0 },
-    { "Sub-target box (<st>)", "Box de sous-cible (<st>)", OK_TOGGLE, OL_ADV, F_(tgtSub), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Sub-target position", "Position de la sous-cible", OK_SELECT, OL_ADV, F_(tgtSubPos), 0, 0, C_SP_EN, C_SP_FR, 6, w_sub, 0 },
-    { "Speed", "Vitesse", OK_TOGGLE, OL_ADV, F_(tgtSpeed), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Speed display", "Affichage de la vitesse", OK_SELECT, OL_ADV, F_(tgtSpeedIcon), 0, 0, C_TI_EN, C_TI_FR, 2, w_speed, 0 },
-    { "Treasure Hunter", "Treasure Hunter", OK_TOGGLE, OL_ADV, F_(tgtTH), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "TH display", "Affichage du TH", OK_SELECT, OL_ADV, F_(tgtThIcon), 0, 0, C_TI_EN, C_TI_FR, 2, w_th, 0 },
+static const OptDef TGT_GAUGE[] = {   // under the Distance choice
+    { "Distance gauge height", "Hauteur de la jauge distance", OK_PCT, OL_ADV, F_(tgtRangeH), 0.6f, 2.0f, nullptr, nullptr, 0, w_gauge, 0 },
+};
+static const OptDef TGT_MARKICON[] = {   // under Speed / TH
     { "Speed / TH icon size", "Taille des ic\xC3\xB4nes vitesse / TH", OK_PCT, OL_ADV, F_(tgtDetailIconSz), 0.5f, 3.0f, nullptr, nullptr, 0, w_icons, 0 },
-    { "Distance", "Distance", OK_TOGGLE, OL_ADV, F_(tgtRange), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Distance display", "Affichage de la distance", OK_SELECT, OL_ADV, F_(tgtRangeMin), 0, 0, C_GM_EN, C_GM_FR, 2, w_range, 0 },
-    { "The spell it casts", "Le sort qu'elle lance", OK_TOGGLE, OL_ADV, F_(tgtCast), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TGT_CASTDEMO[] = {
     { "Sample spell (to place it)", "Sort d'exemple (pour le placer)", OK_TOGGLE, OL_ADV, F_(tgtCastDemo), 0, 0, nullptr, nullptr, 0, w_cast, 0 },
 };
-static const OptDef TGT_DEBUFFS[] = {
-    { "Debuffs", "Debuffs", OK_TOGGLE, OL_ADV, F_(tgtDebuffs), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Debuffs shown", "Debuffs affich\xC3\xA9s", OK_SELECT, OL_ADV, F_(dbShow), 0, 0, C_DB_EN, C_DB_FR, 2, w_debuffs, 0 },
+static const OptDef TGT_DB_IN[] = {   // debuffs IN the target box
     { "Max debuffs", "Debuffs max", OK_INT, OL_ADV, F_(tgtBuffMax), 1, 32, nullptr, nullptr, 0, w_inbox, 0 },
     { "Debuffs position", "Position des debuffs", OK_SELECT, OL_ADV, F_(tgtBuffPos), 0, 0, C_BP_EN, C_BP_FR, 5, w_inbox, 0 },
     { "Debuff icon size", "Taille des ic\xC3\xB4nes", OK_PCT, OL_ADV, F_(tgtIconSz), 0.5f, 2.0f, nullptr, nullptr, 0, w_inbox, 0 },
@@ -538,12 +527,9 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
                                 float& ry, int& ri, float e,
                                 float bandX, float bandW, float coX, float ctrlW,
                                 float hdrX, float hdrW) {
-    Kit K;   // a COPY of the frame's kit (draw() built it) : no second font lookup ; its mouse is then gated to this viewport
-    if (s_ck_page) K = *s_ck_page;
-    else if (!frame_ || !kit_begin(K, *frame_, frame_->screenH, 1.0f)) {   // no kit this frame : the old page, never nothing
-        draw_target_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
-    K.mo = mo; K.click = click;                    // the page's gated mouse (the viewport) ; the kit's own would click through
-    K.clipTop = viewTop_; K.clipBot = viewBot_;    // rows outside the viewport are not drawn
+    Kit K;   // the page kit every page takes (v2_kit : the viewport's mouse and clip, the config's SIZE -- this page built
+             // its own copy and missed the size, 2026-11-27)
+    if (!v2_kit(K, mo, click)) { draw_target_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }   // no kit : the old page, never nothing
     g_fade = e;
     const bool adv = ui_config().cfgAdv != 0;
     // the column FILLS its band (left edge = the page title, right edge = the preview's gutter) : a narrower one floated
@@ -560,45 +546,72 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
         cfg_rows(K, ctrl_uid_i(base, 4), TGT_SHOWS, NOPT(TGT_SHOWS), x, ry, w, false);
         ry += K.px(14.0f);
         K.fr->begin(dev);
-        K.fr->draw_lc(dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced (Interface page). Right-click a modified setting to reset it.",
-                       "Cadre, texte, tailles fines : Avanc\xC3\xA9 (page Interface). Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+        K.fr->draw_lc(dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
+                       "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
                       K.px(13.5f), fa(C_DIM), 0, 0.0f);
         ry += K.px(40.0f);
         cfg_flush(mo);
         return;
     }
-    struct Sec { int slot; const char* en; const char* fr; const OptDef* d; int n; };
-    auto section = [&](int k, const Sec& s) {
-        bool open = catOpen_[s.slot];
-        if (cfg_section(K, ctrl_uid_i(base, 10 + k), x, ry, w, tr(s.en, s.fr), &open, cfg_count_modified(s.d, s.n, true), true)) {
-            cfg_rows(K, ctrl_uid_i(base, 20 + k), s.d, s.n, x, ry, w, true); ry += K.px(12.0f); }
-        catOpen_[s.slot] = open;
-        ry += K.px(6.0f);
-    };
-    const Sec DISPLAY = { 6, "Display", "Affichage", TGT_DISPLAY, NOPT(TGT_DISPLAY) };
-    section(0, DISPLAY);
+    // ADVANCED (2026-11-27 restructure) : sections by ELEMENT, each "on/off + how it shows" pair is ONE choice
+    // (Speed : Off / Text / Icon), and the page uses the shared sections (one open, the preview follows it)
     UiConfig& c = ui_config();
-    {   // FRAME : the shared block, in the kit
+    static const UiConfig D{};
+    // ONE choice for "shown or not, and how" : 0 = Off, k = mode k-1
+    auto choice = [&](int uid, const char* en, const char* frl, int& on, int& mode, const char* const* men, const char* const* mfr, int n, const char* why, int dOn) {
+        const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int k = 0; k < n && k < 7; ++k) lab[k + 1] = tr(men[k], mfr[k]);
+        int v = on ? 1 + (mode < 0 || mode >= n ? 0 : mode) : 0;
+        void* mark = (on != dOn) ? (void*)&on : (void*)&mode;   // the marker / right-click reset : the field that differs
+        if (int d = cfg_select_row(K, uid, x, ry, w, tr(en, frl), lab[v], why, mark, 4)) {
+            v = wrap(v + d, n + 1); on = v > 0 ? 1 : 0; if (v > 0) mode = v - 1; save_ui_config(); }
+    };
+    auto diff2 = [&](int on, int mode, int dOn, int dMode) { return (on != dOn) || (on && mode != dMode) ? 1 : 0; };
+    if (v2_section(K, ctrl_uid_i(base, 10), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(TGT_DISPLAY, NOPT(TGT_DISPLAY), true)))
+        v2_rows(K, ctrl_uid_i(base, 20), TGT_DISPLAY, NOPT(TGT_DISPLAY), x, ry, w);
+    {   // FRAME : the shared block
         const FrameRefs fr = { &c.tgtBox, &c.tgtBorder, &c.tgtBoxAlpha, &c.tgtAlphaOwn, &c.tgtThemeCopy, &c.tgtTheme, &c.tgtHue, &c.tgtLum };
-        bool open = catOpen_[20];
-        if (cfg_section(K, ctrl_uid_i(base, 15), x, ry, w, tr("Frame", "Cadre"), &open, cfg_frame_modified(fr), true)) {
-            cfg_frame_rows(K, ctrl_uid_i(base, 25), x, ry, w, fr); ry += K.px(12.0f); }
-        catOpen_[20] = open; ry += K.px(6.0f);
+        if (v2_section(K, ctrl_uid_i(base, 15), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 25), x, ry, w, fr); v2_end(K, ry); }
     }
-    const Sec BARS = { 7, "Bars", "Barres", TGT_BARS, NOPT(TGT_BARS) }, DETAIL = { 8, "Detail", "D\xC3\xA9tail", TGT_DETAIL, NOPT(TGT_DETAIL) },
-              DEBUFFS = { 9, "Debuffs", "Debuffs", TGT_DEBUFFS, NOPT(TGT_DEBUFFS) };
-    section(1, BARS); section(2, DETAIL); section(3, DEBUFFS);
-    if (c.tgtDebuffs && c.dbShow) {   // the standalone box : its section exists only in that mode
-        BoxStyle& bs = c.dbBox;
-        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
-        bool open = catOpen_[16];
-        if (cfg_section(K, ctrl_uid_i(base, 14), x, ry, w, tr("Debuff box", "Bo\xC3\xAEte des debuffs"), &open,
-                        cfg_count_modified(TGT_DBBOX, NOPT(TGT_DBBOX), true) + cfg_frame_modified(fr), true)) {
-            cfg_rows(K, ctrl_uid_i(base, 24), TGT_DBBOX, NOPT(TGT_DBBOX), x, ry, w, true);
-            cfg_frame_rows(K, ctrl_uid_i(base, 26), x, ry, w, fr);   // its frame : the shared block
-            ry += K.px(12.0f);
+    if (v2_section(K, ctrl_uid_i(base, 11), 7, "Bars", "Barres", x, ry, w, cfg_count_modified(TGT_BARS, NOPT(TGT_BARS), true)))
+        v2_rows(K, ctrl_uid_i(base, 21), TGT_BARS, NOPT(TGT_BARS), x, ry, w);
+    {   // MARKERS : distance, speed, Treasure Hunter -- each one choice, then its size
+        const int nMod = diff2(c.tgtRange, c.tgtRangeMin, D.tgtRange, D.tgtRangeMin) + diff2(c.tgtSpeed, c.tgtSpeedIcon, D.tgtSpeed, D.tgtSpeedIcon)
+                       + diff2(c.tgtTH, c.tgtThIcon, D.tgtTH, D.tgtThIcon) + cfg_count_modified(TGT_GAUGE, 1, true) + cfg_count_modified(TGT_MARKICON, 1, true);
+        if (v2_section(K, ctrl_uid_i(base, 12), 8, "Markers", "Indicateurs", x, ry, w, nMod)) {
+            choice(ctrl_uid_i(base, 30), "Distance", "Distance", c.tgtRange, c.tgtRangeMin, C_GM_EN, C_GM_FR, 2, nullptr, D.tgtRange);
+            cfg_rows(K, ctrl_uid_i(base, 31), TGT_GAUGE, 1, x, ry, w, true);
+            choice(ctrl_uid_i(base, 32), "Speed (slowed / hasted)", "Vitesse (ralentie / acc\xC3\xA9l\xC3\xA9r\xC3\xA9""e)", c.tgtSpeed, c.tgtSpeedIcon, C_TI_EN, C_TI_FR, 2, nullptr, D.tgtSpeed);
+            choice(ctrl_uid_i(base, 33), "Treasure Hunter", "Treasure Hunter", c.tgtTH, c.tgtThIcon, C_TI_EN, C_TI_FR, 2, nullptr, D.tgtTH);
+            cfg_rows(K, ctrl_uid_i(base, 34), TGT_MARKICON, 1, x, ry, w, true);
+            v2_end(K, ry);
         }
-        catOpen_[16] = open; ry += K.px(6.0f);
+    }
+    {   // AROUND IT : the spell it casts, the sub-target box
+        const UiConfig& d = D;
+        const int nMod = (c.tgtCast != d.tgtCast ? 1 : 0) + cfg_count_modified(TGT_CASTDEMO, 1, true) + diff2(c.tgtSub, c.tgtSubPos, d.tgtSub, d.tgtSubPos);
+        if (v2_section(K, ctrl_uid_i(base, 13), 9, "Spell and sub-target", "Sort et sous-cible", x, ry, w, nMod)) {
+            if (cfg_toggle_row(K, ctrl_uid_i(base, 35), x, ry, w, tr("The spell it casts", "Le sort qu'elle lance"), c.tgtCast != 0, nullptr, &c.tgtCast, 4)) { c.tgtCast = !c.tgtCast; save_ui_config(); }
+            cfg_rows(K, ctrl_uid_i(base, 36), TGT_CASTDEMO, 1, x, ry, w, true);
+            choice(ctrl_uid_i(base, 37), "Sub-target box (<st>)", "Box de sous-cible (<st>)", c.tgtSub, c.tgtSubPos, C_SP_EN, C_SP_FR, 6, nullptr, D.tgtSub);
+            v2_end(K, ry);
+        }
+    }
+    {   // DEBUFFS : where they go (Off / in the target box / their own box), then that place's settings
+        const bool own = c.tgtDebuffs && c.dbShow;
+        const int nMod = diff2(c.tgtDebuffs, c.dbShow, D.tgtDebuffs, D.dbShow) + (own ? cfg_count_modified(TGT_DBBOX, NOPT(TGT_DBBOX), true) : cfg_count_modified(TGT_DB_IN, NOPT(TGT_DB_IN), true));
+        if (v2_section(K, ctrl_uid_i(base, 14), 16, "Debuffs", "Debuffs", x, ry, w, nMod)) {
+            static const char* const PL_EN[2] = { "In the target box", "In their own box" }, * const PL_FR[2] = { "Dans la cible", "Bo\xC3\xAEte s\xC3\xA9par\xC3\xA9""e" };
+            choice(ctrl_uid_i(base, 38), "Placement", "Emplacement", c.tgtDebuffs, c.dbShow, PL_EN, PL_FR, 2, nullptr, D.tgtDebuffs);
+            if (own) cfg_rows(K, ctrl_uid_i(base, 24), TGT_DBBOX, NOPT(TGT_DBBOX), x, ry, w, true);
+            else if (c.tgtDebuffs) cfg_rows(K, ctrl_uid_i(base, 22), TGT_DB_IN, NOPT(TGT_DB_IN), x, ry, w, true);
+            v2_end(K, ry);
+        }
+        if (own) {   // the standalone box's frame : exists only in that mode
+            BoxStyle& bs = c.dbBox;
+            const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+            if (v2_section(K, ctrl_uid_i(base, 17), 22, "Debuff box frame", "Cadre de la bo\xC3\xAEte des debuffs", x, ry, w, cfg_frame_modified(fr))) {
+                cfg_frame_rows(K, ctrl_uid_i(base, 26), x, ry, w, fr); v2_end(K, ry); }
+        }
     }
     {   // TEXT : the element list follows what is shown (no dead element) -- the same rule as the old page
         const char* lab[TGT_TE_COUNT + DB_TE_COUNT]; TextStyle* ts[TGT_TE_COUNT + DB_TE_COUNT]; int n = 0;
@@ -614,10 +627,8 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
             add("Debuff name", "Nom du debuff", &c.dbText[DB_NAME]);
             add("Debuff timer", "Minuteur du debuff", &c.dbText[DB_TIMER]);
         }
-        bool open = catOpen_[5];
-        if (cfg_section(K, ctrl_uid_i(base, 16), x, ry, w, tr("Text", "Texte"), &open, cfg_text_modified(ts, n), true)) {
-            cfg_text_rows(K, ctrl_uid_i(base, 27), x, ry, w, lab, ts, n, &cfgTgtTextElem_); ry += K.px(12.0f); }
-        catOpen_[5] = open; ry += K.px(6.0f);
+        if (v2_section(K, ctrl_uid_i(base, 16), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) {
+            cfg_text_rows(K, ctrl_uid_i(base, 27), x, ry, w, lab, ts, n, &cfgTgtTextElem_); v2_end(K, ry); }
     }
     cfg_flush(mo);
     g_fade = e;

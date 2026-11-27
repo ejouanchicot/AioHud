@@ -204,7 +204,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
 // The old page's sections, in its order. Most rows are BITS of nuHide / plStyle : the engine marks / resets a whole
 // field, so those rows carry no marker of their own (a right-click would reset every bit) ; their section's count is
 // worked out here, bit by bit, against the factory value. The names' rows the old page hid with the game's style are
-// GREYED with the reason.
+// hidden in Advanced too (they exist only for the Modern names) and GREYED with the reason in Simple.
 #define F_(name) [](UiConfig& c) -> void* { return &c.name; }
 static const char* const N_STY_EN[2] = { "FFXI", "Modern" },                     * const N_STY_FR[2] = { "FFXI", "Moderne" };
 static const char* const N_PL_EN[2]  = { "Game's place", "Top left" },           * const N_PL_FR[2]  = { "Place du jeu", "En haut \xC3\xA0 gauche" };
@@ -296,9 +296,13 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
         int nMod = cfg_count_modified(NUI_PL_STYLE, 1, adv) + cfg_count_modified(NUI_PL_SIZE, 1, adv) + cfg_count_modified(NUI_PL_ICONS, NOPT(NUI_PL_ICONS), adv)
                  + cfg_count_modified(NUI_PL_STARS, NOPT(NUI_PL_STARS), adv) + (c.plFont != F.plFont) + nui_bits_mod(c.plStyle, F.plStyle, 0x1000) + (((c.plStyle ^ F.plStyle) & 0x701) != 0);
         if (adv) nMod += (fabsf(c.plGap - F.plGap) > 0.0005f) + nui_bits_mod(c.plStyle, F.plStyle, 2 | 4);
+        // Advanced : the rows below exist only for the Modern names -- on FFXI's they are not shown (Simple greys them)
+        const bool plRows = !adv || c.plShow;
+        if (!plRows) nMod = cfg_count_modified(NUI_PL_STYLE, 1, true);
         if (v2_section(K, ctrl_uid_i(base, 18), 26, "Names over the characters", "Noms au-dessus des persos", x, ry, w, nMod)) {
             const char* off = nw_plates(c);
             cfg_rows(K, ctrl_uid_i(base, 19), NUI_PL_STYLE, 1, x, ry, w, adv);
+            if (plRows) {
             {   // the font : the plate-font list (read at run time)
                 const int nf = plate_font_count() < 1 ? 1 : plate_font_count();
                 int fc = c.plFont; if (fc < 0 || fc >= nf) fc = 0;
@@ -333,6 +337,7 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
                 if (cfg_toggle_row(K, ctrl_uid_i(base, 27), x, ry, w, tr("Italic", "Italique"), (c.plStyle & 2) != 0, off, nullptr, 0)) { c.plStyle ^= 2; save_ui_config(); }
                 if (cfg_toggle_row(K, ctrl_uid_i(base, 28), x, ry, w, tr("CAPS", "Majuscules"), (c.plStyle & 4) != 0, off, nullptr, 0)) { c.plStyle ^= 4; save_ui_config(); }
             }
+            }   // plRows
             v2_end(K, ry);
         }
     }
