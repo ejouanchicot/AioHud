@@ -1,0 +1,8 @@
+AioHUD uses four icons from Font Awesome Free 7 (eye, eye regular, lock, unlock) in its Edit Layout drawer.
+
+Font Awesome Free by Fonticons, Inc. -- https://fontawesome.com
+Icons : CC BY 4.0 License -- https://creativecommons.org/licenses/by/4.0/
+Full licence : https://fontawesome.com/license/free
+
+The icons are rasterised from their SVG sources (assets/icons_src/fontawesome/) into assets/edit_icons.raw by
+scripts/gen_edit_icons.py ; they are drawn tinted, otherwise unchanged.

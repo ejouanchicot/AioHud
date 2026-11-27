@@ -58,6 +58,7 @@ static const char* icon_pack_label(const IconPack& p) {
         default: return p.name;
     }
 }
+static const char* EDICON_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\edit_icons.raw"); return b; }
 static const char* LOGO_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\aiohud_logo.raw"); return b; }
 static const int   NTABS      = 6;
 static const char* tab_label(int i) {
@@ -85,6 +86,7 @@ static const char* module_label(int i) {                       // Configuration 
 
 void ConfigPage::dispose() {   // //unload : device is still alive -> RELEASE our owned Help/preview textures (helpCursorTex_ is handed in, NOT owned)
     if (logoTex_)    release_texture(logoTex_);
+    if (edIconTex_)  release_texture(edIconTex_);
     tgtBuffTex_ = 0;   // BORROWED from buff_atlas.cpp (shared) -- released once, by the HUD
     if (tgtThTex_)   release_texture(tgtThTex_);
     if (mmMkPlayer_) release_texture(mmMkPlayer_);
@@ -1569,7 +1571,7 @@ static void ed_arc(u32 dev, float cx, float cy, float rx, float ry, float a0, fl
 }
 static void ed_eye(u32 dev, float cx, float cy, float r, bool on) {
     cs(dev);
-    const u32 c = fa(on ? 0xFFE2C482u : 0xFF6E7680u); const float wd = r * 0.19f;
+    const u32 c = fa(on ? 0xFFF0D48Eu : 0xFF8A929Cu); const float wd = r * 0.17f > 2.0f ? r * 0.17f : 2.0f;
     // the almond : two arcs of one large circle each, meeting at the corners
     const float k = r * 1.35f, off = k - r * 0.62f;
     const float ha = asinf(r / k);
@@ -1579,13 +1581,13 @@ static void ed_eye(u32 dev, float cx, float cy, float r, bool on) {
     ed_arc(dev, cx, cy, r * 0.36f, r * 0.36f, 0.0f, 6.2832f, 16, wd, c);
     if (on) disc(dev, cx, cy, r * 0.14f, c);
     else {   // masked : a clean diagonal across, cut out of the eye by a gap of the drawer's ground first
-        seg_soft(dev, cx - r * 0.95f, cy - r * 0.95f, cx + r * 0.95f, cy + r * 0.95f, wd * 2.6f, fa(0xFF2B3038u));
+        seg_soft(dev, cx - r * 0.95f, cy - r * 0.95f, cx + r * 0.95f, cy + r * 0.95f, wd * 2.4f, fa(0xFF454C56u));
         seg_soft(dev, cx - r * 0.95f, cy - r * 0.95f, cx + r * 0.95f, cy + r * 0.95f, wd, c);
     }
 }
 static void ed_lock(u32 dev, float cx, float cy, float r, bool on) {
     cs(dev);
-    const u32 c = fa(on ? 0xFFE2C482u : 0xFF6E7680u); const float wd = r * 0.19f;
+    const u32 c = fa(on ? 0xFFF0D48Eu : 0xFF8A929Cu); const float wd = r * 0.17f > 2.0f ? r * 0.17f : 2.0f;
     // the body : a rounded rectangle, outlined
     const float bw = r * 1.5f, bh = r * 1.05f, bx = cx - bw * 0.5f, by = cy - r * 0.05f, rr = r * 0.22f;
     seg_soft(dev, bx + rr, by, bx + bw - rr, by, wd, c);           seg_soft(dev, bx + rr, by + bh, bx + bw - rr, by + bh, wd, c);
@@ -1593,11 +1595,12 @@ static void ed_lock(u32 dev, float cx, float cy, float r, bool on) {
     ed_arc(dev, bx + rr, by + rr, rr, rr, 3.1416f, 4.7124f, 4, wd, c);          ed_arc(dev, bx + bw - rr, by + rr, rr, rr, 4.7124f, 6.2832f, 4, wd, c);
     ed_arc(dev, bx + rr, by + bh - rr, rr, rr, 1.5708f, 3.1416f, 4, wd, c);     ed_arc(dev, bx + bw - rr, by + bh - rr, rr, rr, 0.0f, 1.5708f, 4, wd, c);
     if (on) disc(dev, cx, by + bh * 0.5f, r * 0.12f, c);         // the keyhole
-    // the shackle : a half ring over the body ; open, it is lifted and swung clear on its right leg
-    const float sr = r * 0.48f, lift = on ? 0.0f : r * 0.42f, sx = on ? cx : cx - r * 0.42f;
-    ed_arc(dev, sx, by - r * 0.30f - lift, sr, sr, 3.1416f, 6.2832f, 12, wd, c);
-    seg_soft(dev, sx - sr, by - r * 0.30f - lift, sx - sr, by, wd, c);                     // the left leg, down into the body
-    seg_soft(dev, sx + sr, by - r * 0.30f - lift, sx + sr, on ? by : by - r * 0.30f - lift + r * 0.25f, wd, c);   // the right leg : in the body, or free
+    // the shackle, a half ring over the body. Locked : both legs in the body. Open (Feather's "unlock") : the same ring,
+    // its left leg in the body, the arc stopping short of the right side -- open, never lifted out of its key
+    const float sr = r * 0.46f, sy = by - r * 0.28f;
+    seg_soft(dev, cx - sr, sy, cx - sr, by, wd, c);                                         // the left leg
+    if (on) { ed_arc(dev, cx, sy, sr, sr, 3.1416f, 6.2832f, 12, wd, c); seg_soft(dev, cx + sr, sy, cx + sr, by, wd, c); }
+    else      ed_arc(dev, cx, sy, sr, sr, 3.1416f, 5.65f, 10, wd, c);                       // stops at about 2 o'clock
 }
 static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* mo, bool click) {
     Kit K;
@@ -2071,50 +2074,65 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                     cs(dev); flat(dev, bx + pad, gy, bw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, bx + pad, gy + 1.0f, bw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
                     chrome_label(K, bx + (bw - lgW) * 0.5f, by + K.px(74.0f), lg, K.px(13.0f), 1); }
 
-                // ===== THE MODULES DRAWER (left) : every box -- its eye (shown / hidden), its name (a click selects it), its padlock =====
+                // the drawer's icons : Font Awesome Free (eye / eye regular / lock / unlock), tinted ; the vector ones if not loaded
+                ensure_raw_tex_mip(dev, edIconTex_, edIconRetry_, EDICON_PATH(), 512, 128);
+                auto icon = [&](int cell, float icx, float icy, float isz, bool on) {
+                    const u32 col = fa(on ? 0xFFF0D48Eu : 0xFF8A929Cu);
+                    if (edIconTex_) {
+                        dTexQuadState(dev, edIconTex_, false);
+                        tquad(dev, snap(icx - isz * 0.5f), snap(icy - isz * 0.5f), isz, isz, cell * 0.25f, (cell + 1) * 0.25f, 0.0f, 1.0f, col, col);
+                        cs(dev);
+                    } else if (cell < 2) ed_eye(dev, icx, icy, isz * 0.48f, cell == 0); else ed_lock(dev, icx, icy, isz * 0.45f, cell == 2);
+                };
+                // ===== THE MODULES DRAWER (left) : every box -- its name (a click selects it), then at the right its eye (shown /
+                //       hidden) and its padlock. COMPACT, and never taller than the screen allows (the rows scroll) =====
                 if (editDrawer_) {
-                    const float dw = K.px(300.0f), rH = K.px(30.0f), gH = K.px(28.0f);
+                    const float dw = K.px(300.0f), rH = K.px(32.0f), gH = K.px(22.0f), headH = K.px(64.0f);
                     const int nE = (int)(sizeof(ED_LIST) / sizeof(ED_LIST[0]));
-                    const float dh = K.px(82.0f) + nE * rH + 4.0f * gH + K.px(14.0f);
-                    const float dx = K.px(16.0f), dy = by + bh + K.px(18.0f);
+                    const float rowsH = nE * rH + 4.0f * gH;
+                    const float dx = K.px(16.0f), dy = by + bh + K.px(14.0f);
+                    const float maxH = sh * 0.66f - dy;   // the lower third of the screen stays free (the chat lives there)
+                    const float dh = (headH + rowsH + K.px(10.0f)) < maxH ? (headH + rowsH + K.px(10.0f)) : maxH;
                     edit_add_ui_blocker(1, dx - K.px(4.0f), dy - K.px(4.0f), dw + K.px(8.0f), dh + K.px(8.0f), f.t);
                     chrome_casting(K, dx, dy, dw, dh, 0.0f, 0.0f);
-                    chrome_label(K, dx + pad, dy + K.px(24.0f), tr("MODULES", "MODULES"), K.px(13.5f), 4);
-                    // the two controls side by side at the RIGHT (2026-11-27 : "voir with figer, more logical") ; the name at the left
-                    const float colLock = dx + dw - pad - K.px(8.0f), colEye = colLock - K.px(40.0f);
-                    {   // the column heads, each over ITS column
-                        const float hy = dy + K.px(50.0f), eyeX = colEye, lockX = colLock;
+                    chrome_label(K, dx + pad, dy + K.px(20.0f), tr("MODULES", "MODULES"), K.px(13.0f), 4);
+                    const float colLock = dx + dw - pad - K.px(16.0f), colEye = colLock - K.px(42.0f);
+                    {   const float hy = dy + K.px(44.0f);
                         const char* hS = tr("show", "voir"); const char* hL = tr("lock", "figer");
-                        chrome_label(K, eyeX - K.fr->measure(hS, K.px(11.5f)) * 0.5f, hy, hS, K.px(11.5f), 1);
-                        chrome_label(K, lockX - K.fr->measure(hL, K.px(11.5f)) * 0.5f, hy, hL, K.px(11.5f), 1);
-                        cs(dev); flat(dev, dx + pad, hy + K.px(12.0f), dw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, dx + pad, hy + K.px(13.0f), dw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
-                    }
-                    float ry = dy + K.px(70.0f); int grp = -1;
+                        chrome_label(K, colEye - K.fr->measure(hS, K.px(11.0f)) * 0.5f, hy, hS, K.px(11.0f), 1);
+                        chrome_label(K, colLock - K.fr->measure(hL, K.px(11.0f)) * 0.5f, hy, hL, K.px(11.0f), 1);
+                        cs(dev); flat(dev, dx + pad, hy + K.px(11.0f), dw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, dx + pad, hy + K.px(12.0f), dw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu)); }
+                    const float rTop = dy + headH, rBot = dy + dh - K.px(8.0f);
+                    const float scrollMax = rowsH - (rBot - rTop) > 0.0f ? rowsH - (rBot - rTop) : 0.0f;
+                    if (mo && ui_config().wheel != 0 && inrect(mo, dx, rTop, dw, rBot - rTop) && scrollMax > 0.0f) {
+                        editDrawerScroll_ -= (float)ui_config().wheel * rH; ui_config().wheel = 0; }
+                    if (editDrawerScroll_ < 0.0f) editDrawerScroll_ = 0.0f; if (editDrawerScroll_ > scrollMax) editDrawerScroll_ = scrollMax;
+                    clip_rect_begin(dev, dx, rTop, dw, rBot - rTop);
+                    const bool inRows = mo && mo->y >= rTop && mo->y < rBot;
+                    float ry = rTop - editDrawerScroll_; int grp = -1;
                     static const char* GEN[4] = { "PARTY", "COMBAT", "WORLD", "CHAT" }; static const char* GFR[4] = { "GROUPE", "COMBAT", "MONDE", "CHAT" };
                     for (int q = 0; q < nE; ++q) {
                         const int id = ED_LIST[q].id;
-                        if (ED_LIST[q].group != grp) { grp = ED_LIST[q].group; chrome_label(K, dx + pad, ry + gH * 0.55f, frl ? GFR[grp] : GEN[grp], K.px(11.5f), 4); ry += gH; }
+                        if (ED_LIST[q].group != grp) { grp = ED_LIST[q].group; chrome_label(K, dx + pad, ry + gH * 0.55f, frl ? GFR[grp] : GEN[grp], K.px(11.0f), 4); ry += gH; }
+                        if (ry + rH < rTop || ry > rBot) { ry += rH; continue; }
                         const bool shown = ed_shown(id), selR = id == sel, locked = edit_box_locked(id);
-                        const bool hovR = inrect(mo, dx + K.px(6.0f), ry, dw - K.px(12.0f), rH);
+                        const bool hovR = inRows && inrect(mo, dx + K.px(6.0f), ry, dw - K.px(12.0f), rH);
                         if (selR || hovR) { cs(dev); rrect(dev, dx + K.px(6.0f), ry + 1.0f, dw - K.px(12.0f), rH - 2.0f, K.px(4.0f), fa(selR ? 0x2CE2C482u : 0x14FFFFFFu), fa(selR ? 0x18E2C482u : 0x0AFFFFFFu)); }
                         const float rcy = ry + rH * 0.5f;
-                        // the eye : shown / hidden (a box that follows another has none)
-                        int* sp = ed_show(id);
-                        const float ex2 = colEye;
-                        if (sp) { ed_eye(dev, ex2, rcy, K.px(8.0f), *sp != 0);
-                                  if (tbClick && inrect(mo, ex2 - K.px(14.0f), ry, K.px(28.0f), rH)) { *sp = *sp ? 0 : 1; save_ui_config(); } }
-                        else { cs(dev); flat(dev, ex2 - K.px(5.0f), rcy, K.px(10.0f), 1.0f, fa(0xFF4A5058u)); }
-                        // the name ; a disabled module : greyed, "Off"
-                        const float nx2 = dx + pad + K.px(4.0f);
-                        chrome_label(K, nx2, rcy, edit_box_name(id, frl), K.px(14.0f), shown ? (selR ? 2 : 0) : 1);
-                        if (!shown) chrome_label(K, nx2 + K.fr->measure(edit_box_name(id, frl), K.px(14.0f)) + K.px(10.0f), rcy, tr("off", "d\xC3\xA9sactiv\xC3\xA9"), K.px(11.5f), 1);
-                        if (tbClick && hovR && mo->x < colEye - K.px(16.0f)) edit_box_select(id);   // the name's part of the row selects
-                        // the padlock
-                        const float lx2 = colLock;
-                        ed_lock(dev, lx2, rcy + K.px(2.0f), K.px(8.0f), locked);
-                        if (tbClick && inrect(mo, lx2 - K.px(14.0f), ry, K.px(28.0f), rH)) edit_box_set_locked(id, !locked);
+                        const float nx2 = dx + pad + K.px(2.0f);   // the name ; a disabled module : greyed, "off"
+                        chrome_label(K, nx2, rcy, edit_box_name(id, frl), K.px(13.5f), shown ? (selR ? 2 : 0) : 1);
+                        if (!shown) chrome_label(K, nx2 + K.fr->measure(edit_box_name(id, frl), K.px(13.5f)) + K.px(8.0f), rcy, tr("off", "d\xC3\xA9sactiv\xC3\xA9"), K.px(11.0f), 1);
+                        if (tbClick && hovR && mo->x < colEye - K.px(18.0f)) edit_box_select(id);
+                        const float kw2 = K.px(36.0f), kh2 = K.px(28.0f), isz = K.px(21.0f);
+                        if (int* sp = ed_show(id)) {   // the eye key
+                            if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 700 + q), colEye - kw2 * 0.5f, rcy - kh2 * 0.5f, kw2, kh2, "", 0, true, false) && tbClick && inRows) { *sp = *sp ? 0 : 1; save_ui_config(); }
+                            icon(*sp ? 0 : 1, colEye, rcy, isz, *sp != 0);
+                        } else { cs(dev); flat(dev, colEye - K.px(5.0f), rcy, K.px(10.0f), 1.0f, fa(0xFF4A5058u)); }   // follows another box : no eye
+                        if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 750 + q), colLock - kw2 * 0.5f, rcy - kh2 * 0.5f, kw2, kh2, "", 0, true, false) && tbClick && inRows) edit_box_set_locked(id, !locked);
+                        icon(locked ? 2 : 3, colLock, rcy, isz * 0.92f, locked);
                         ry += rH;
                     }
+                    clip_rect_end(dev);
                 }
 
                 // ===== THE INSPECTOR : a card beside the selected box -- x / y, size, centre, lock, its settings =====
@@ -2139,7 +2157,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                     const float tagR = chrome_tag(K, cx0 + pad, iy, edit_box_name(sel, frl));
                     {   // the padlock, beside the name
                         const bool lk = edit_box_locked(sel);
-                        ed_lock(dev, tagR + K.px(18.0f), iy + K.px(2.0f), K.px(8.0f), lk);
+                        icon(lk ? 2 : 3, tagR + K.px(20.0f), iy, K.px(18.0f), lk);
                         if (tbClick && inrect(mo, tagR + K.px(4.0f), iy - K.px(14.0f), K.px(28.0f), K.px(28.0f))) edit_box_set_locked(sel, !lk);
                         if (lk) chrome_label(K, tagR + K.px(34.0f), iy, tr("locked", "fig\xC3\xA9"), K.px(12.5f), 1);
                     }

@@ -58,6 +58,9 @@ REM    James (Xurion of Bismarck) ; clause 2 REQUIRES the copyright notice be re
 REM    distributions -- so this ships with every zip. Do not drop it.
 copy /Y "%ROOT%NOTICE-EmpyPop.txt" "%DATA%\NOTICE-EmpyPop.txt" >nul
 if errorlevel 1 ( echo [package] NOTICE-EmpyPop.txt missing -- BSD-3 clause 2 requires it & exit /b 1 )
+REM Font Awesome Free icons (the Edit Layout drawer's eye / padlock) : CC BY 4.0 requires the attribution -- shipped too.
+copy /Y "%ROOT%NOTICE-FontAwesome.txt" "%DATA%\NOTICE-FontAwesome.txt" >nul
+if errorlevel 1 ( echo [package] NOTICE-FontAwesome.txt missing -- CC BY 4.0 requires the attribution & exit /b 1 )
 
 REM 7) the updater companion addon  ->  addons\aioupdate\
 mkdir "%ADD%\aioupdate" 2>nul

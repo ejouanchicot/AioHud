@@ -42,7 +42,7 @@ public:
     // textures this class OWNS. It is only refreshed inside Hud::render's `worldReady` block while config_.draw
     // runs OUTSIDE it, so after a device recreate the stale handle reached SetTexture -- the exact failure the
     // Help samples in hud_timers.cpp document and guard against.
-    void on_device_lost() { logoTex_ = 0; logoRetry_ = TexRetry{}; helpCursorTex_ = 0;
+    void on_device_lost() { logoTex_ = 0; logoRetry_ = TexRetry{}; helpCursorTex_ = 0; edIconTex_ = 0; edIconRetry_ = TexRetry{};
                             tgtBuffTex_ = 0; tgtThTex_ = 0; tgtThRetry_ = TexRetry{};
                             mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0;
                             mmMkPlayerRetry_ = TexRetry{}; mmMkMobRetry_ = TexRetry{}; mmElemRetry_ = TexRetry{}; }   // FORGET our GPU handles (don't Release -- device may be dead) + RE-ARM every retry budget : a device recreate is a zone-in, which is exactly when the "not ready yet" miss this retry exists for happens
@@ -415,7 +415,10 @@ private:
     // edit-layout : "Rules" toggle + the destructive-action confirmation modal
     bool  editShowLines_ = false;   // draw reference lines AND hide the HUD boxes (only rules + toolbar show)
     int   editNumField_  = 0;
-    bool  editDrawer_    = true;    // Edit Layout : the modules drawer open (the toolbar's Modules key)
+    bool  editDrawer_    = true;
+    float editDrawerScroll_ = 0.0f;  // Edit Layout : the drawer's rows scroll when the screen is short
+    u32   edIconTex_ = 0;            // the drawer's Font Awesome icons (assets/edit_icons.raw, 512x128 BGRA, 4 cells)
+    TexRetry edIconRetry_;    // Edit Layout : the modules drawer open (the toolbar's Modules key)
     float prefSavedT_ = -100.0f;   // Interface > Config window : when one of its (instantly saved) settings last changed -> "Saved" tag       // the redesign's edit toolbar : 1 / 2 = the selected box's x / y being typed
     int   editConfirm_   = 0;       // 0 = none, 1 = Clear-lines pending, 2 = Default pending -> confirm dialog
     bool  profResetConfirm_ = false;   // Profile tab : "Reset all settings" pending -> confirm dialog
