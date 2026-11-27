@@ -36,6 +36,11 @@ def res_dir():
             return os.path.join(os.path.dirname(m.group(1).rstrip('\\/')), 'res')
     return genpaths.DEV_RES
 
+def lua_unescape(s):
+    # the Lua source escapes its quotes (Stuffed \"big one\") : the NAME is the unescaped text -- cstr() escapes it
+    # again for C. Kept raw, the HUD showed the backslashes (2026-11-27, the Mog Safe's furnishings)
+    return re.sub(r'\\(.)', r'\1', s)
+
 def cstr(s):
     # Work on UTF-8 BYTES so a multi-byte char keeps its exact bytes (the font's utf8_next decodes 2-byte
     # sequences to Latin-1). A hex escape (\xNN) is followed by "" so the compiler can't greedily merge it with
@@ -64,7 +69,7 @@ def main():
         iid = int(m.group(1))
         if iid < 0 or iid > 65535 or iid in seen:
             continue
-        name = m.group(2)
+        name = lua_unescape(m.group(2))
         if not name or name == '.':      # skip placeholders / blanks
             continue
         seen.add(iid)
@@ -74,7 +79,7 @@ def main():
     # `enl`, first letter raised -- kept only where it differs from `en` (most weapons' are identical : "Burtgang")
     disp = {}
     for m in re.finditer(r'\[(\d+)\]\s*=\s*\{[^}]*?\benl\s*=\s*"((?:[^"\\]|\\.)*)"', text):
-        iid = int(m.group(1)); nm = m.group(2)
+        iid = int(m.group(1)); nm = lua_unescape(m.group(2))
         if iid in seen and nm and iid not in disp:
             disp[iid] = nm[:1].upper() + nm[1:]
     drows = [(iid, disp[iid]) for (iid, en) in rows if iid in disp and disp[iid] != en]

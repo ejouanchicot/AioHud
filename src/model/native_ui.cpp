@@ -940,6 +940,7 @@ bool equip_set_grid(u32 obj, NativeEquip& E) {
     if (g_es.open && g_es.cursor >= 1 && g_es.cursor <= 20) lstrcpynA(E.setName, g_es.name[g_es.cursor - 1], sizeof(E.setName));
     return true;
 }
+static int client_item_bag(const unsigned char* row, unsigned short wantId);   // the bag of a list row (defined below)
 bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
     memset(&E, 0, sizeof(E)); E.lcursor = -1;
     u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
@@ -993,6 +994,7 @@ bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
                 unsigned char r[0x54]; if (!rdblk(rows + (u32)(E.ltop + i) * 0x54, r, sizeof(r))) { ok = false; break; }
                 int rec = 0; u32 id = 0, cnt = 0, col = 0; memcpy(&rec, r + 0x48, 4); memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
                 NativeEqRow& w = E.lrow[i]; w.header = rec == -1; w.id = (unsigned short)(id & 0xFFFF); w.count = (int)(cnt > 9999 ? 9999 : cnt); w.col = col;
+                w.bag = (signed char)client_item_bag(r, w.id);
                 if (rec == -1) {                                      // a row with no item : cell 1 = its TEXT (type 0x41 the bag chooser, its arrow ; 0x01 a plain line,
                     w.id = 0; w.count = 0;                              // the set editor's "Remove piece." -- live 2026-11-25) ; its +0x2C is that text's pointer, not an id
                     u32 v = 0; memcpy(&v, r + 0x2C, 4);
@@ -1088,7 +1090,42 @@ void qty_read(u32 mgr, u32 focus, NativeItems& I) {
 }
 // the main menu's Items : inventor with handler +0x90 == 1 (set by the main menu's opener only ; Equipment's and the action
 // menu's leave it 0), the Recycling Bin (bank) not open
-bool items_read(u32 mgr, u32 focus, NativeItems& I) {
+// THE BAG OF A LIST ROW (2026-11-27, "on ne sait pas dans quel sac on est") : a text-list row of an item holds, at +0x28,
+// the address of the client's OWN item record (0x2C bytes : u16 id, u16 index in its bag, u32 count ...). The client's
+// bags are ONE array, 18 bags x 81 records, each 0x2C -- measured live : the inventory's record and Wardrobe 2's start
+// exactly 10 x 0xDEC apart. The bag is then (record - index * 0x2C - base) / 0xDEC, the base being the inventory's
+// record 0 : the GIL entry (id 0xFFFF, count = your gil). The base is FOUND, never hard-coded : from a row's bag start,
+// step back one bag at a time until a record reads 0xFFFF + your gil. Cached ; dropped when it stops checking out.
+static u32 g_cliItemBase = 0;
+static bool cli_base_ok(u32 b) {
+    if (!valid_ptr(b)) return false;
+    unsigned char e[8]; if (!rdblk(b, e, sizeof(e))) return false;
+    unsigned short id = 0; u32 cnt = 0; memcpy(&id, e, 2); memcpy(&cnt, e + 4, 4);
+    unsigned gil = 0; if (!read_player_gil(gil)) return false;
+    return id == 0xFFFF && cnt == gil;
+}
+static int client_item_bag(const unsigned char* row, unsigned short wantId) {
+    u32 ip = 0; memcpy(&ip, row + 0x28, 4);
+    if (!wantId || !valid_ptr(ip)) return -1;
+    unsigned char e[4]; if (!rdblk(ip, e, sizeof(e))) return -1;
+    unsigned short id = 0, idx = 0; memcpy(&id, e, 2); memcpy(&idx, e + 2, 2);
+    if (id != wantId || idx > 80) return -1;                               // not the record we think : no bag shown
+    const u32 start = ip - (u32)idx * 0x2Cu;
+    if (g_cliItemBase && !(start >= g_cliItemBase && (start - g_cliItemBase) % 0xDECu == 0 && (start - g_cliItemBase) / 0xDECu < 18 && cli_base_ok(g_cliItemBase))) {
+        static int said = 0; if (said < 4) { ++said; windower::debug::log("NATIVEUI item bags : the base %08X no longer checks out -- found again", g_cliItemBase); }
+        g_cliItemBase = 0;
+    }
+    if (!g_cliItemBase) {
+        for (int k = 0; k < 18; ++k) {
+            const u32 b = start - (u32)k * 0xDECu;
+            if (cli_base_ok(b)) { g_cliItemBase = b; static int said = 0; if (said < 4) { ++said; windower::debug::log("NATIVEUI item bags : base found at %08X (the row's bag %d)", b, k); } break; }
+        }
+        if (!g_cliItemBase) return -1;
+    }
+    const u32 d = start - g_cliItemBase;
+    return d % 0xDECu == 0 && d / 0xDECu < 18 ? (int)(d / 0xDECu) : -1;
+}
+bool items_read(u32 mgr, u32 focus, NativeItems& I, bool layout = false) {   // layout : the Mog House Layout flow's furnishings (no mode to test)
     memset(&I, 0, sizeof(I)); I.itCursor = -1; I.binCursor = -1;
     TextList T; if (!tl_find(mgr, "inventor", T)) return false;
     {   // `bank` open : the Recycling Bin when its delegate's bag is 0x11 (else a Mog House storage : not ours)
@@ -1124,7 +1161,7 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
         if (g_trade.open && fromMain != lastTm && saidTm < 8) { ++saidTm; lastTm = fromMain; windower::debug::log("NATIVEUI items : the trade's picker (open mode %u, %s) -- AioHUD draws it", fromMain, g_trade.npc ? "NPC trade" : "player trade"); }
         // View House (mogcont) away from the Mog House : the storages you cannot touch there open `inventor` on THEIR
         // contents, read-only (2026-11-26 : the Mog Safe's list and its card stayed the client's). The bag : mogcont's entry
-        const u32 mc = fromMain != 1 && !g_trade.open ? win_named(mgr, "mogcont") : 0;
+        const u32 mc = fromMain != 1 && !g_trade.open && !layout ? win_named(mgr, "mogcont") : 0;
         if (mc) {
             short e = 0; rd16(mc + 0x4C, e);
             static const int BAG_OF[16] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };   // entry -> bag (map-menus : mogcont)
@@ -1133,7 +1170,7 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
             if (e != lastE && saidV < 8) { ++saidV; lastE = e; windower::debug::log("NATIVEUI items : View House lists a storage (entry %d -> bag %d) -- AioHUD draws it, read-only", e, I.viewBag); }
             if (!I.viewBag) return false;
         }
-        else if (fromMain != 1 && !g_trade.open) {      // Synthesis's pickers (cmbmenu up) : the crystals, or the materials beside tskill1
+        else if (fromMain != 1 && !g_trade.open && !layout) {      // Synthesis's pickers (cmbmenu up) : the crystals, or the materials beside tskill1
             NativePanel CM, TS; if (!panel_read(mgr, "cmbmenu", CM)) return false;
             I.synMode = panel_read(mgr, "tskill1", TS) ? 2 : 1;
         }
@@ -5111,6 +5148,7 @@ const NativeCfgFilter& native_cfg_filter() { return g_cff; }
 const NativeMap& native_map() { return g_map; }
 const NativeFriends& native_friends() { return g_frl; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
+unsigned native_item_extra_live() { return g_iix[0].id; }   // the item the client's own card shows (0 : none)
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
 const char* native_ability_text(unsigned id, bool desc) { return dmsg_str(g_dm[desc ? 5 : 4], id); }
@@ -6134,6 +6172,28 @@ void native_ui_tick(bool inWorld) {
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
     main_poll(wanted && (c.nuHide & NU_MAIN));
+    {   // Mog House -> Layout -> Mog Safe / Mog Safe 2 : the furnishings to place are the client's `inventor` list, opened
+        // with the focus left on `bankmenu` (or a rmlo* step) and no main menu -- main_poll never read it, the game's own
+        // list showed (2026-11-27). Read as the Items list ; drawn by the Items drawer (NU_MAIN) with a "Furnishings" title.
+        // Both switches : the Mog House's (NU_NPC, whose flow this is) and Items' (NU_MAIN, whose drawer draws it).
+        static bool lay = false;
+        if (lay) { lay = false; g_items.open = false; g_items.layout = false; }   // re-read every frame : never a stale list
+        if (wanted && (c.nuHide & NU_MAIN) && (c.nuHide & NU_NPC) && !g_items.open && !g_mainM.open) {
+            u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+            char fn[9] = { 0 }; u32 def = 0;
+            if (!(valid_ptr(focus) && safe_read(focus + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, fn))) fn[0] = 0;
+            // the FLOW, not one window : the focus passes rmlo* -> bankmenu -> the list itself (`inventor`, measured live
+            // 2026-11-27) ; a focus anywhere else ends it, so another flow's `inventor` (trade, delivery...) is never taken
+            static bool inLayout = false;
+            if (!strcmp(fn, "bankmenu") || !strncmp(fn, "rmlo", 4)) inLayout = true;
+            else if (strcmp(fn, "inventor") && strcmp(fn, "iteminfo")) inLayout = false;
+            const bool layFocus = inLayout;
+            if (layFocus && items_read(manager(), focus, g_items, true) && !g_items.binMode && !g_items.synMode && !g_items.viewBag) {
+                g_items.layout = true; g_items.focused = true; lay = true;
+                static int said = 0; if (said < 6) { ++said; windower::debug::log("NATIVEUI layout : the furnishings list (inventor, focus '%s') read -- AioHUD draws it (%d rows, top %d, cursor %d)", fn, g_items.itN, g_items.itTop, g_items.itCursor); }
+            } else if (g_items.open && !lay) { g_items.open = false; }   // a partial read : the client's list stays
+        }
+    }
     if (wanted) item_extra_poll(manager()); else g_iix[0].id = g_iix[1].id = 0;   // the item cards' page 2
     npc_poll(wanted && (c.nuHide & NU_NPC));
     topbar_poll(wanted && (c.nuHide & NU_HELP));          // the top bar (menu name + help) : AioHUD's own

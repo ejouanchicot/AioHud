@@ -632,7 +632,8 @@ const NativeMeritCat& native_merit_cat();
 // where it opened) ; `inventor` in its equipment mode (a TEXT LIST : row 0 the bag's header, record -1 ; item rows : id
 // +0x2C, count +0x30, the client's colour +0x0C -- green worn, grey refused, orange held) ; Attack / Defense / the 8
 // resists from the 0x061 mirror (FM_PW_BLOCK + 0x20 / + 0x22 / + 0x24..). The client sends 0x050 itself.
-struct NativeEqRow { bool header; unsigned short id; int count; unsigned col; char text[24]; };   // text : a row with no item (the set editor's "Remove piece.")
+struct NativeEqRow { bool header; unsigned short id; int count; unsigned col; char text[24];
+    signed char bag; };   // bag : the container the piece is in (0 inventory, 8 / 10..16 the wardrobes ; -1 unknown)   // text : a row with no item (the set editor's "Remove piece.")
 struct NativeEquip {
     bool open, focused;          // the grid
     int  cursor;                 // its entry 1..16
@@ -677,6 +678,7 @@ struct NativeItems {
     // keys change it, validate / cancel are the client's ; qtyOk : both read and plausible (else its own box stays)
     bool qtyOk, qtyFocused; int qtyVal, qtyMax;
     int  synMode;                                // Synthesis's pickers : 0 no, 1 the crystals (delegate K), 2 the materials (S, beside tskill1)
+    bool layout;                                 // Mog House -> Layout -> a safe : `inventor` lists the FURNISHINGS to place (focus on bankmenu)
     int  viewBag;                                // View House, away from the Mog House : `inventor` LISTS that storage, read-only (1 Safe, 2 Storage,
                                                  // 4 Locker, 9 Safe 2 ; the bags you can use open `bank` instead) ; 0 none
 };
@@ -938,6 +940,7 @@ bool native_synth_grid_pick(int entry);
 // (no Y / numpad - needed). Decoded to ASCII (elements spelled out, '\n' kept).
 struct ItemExtra { unsigned id; char aug[256]; char line[128]; char ilvl[64]; };
 const ItemExtra* native_item_extra(unsigned id);   // 0 when neither card shows that item
+unsigned native_item_extra_live();   // the item the client's own card (iteminfo) shows now, 0 none
 bool native_equip_hover(int entry);
 bool native_equip_pick(int entry);
 const char* native_ability_text(unsigned id, bool desc);   // the client's ability id (traits 0x600 + t) -> d_msg 55701 name / 55733 description

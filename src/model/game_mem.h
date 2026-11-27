@@ -225,6 +225,7 @@ struct PersonaMem {
     bool ok = false;
     unsigned maxHp = 0, maxMp = 0;
     int mjob = 0, mlvl = 0, sjob = 0, slvl = 0, su = 0, ilvl = 0, ml = 0;
+    int ilvlNow = 0;   // the CURRENT item level (99 + 0x061 +0x55, what the client's Status shows) ; ilvl : the maximum (+0x54)
     unsigned epCur = 0, epNext = 0;
     unsigned short base[7] = {}; short added[7] = {};
 };

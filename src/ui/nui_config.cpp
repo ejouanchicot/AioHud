@@ -278,6 +278,12 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
     if (v2_section(K, ctrl_uid_i(base, 6), 21, "Menus and screens", "Menus et \xC3\xA9""crans", x, ry, w, nui_bits_mod(c.nuHide, F.nuHide, NU_MAIN | NU_ACT | NU_HELP | NU_DIALOG))) {
         bitRow(7, tr("Main menu", "Menu principal"), NU_MAIN, STY);
         cfg_note(K, x, ry, tr("And every screen it opens : status, equipment, items, magic, map, Region Info, macros, missions, friend list...", "Et tous les \xC3\xA9""crans qu'il ouvre : statut, \xC3\xA9quipement, objets, magie, carte, Region Info, macros, missions, amis..."));
+        if (c.nuHide & NU_MAIN) {   // the Equipment screen's own layout (2026-11-27) : the sheet, or the client's layout redrawn
+            const char* ES[2] = { tr("Classic", "Classique"), tr("Sheet", "Fiche") };
+            const int v = c.eqStyle ? 1 : 0;
+            if (cfg_select_row(K, ctrl_uid_i(base, 41), x, ry, w, tr("Equipment screen", "\xC3\x89""cran \xC3\x89quipement"), ES[v], nullptr, nullptr, 0)) { c.eqStyle = v ? 0 : 1; save_ui_config(); }
+            cfg_note(K, x, ry, tr("Sheet : your stats, gil and gear on one panel, the gear on the body. Classic : the game's layout.", "Fiche : stats, gils et \xC3\xA9quipement sur un seul panneau, l'\xC3\xA9quipement sur le corps. Classique : la disposition du jeu."));
+        }
         bitRow(8, tr("Action menu", "Menu d'action"), NU_ACT, STY);
         cfg_note(K, x, ry, tr("Enter on a target : attack, magic, abilities, items, trade, check.", "Entr\xC3\xA9""e sur une cible : attaque, magie, aptitudes, objets, \xC3\xA9""change, examiner."));
         bitRow(9, tr("Top bar (menu name + help)", "Barre du haut (nom du menu + aide)"), NU_HELP, STY);

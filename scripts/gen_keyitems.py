@@ -65,7 +65,7 @@ def main():
         kid = int(m.group(1))
         if kid < 0 or kid > 65535 or kid in seen:
             continue
-        name = m.group(2)
+        name = re.sub(r'\\(.)', r'\1', m.group(2))   # the Lua escapes (\") unescaped : cstr() escapes for C (2026-11-27)
         if not name or name == '.':      # skip placeholders / blanks
             continue
         seen.add(kid)

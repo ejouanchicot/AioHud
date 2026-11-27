@@ -1162,6 +1162,10 @@ bool card_ready(unsigned id);
 void card_use(int s);          // 0 the card, 1 the second one (the compare view)
 extern float g_cardBottom;
 void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above);
+extern bool g_cardBare;        // the next card_draw : BARE -- no box, no icon (it is shown beside), the text straight in its host,
+                               // NOT animated ; its page 2 from g_cardBareX (the host holds it with the card), never looked up
+extern const ItemExtra* g_cardBareX;
+float card_fit_w(const Frame& f, const Metrics& k, float lo, float hi);
 
 // the Items lists' card : ABOVE AioHUD's chat (else below it), its left edge on the chat's, as wide as the chat (bounded).
 // The user, 2026-11-19 : the list top left, the description above the chat -- from the action menu and from the main
@@ -1171,8 +1175,10 @@ bool card_on_chat(const Frame& f, const Metrics& k, unsigned iid, float tO, floa
     if (!iid || !chat_anchor(ax, aw, top, bottom)) return false;
     card_use(0); card_load(f.dev, iid);
     if (!card_ready(iid)) return true;
-    const float S = k.S, lo = snap(300.0f * S), hi = snap(480.0f * S);
-    const float cw = aw < lo ? lo : aw > hi ? hi : snap(aw);
+    // AS WIDE AS ITS CONTENT (2026-11-27, "la fenetre description me semble vraiment grande") : its longest line, a prose
+    // description wrapped at a reading width ; never wider than the chat it sits on
+    const float S = k.S, lo = snap(240.0f * S), hi = snap(360.0f * S);
+    const float cw = card_fit_w(f, k, lo, aw < hi ? (aw > lo ? aw : lo) : hi);
     float cx = snap(ax); if (cx + cw > f.screenW - 4.0f) cx = snap(f.screenW - 4.0f - cw); if (cx < 4.0f) cx = 4.0f;
     card_draw(f, k, cx, cw, snap(top - 4.0f * S), snap(bottom + 4.0f * S), tO, A, true);
     return true;
@@ -1444,6 +1450,7 @@ int   g_npcView = 0;                                   // the first answer shown
 ItemText g_card; unsigned g_cardId = 0; bool g_cardOk = false;
 u32 g_cardIcon = 0; unsigned g_cardIconId = 0;
 float g_cardBottom = 0.0f;   // the last card drawn : its bottom edge (a second card stacks under it)
+bool g_cardBare = false; const ItemExtra* g_cardBareX = nullptr;
 // a SECOND card (the compare view : the item hovered over the one worn), swapped with the first by card_use
 struct CardAlt { ItemText t; unsigned id = 0; bool ok = false; u32 icon = 0; unsigned iconId = 0; };
 CardAlt g_cardAlt; int g_cardCur = 0;
@@ -1484,6 +1491,45 @@ void card_load(u32 dev, unsigned id) {
     if (id) windower::debug::log("NATIVEUI NPC item card : id %u -> %s%s", id, g_cardOk ? g_card.name : "NOT READ", g_cardOk && !g_cardIcon ? " (no icon)" : "");
 }
 // greedy word wrap of `s` ('\n' kept) into at most `maxL` lines of width `w`
+int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int maxL);
+// the card's width for its CONTENT : the widest of its lines as the client breaks them (title + its badges, the kind,
+// each line of the description, the level line, the augments, the "<...>" lines), + the icon and the paddings ; a line
+// longer than `hi` wraps there (prose). Same metrics as card_draw. Needs the card loaded (card_ready).
+float card_fit_w(const Frame& f, const Metrics& k, float lo, float hi) {
+    const float S = k.S; Font* fo = f.font; if (!fo) return hi;
+    const float ctz = snap(k.tz * 1.0f), cpad = snap(8.0f * S) + k.bi, icon = snap(32.0f * S);
+    const float chrome = 2.0f * cpad + icon + 6.0f * S, avail = hi - chrome - 2.0f * S;
+    float w = 0.0f;
+    auto para = [&](const char* t, float extra) {                   // each '\n'-separated line of t
+        char ln[200]; int o = 0;
+        for (const char* q = t; ; ++q) {
+            if (*q == '\n' || !*q) {
+                ln[o] = 0; float m = fo->measure(ln, ctz) + extra;
+                // PROSE longer than the box : the width that splits it into EVEN lines (3 lines of a third, not 2 full + a
+                // word) -- + a margin for the word breaks
+                if (m > avail) { const int n = (int)(m / avail) + 1; m = m / (float)n * 1.10f + 12.0f * S; if (m > avail) m = avail; }
+                if (m > w) w = m; o = 0; if (!*q) break; }
+            else if (o < (int)sizeof(ln) - 1) ln[o++] = *q;
+        }
+    };
+    char title[96]; item_title(g_card, title, sizeof(title));
+    const float btz = snap(ctz * 0.85f);
+    float badges = 0.0f;
+    if (item_rare(g_card)) badges += fo->measure("Rare", btz) + 16.0f * S;
+    if (item_ex(g_card))   badges += fo->measure("Ex", btz) + 16.0f * S;
+    para(title, badges > 0.0f ? badges + 8.0f * S : 0.0f);
+    char kind[96]; item_kind_line(g_card, kind, sizeof(kind)); if (kind[0]) para(kind, 0.0f);
+    if (g_card.desc[0]) para(g_card.desc, 0.0f);
+    char ench[64]; item_enchant_line(g_card, ench, sizeof(ench));
+    const ItemExtra* X = native_item_extra(g_cardId);
+    if (X && X->aug[0]) para(X->aug, 0.0f);
+    if (X && X->line[0]) lstrcpynA(ench, X->line, sizeof(ench));
+    if (ench[0]) para(ench, 0.0f);
+    if (X && X->ilvl[0]) para(X->ilvl, 0.0f);
+    if (g_card.level > 0) w = w > fo->measure("Lv.99 All Jobs", ctz) ? w : fo->measure("Lv.99 All Jobs", ctz);
+    const float cw = snap(w + chrome + 2.0f * S);
+    return cw < lo ? lo : cw > hi ? hi : cw;
+}
 int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int maxL) {
     int n = 0; char cur[160]; int cl = 0; cur[0] = 0;
     const char* p = s;
@@ -1528,13 +1574,310 @@ void card_fold(const Frame& f) {
     g_frameJoin = menu_place(f, CARD_KEY, x, y, an.w, h, nullptr, an.fold);   // folding : its final (fold) height
     draw_themed_box(f.dev, f.skin, x, y, an.w, h, ui_config().muBox, a, an.S);
 }
+// ---- THE EQUIPMENT SHEET'S DESCRIPTION (2026-11-27 : the client's text, wrapped as it came, read badly -- long ones,
+// short ones, augments). SECTIONS : the name (+ Rare / Ex) ; the kind and item level on one quiet line ; the STATS as a
+// two-column grid (name left, value right) ; the EFFECTS as bullets, whole sentences ; the AUGMENTS in green with their
+// rank / path ; the level and jobs as a quiet footer. A description line is a STAT line when it is nothing but
+// "<name><+|-|:><number>[%]" tokens ("DEF:200 HP+182", "Damage taken-20%", "\"Fast Cast\"+8%") ; anything else is an
+// effect, and an effect line starting lower-case continues the one before (the client broke it to its width).
+// ---- STAT FAMILIES (2026-11-27 : "STR..CHR together, then the accuracies, then the attacks... by group -- a mage or a DD
+// looks for different ones") : one classifier for the description's names ("\"Magic Atk. Bonus\"") and the atelier's keys
+// ("Magic Attack"). Families : 0 attributes, 1 physical, 2 magic, 3 defense, 4 other ; their order after the attributes by
+// the main job's role. Inside a family, the stats a player looks for first.
+enum { SG_ATTR, SG_PHYS, SG_MAGIC, SG_DEF, SG_OTHER, SG_PET, SG_N };   // SG_PET : what a "Pet:" / "Avatar:" ... line gives the pet
+static void sg_norm(const char* in, char* out, int cap) {         // lower case, no quotes / dots
+    int o = 0; for (const char* p = in; *p && o < cap - 1; ++p) { char c = *p; if (c == '"' || c == '.') continue; if (c >= 'A' && c <= 'Z') c = (char)(c + 32); out[o++] = c; } out[o] = 0;
+}
+static int sg_find(const char* n, const char* const* keys, int nk) { for (int i = 0; i < nk; ++i) if (strstr(n, keys[i])) return i; return -1; }
+static const char* const SG_MAG_K[] = { "magic accuracy", "magic acc", "magic atk", "magic attack", "magic damage", "magic burst", "fast cast", "cure", "conserve mp", "conserve",
+    "spell", "healing", "enhancing", "enfeebling", "elemental", "dark magic", "divine", "summoning", "ninjutsu", "singing", "instrument", "blue magic", "geomancy", "handbell", "magic" };
+static const char* const SG_PHY_K[] = { "accuracy", "attack", "haste", "double attack", "triple attack", "quadruple", "store tp", "critical", "crit", "weapon skill",
+    "subtle", "tp bonus", "dmg", "delay", "skill", "counter", "kick", "zanshin", "snapshot", "rapid shot", "ranged" };
+static const char* const SG_ATTR_K[] = { "str", "dex", "vit", "agi", "int", "mnd", "chr" };
+// a stat's name normalised : lower case, no quotes / dots, the client's abbreviations spelled out (eva acc atk rng mag) --
+// "Magic Acc." and "Magic Accuracy", "Rng. Acc." and "Ranged Accuracy" become one
+static void sg_expand(const char* name, char* n, int cap) {
+    char n0[48]; sg_norm(name, n0, sizeof(n0));
+    static const char* const AB[][2] = { { "eva", "evasion" }, { "acc", "accuracy" }, { "atk", "attack" }, { "rng", "ranged" }, { "mag", "magic" } };
+    int o = 0; const char* p = n0;
+    while (*p && o < cap - 2) {
+        const char* w = p; while (*p && *p != ' ' && *p != ':') ++p;
+        const int wl = (int)(p - w); const char* rp = 0;
+        for (const auto& ab : AB) if ((int)strlen(ab[0]) == wl && !strncmp(w, ab[0], (size_t)wl)) { rp = ab[1]; break; }
+        if (rp) { for (const char* q = rp; *q && o < cap - 2; ++q) n[o++] = *q; } else { for (const char* q = w; q < p && o < cap - 2; ++q) n[o++] = *q; }
+        while ((*p == ' ' || *p == ':') && o < cap - 2) n[o++] = *p++;
+    }
+    n[o] = 0;
+}
+static void stat_class(const char* name, int& grp, int& rank) {
+    // the FAMILIES (2026-11-27, redone : "Enmity, MP ... are not defense") :
+    //   base     : HP, MP, STR .. CHR                       (one compact line)
+    //   defense  : what PROTECTS -- DEF, damage taken, evasion, magic evasion, MDB, enemy crits, block, resists
+    //   physical : accuracy, attack, haste, multi-attacks, store TP, crits, WS, ranged, melee skills
+    //   magic    : magic accuracy / attack / damage / burst, fast cast, cure, conserve MP, SIRD, magic skills
+    //   utility  : enmity, refresh, regen, regain, movement speed, treasure hunter ... and the rest
+    char n[64]; sg_expand(name, n, sizeof(n));
+    if (!strcmp(n, "hp")) { grp = SG_ATTR; rank = 0; return; }
+    if (!strcmp(n, "mp")) { grp = SG_ATTR; rank = 1; return; }
+    for (int i = 0; i < 7; ++i) if (!strcmp(n, SG_ATTR_K[i])) { grp = SG_ATTR; rank = 2 + i; return; }
+    // exact short keys first (as substrings "dt", "da" ... hit other words : "avatar", "data")
+    static const char* const EXD[] = { "dt", "pdt", "mdt", "bdt", "pdt2", "mdt2", "def" };
+    static const int EXDR[] = { 0, 1, 2, 3, 1, 2, 6 };                         // the damage-taken family first, then DEF
+    for (int i = 0; i < 7; ++i) if (!strcmp(n, EXD[i])) { grp = SG_DEF; rank = EXDR[i]; return; }
+    static const char* const EXP[] = { "da", "ta", "qa", "wsd", "pdl" };
+    static const int EXR[] = { 3, 4, 5, 9, 9 };
+    for (int i = 0; i < 5; ++i) if (!strcmp(n, EXP[i])) { grp = SG_PHYS; rank = EXR[i]; return; }
+    // utility
+    // Haste speeds the swings AND the recasts : not a melee stat only (the user, 2026-11-27) -- first of the utility
+    static const char* const UTIL[] = { "haste", "enmity", "refresh", "regen", "regain", "movement", "treasure", "conserve tp", "dual wield" };
+    for (int i = 0; i < 9; ++i) if (strstr(n, UTIL[i])) { grp = SG_OTHER; rank = i; return; }
+    int r;
+    // defense before magic : "magic evasion", "magic def. bonus", "magic damage taken" are defense
+    static const char* const ELEM[] = { "fire", "ice", "wind", "earth", "lightning", "thunder", "water", "light", "dark" };   // "Earth+20" : a resistance
+    for (const char* el : ELEM) if (!strcmp(n, el)) { grp = SG_DEF; rank = 30; return; }
+    if (strstr(n, "damage taken") || strstr(n, "evasion") || strstr(n, "enemy") || strstr(n, "magic def") || strstr(n, "block") || strstr(n, "resist") || strstr(n, "shield def")) {
+        grp = SG_DEF;   // the order a player reads them : damage taken, DEF (exact above), evasion, magic evasion, MDB
+        rank = strstr(n, "physical damage taken") ? 1 : strstr(n, "magic damage taken") ? 2 : strstr(n, "breath") ? 3 : strstr(n, "damage taken") ? 0
+             : strstr(n, "magic evasion") ? 10 : strstr(n, "evasion") ? 9 : strstr(n, "magic def") ? 11 : 20;
+        return; }
+    if (strstr(n, "spell interruption") || !strcmp(n, "sird")) { grp = SG_MAGIC; rank = 12; return; }
+    if ((r = sg_find(n, SG_MAG_K, (int)(sizeof(SG_MAG_K) / sizeof(SG_MAG_K[0])))) >= 0) { grp = SG_MAGIC; rank = r; return; }
+    if ((r = sg_find(n, SG_PHY_K, (int)(sizeof(SG_PHY_K) / sizeof(SG_PHY_K[0])))) >= 0) { grp = SG_PHYS; rank = r; return; }
+    grp = SG_OTHER; rank = 50;
+}
+// the families' order for the main job : attributes first ; then a DD's physical, a mage's magic, a tank's defense
+static void stat_group_order(int out[SG_N]) {
+    const int mj = native_persona_data().ok ? native_persona_data().mjob : 0;
+    const bool mage = mj == 3 || mj == 4 || mj == 5 || mj == 10 || mj == 15 || mj == 20 || mj == 21;
+    const bool tank = mj == 7 || mj == 22;
+    int o = 0; out[o++] = SG_ATTR;
+    if (tank) { out[o++] = SG_DEF; out[o++] = SG_PHYS; out[o++] = SG_MAGIC; }
+    else if (mage) { out[o++] = SG_MAGIC; out[o++] = SG_DEF; out[o++] = SG_PHYS; }
+    else { out[o++] = SG_PHYS; out[o++] = SG_DEF; out[o++] = SG_MAGIC; }
+    out[o++] = SG_OTHER; out[o++] = SG_PET;
+}
+static const char* stat_group_name(int g) {
+    switch (g) { case SG_ATTR: return gtr("Attributes", "Attributs"); case SG_PHYS: return gtr("Physical", "Physique");
+                 case SG_MAGIC: return gtr("Magic", "Magie"); case SG_DEF: return gtr("Defense", "D\xC3\xA9""fense"); case SG_PET: return gtr("Pet", "Familier"); default: return gtr("Utility", "Utilitaire"); }
+}
+struct CardStat { char name[40]; char val[16]; bool pet; };   // pet : a stat of the pet ("Pet: Accuracy+50 ...")
+static bool card_stat_line(const char* ln, CardStat* out, int cap, int& n) {
+    const int n0 = n; const char* p = ln;
+    while (*p) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+        const char* st = p; const char* sg = 0;
+        for (const char* q = p; *q; ++q) {                             // the next sign followed by a digit (a space between allowed)
+            if (*q == '+' || *q == '-' || *q == ':') { const char* d = q + 1; if (*d == ' ' && *q != ':') ++d; if (*d >= '0' && *d <= '9') { sg = q; break; } }
+        }
+        if (!sg || sg == st) { n = n0; return false; }
+        const char* d = sg + 1; if (*d == ' ') ++d;
+        const char* e = d; while ((*e >= '0' && *e <= '9') || *e == '.') ++e;
+        if (*e == '%') ++e;
+        if (*e && *e != ' ') { n = n0; return false; }                 // "+5~10", "+3x" : not a plain value
+        char nm[40]; int o = 0;
+        for (const char* q = st; q < sg && o < 39; ++q) if (*q != '"') nm[o++] = *q;
+        while (o && nm[o - 1] == ' ') --o; nm[o] = 0;
+        bool letter = false; for (int i = 0; i < o; ++i) if ((nm[i] >= 'A' && nm[i] <= 'Z') || (nm[i] >= 'a' && nm[i] <= 'z')) letter = true;
+        if (!letter) { n = n0; return false; }
+        if (n < cap) { CardStat& c = out[n++]; lstrcpynA(c.name, nm, sizeof(c.name)); c.pet = false;
+            int v = 0; if (*sg != ':') c.val[v++] = *sg; for (const char* q = d; q < e && v < 15; ++q) c.val[v++] = *q; c.val[v] = 0; }
+        p = e;
+    }
+    return n > n0;
+}
+// the loaded card's description (g_card) : its STAT lines -> st (the pet's named "Pet: ..."), the rest -> eff (whole sentences)
+static void card_parse_desc(CardStat* st, int& ns, char eff[][200], int& ne) {
+    ns = 0; ne = 0; bool petMode = false;
+    {   const char* p = g_card.desc;
+        while (*p) {
+            char ln[200]; int o = 0; while (*p && *p != '\n' && o < 199) ln[o++] = *p++; ln[o] = 0; if (*p == '\n') ++p;
+            if (!ln[0]) continue;
+            // THE PET'S STATS (2026-11-27 : Nyame's "Pet: Accuracy+50 Ranged Acc.+50 ..." read as yours) : a line opening on
+            // "Pet:" / "Avatar:" / "Wyvern:" / "Automaton:" / "Luopan:" gives the pet its stats -- and the stat lines that follow
+            // it too, until a plain sentence
+            static const char* const PETP[] = { "Pet:", "Avatar:", "Wyvern:", "Automaton:", "Luopan:" };
+            const char* body = ln; bool petLine = false;
+            for (const char* pp : PETP) { const size_t pl = strlen(pp); if (!_strnicmp(ln, pp, pl)) { body = ln + pl; while (*body == ' ') ++body; petLine = true; break; } }
+            const int before = ns;
+            if (card_stat_line(body, st, 48, ns)) {
+                if (petLine) petMode = true;
+                // the pet's stats sit in OUR families (Physical, Magic ...), named "Pet: ..." (the user, 2026-11-27)
+                for (int q = before; q < ns; ++q) { st[q].pet = petMode;
+                    if (petMode) { char t[40]; _snprintf(t, sizeof(t), "Pet: %s", st[q].name); t[sizeof(t) - 1] = 0; lstrcpynA(st[q].name, t, sizeof(st[q].name)); } }
+                continue;
+            }
+            petMode = false;
+            const bool cont = ne > 0 && ((ln[0] >= 'a' && ln[0] <= 'z') || ln[0] == '(');
+            if (cont) { const size_t l0 = strlen(eff[ne - 1]); _snprintf(eff[ne - 1] + l0, sizeof(eff[0]) - l0, " %s", ln); eff[ne - 1][sizeof(eff[0]) - 1] = 0; }
+            else if (ne < 12) lstrcpynA(eff[ne++], ln, sizeof(eff[0]));
+        } }
+}
+static float card_draw_sheet(const Frame& f, const Metrics& k, float bx, float bw, float top, const ItemExtra* X, float A) {
+    const float S = k.S; const u32 dev = f.dev; Font* fo = f.font;
+    // THE STATUS PANEL'S TYPE (2026-11-27 : "sinon ca fait tache") : the same size and colours as its rows -- names grey-blue, values light
+    const float tz = k.tz, lh = snap(tz * 1.2f), sz = tz;
+    const u32 cName = 0xFF93A6BEu;                                    // a stat's name : soft ; its value : bright
+    const u32 sh = with_alpha(0xC8000000u, A), cTitle = 0xFFF4F6FAu, cLab = 0xFF93A6BEu, cVal = 0xFFE4EAF2u, cEff = 0xFFCFD8E4u, cAug = 0xFFA8E8B4u, cDim = 0xFF6E7C8Eu;
+    float y = top;
+    char title[96]; item_title(g_card, title, sizeof(title));
+    char kind[96]; item_kind_line(g_card, kind, sizeof(kind));
+    char ench[64]; item_enchant_line(g_card, ench, sizeof(ench));
+    if (X && X->line[0]) lstrcpynA(ench, X->line, sizeof(ench));
+    // 1) the name, the badges right
+    const char* BADGE[2] = { item_rare(g_card) ? "Rare" : 0, item_ex(g_card) ? "Ex" : 0 };
+    const u32 BCOL[2] = { 0xFF2F5FB8u, 0xFF2E8A46u };
+    const float btz = snap(tz * 0.8f), bh2 = snap(btz * 1.4f);
+    float right = snap(bx + bw);
+    float bxs[2] = { 0, 0 }, bws[2] = { 0, 0 };
+    for (int b = 1; b >= 0; --b) if (BADGE[b]) { bws[b] = snap(fo->measure(BADGE[b], btz) + 10.0f * S); bxs[b] = snap(right - bws[b]); right = snap(bxs[b] - 3.0f * S); }
+    const float ty = snap(y + lh * 0.5f);
+    cs(dev);
+    for (int b = 0; b < 2; ++b) if (BADGE[b]) {
+        rrect(dev, bxs[b], snap(ty - bh2 * 0.5f), bws[b], bh2, bh2 * 0.5f, with_alpha(BCOL[b], A), with_alpha(mix(BCOL[b], 0xFF000000u, 0.35f), A));
+        rrect_stroke(dev, bxs[b], snap(ty - bh2 * 0.5f), bws[b], bh2, bh2 * 0.5f, with_alpha(0xA0E8F0FFu, A), 1.0f);
+    }
+    fo->begin(dev);
+    for (int b = 0; b < 2; ++b) if (BADGE[b]) fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), ty, BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+    { char cut[96]; fo->draw_lc(dev, bx, ty, fit_text(fo, title, snap(tz * 1.04f), right - bx - 6.0f * S, cut, sizeof(cut)), snap(tz * 1.04f), with_alpha(cTitle, A), sh, k.ow); }
+    y = snap(y + lh);
+    // 2) the kind ; the item level at the right
+    {   const char* ilv = X && X->ilvl[0] ? X->ilvl : 0; char il[24] = "";
+        if (ilv) { const char* q = ilv; while (*q && (*q < '0' || *q > '9')) ++q; int v = atoi(q); if (v > 0) sprintf(il, "iLv %d", v); }
+        if (kind[0] || il[0]) {
+            const float ky = snap(y + lh * 0.5f);
+            if (il[0]) fo->draw_lc(dev, snap(bx + bw - fo->measure(il, sz)), ky, il, sz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+            if (kind[0]) { char cut[96]; fo->draw_lc(dev, bx, ky, fit_text(fo, kind, sz, bw - (il[0] ? fo->measure(il, sz) + 10.0f * S : 0.0f), cut, sizeof(cut)), sz, with_alpha(cLab, A), sh, k.ow); }
+            y = snap(y + lh);
+        } }
+    // 3) the description : stats and effects
+    CardStat st[48]; int ns = 0;
+    char eff[12][200]; int ne = 0;
+    card_parse_desc(st, ns, eff, ne);
+    if (ns) {
+        y = snap(y + 3.0f * S); cs(dev); flat(dev, bx, y, bw, 1.0f, with_alpha(0x26C8D6EAu, A)); y = snap(y + 3.0f * S); fo->begin(dev);
+        // by FAMILY, in the job's order ; inside one, the stats looked for first
+        int ord[SG_N]; stat_group_order(ord);
+        int gk[48], rk[48], idx[48];
+        for (int i = 0; i < ns; ++i) { stat_class(st[i].name, gk[i], rk[i]); if (st[i].pet) rk[i] += 100; idx[i] = i; }   // the pet's after ours, in the same family
+        int pos[SG_N]; for (int g = 0; g < SG_N; ++g) pos[ord[g]] = g;
+        for (int i = 1; i < ns; ++i) { const int v = idx[i]; int j = i - 1;   // stable insertion sort
+            while (j >= 0 && (pos[gk[idx[j]]] > pos[gk[v]] || (pos[gk[idx[j]]] == pos[gk[v]] && rk[idx[j]] > rk[v]))) { idx[j + 1] = idx[j]; --j; }
+            idx[j + 1] = v; }
+        CardStat sorted[48]; for (int i = 0; i < ns; ++i) sorted[i] = st[idx[i]];
+        int gs[48]; for (int i = 0; i < ns; ++i) gs[i] = gk[idx[i]];
+        for (int i = 0; i < ns; ++i) st[i] = sorted[i];
+        // READ AT A GLANCE (2026-11-27 : "les infos au premier coup d'oeil, vite lire ce que fait une piece") :
+        //  - the ATTRIBUTES on one compact line ("STR +34  DEX +28 ...") ;
+        //  - every other FAMILY a small column, the VALUE first, right-aligned in its own lane, then the name : the eye runs
+        //    down the numbers and reads the names beside them ; the families side by side in two columns, the role's first
+        int a0 = 0; while (a0 < ns && gs[a0] == SG_ATTR) ++a0;
+        if (a0) {   // the BASE (HP MP STR..CHR) : an aligned grid of 4 -- every value at the same place (a flowing line left
+                    // uneven gaps : "beaucoup d'espace apres DEX")
+            // as many columns as fit (4 on a wide card, 3 on a narrow one) : a name, its value, a gap
+            const float nameW = snap(fo->measure("MND", sz) + 5.0f * S), need = nameW + fo->measure("+999", sz) + 14.0f * S;
+            int nc4 = (int)(bw / need); if (nc4 > 4) nc4 = 4; if (nc4 < 2) nc4 = 2;
+            const float cw4 = snap(bw / (float)nc4);
+            for (int i = 0; i < a0; ++i) {
+                const int r4 = i / nc4, c4 = i % nc4;
+                const float cx = snap(bx + (float)c4 * cw4), ry = snap(y + (float)r4 * lh + lh * 0.5f);
+                fo->draw_lc(dev, cx, ry, st[i].name, sz, with_alpha(cName, A), sh, k.ow);
+                fo->draw_lc(dev, snap(cx + nameW), ry, st[i].val, sz, with_alpha(cVal, A), sh, k.ow);
+            }
+            y = snap(y + (float)((a0 + nc4 - 1) / nc4) * lh + 4.0f * S);
+        }
+        // the families after : blocks [title, rows], dealt to the shorter of two columns
+        const float valLane = snap(fo->measure("+999%", sz) + 2.0f * S);
+        // ONE LIST, full width (the user, 2026-11-27 : two columns cut the names -- "Pet: Ranged ..." -- "en liste c'est mieux")
+        const float colW = bw;
+        float yy0 = y;
+        int b0 = a0;
+        while (b0 < ns) {
+            int b1 = b0; while (b1 < ns && gs[b1] == gs[b0]) ++b1;
+            // a block's rows : a name too long for the column narrows to fit (fit_text)
+            const float cx = bx;
+            float yy = yy0;
+            {   // the family's title : small capitals in brass, a hairline under it to the column's edge
+                char up[32]; lstrcpynA(up, stat_group_name(gs[b0]), sizeof(up)); for (char* q = up; *q; ++q) if (*q >= 'a' && *q <= 'z') *q = (char)(*q - 32);
+                const float hz = snap(sz * 0.78f), hy = snap(yy + lh * 0.45f);
+                fo->draw_lc(dev, cx, hy, up, hz, with_alpha(0xFFD4B276u, A), sh, k.ow);
+                const float tw2 = fo->measure(up, hz);
+                cs(dev); flat(dev, snap(cx + tw2 + 6.0f * S), hy, snap(colW - tw2 - 6.0f * S), 1.0f, with_alpha(0x30D4B276u, A)); fo->begin(dev);
+            }
+            yy = snap(yy + lh * 0.9f);
+            for (int i = b0; i < b1; ++i) {
+                const float ry = snap(yy + lh * 0.5f), vw = fo->measure(st[i].val, sz);
+                fo->draw_lc(dev, snap(cx + valLane - vw), ry, st[i].val, sz, with_alpha(cVal, A), sh, k.ow);
+                char cut[48]; fo->draw_lc(dev, snap(cx + valLane + 6.0f * S), ry, fit_text(fo, st[i].name, sz, colW - valLane - 6.0f * S, cut, sizeof(cut)), sz, with_alpha(cName, A), sh, k.ow);
+                yy = snap(yy + lh);
+            }
+            yy0 = snap(yy + 4.0f * S);
+            b0 = b1;
+        }
+        y = yy0;
+    }
+    if (ne) {
+        y = snap(y + 4.0f * S);
+        for (int i = 0; i < ne; ++i) {
+            char wl[8][160]; const int nw = wrap_lines(fo, eff[i], sz, bw - 12.0f * S, wl, 8);
+            for (int j = 0; j < nw; ++j) {
+                const float ry = snap(y + lh * 0.5f);
+                if (j == 0) { cs(dev); disc(dev, snap(bx + 3.0f * S), ry, 1.8f * S, with_alpha(0xFFE8D9B0u, A)); fo->begin(dev); }
+                fo->draw_lc(dev, snap(bx + 10.0f * S), ry, wl[j], sz, with_alpha(cEff, A), sh, k.ow);
+                y = snap(y + lh);
+            }
+        }
+    }
+    // 4) the augments (their rank / path at the right of the label)
+    if ((X && X->aug[0]) || ench[0]) {
+        y = snap(y + 4.0f * S); cs(dev); flat(dev, bx, y, bw, 1.0f, with_alpha(0x26C8D6EAu, A)); y = snap(y + 4.0f * S); fo->begin(dev);
+        const float ry = snap(y + lh * 0.5f);
+        fo->draw_lc(dev, bx, ry, gtr("Augments", "Augments"), sz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        if (ench[0]) { char cut[64]; const char* t = fit_text(fo, ench, sz, bw - fo->measure("Augments", sz) - 12.0f * S, cut, sizeof(cut)); fo->draw_lc(dev, snap(bx + bw - fo->measure(t, sz)), ry, t, sz, with_alpha(0xFF9CC8FFu, A), sh, k.ow); }
+        y = snap(y + lh);
+        if (X && X->aug[0]) {
+            const char* p = X->aug;
+            while (*p) {
+                char ln[160]; int o = 0; while (*p && *p != '\n' && o < 159) ln[o++] = *p++; ln[o] = 0; if (*p == '\n') ++p;
+                if (!ln[0]) continue;
+                const char* t = ln; if (t[0] == '[' && t[1] && t[2] == ']') t += 3;   // "[1]HP+80" -> "HP+80" (the order is the line's)
+                CardStat a2[8]; int na = 0;
+                if (card_stat_line(t, a2, 8, na)) {
+                    const float lane = snap(fo->measure("+999%", sz) + 2.0f * S);   // value first, as the families'
+                    for (int i = 0; i < na; ++i) { const float ay = snap(y + lh * 0.5f);
+                        fo->draw_lc(dev, snap(bx + lane - fo->measure(a2[i].val, sz)), ay, a2[i].val, sz, with_alpha(cAug, A), sh, k.ow);
+                        fo->draw_lc(dev, snap(bx + lane + 6.0f * S), ay, a2[i].name, sz, with_alpha(cAug, A), sh, k.ow);
+                        y = snap(y + lh); }
+                } else {
+                    char wl[4][160]; const int nw = wrap_lines(fo, t, sz, bw - 10.0f * S, wl, 4);
+                    for (int j = 0; j < nw; ++j) { fo->draw_lc(dev, snap(bx + 10.0f * S), snap(y + lh * 0.5f), wl[j], sz, with_alpha(cAug, A), sh, k.ow); y = snap(y + lh); }
+                }
+            }
+        }
+    }
+    // 5) the level and the jobs, quiet
+    if (g_card.level > 0) {
+        char lv[200]; int o = _snprintf(lv, sizeof(lv), "Lv.%d  ", g_card.level);
+        const unsigned all = 0x7FFFFEu;
+        if ((g_card.jobs & all) == all) _snprintf(lv + o, sizeof(lv) - o, "All Jobs");
+        else { const int o0 = o; for (int j = 1; j <= 22 && o < (int)sizeof(lv) - 6; ++j) if (g_card.jobs & (1u << j)) o += _snprintf(lv + o, sizeof(lv) - o, "%s%s", o > o0 ? " " : "", JOBS3[j]); }
+        lv[sizeof(lv) - 1] = 0;
+        y = snap(y + 4.0f * S);
+        char wl[3][160]; const int nw = wrap_lines(fo, lv, sz, bw, wl, 3);
+        for (int j = 0; j < nw; ++j) { fo->draw_lc(dev, bx, snap(y + lh * 0.5f), wl[j], sz, with_alpha(cDim, A), sh, k.ow); y = snap(y + lh); }
+    }
+    return y;
+}
 void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above) {
         const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const UiConfig& C = ui_config();
         // THE CLIENT'S LAYOUT (its own card, screenshot 2026-11-17) : the icon top-left ; ONE text column right of it,
         // white -- the title (the log name, "Ark tachi"), the kind ("(Great Katana)All Races"), the description, then
         // "Lv.1 All Jobs" ; the enchantment "<1/1 0:30/[1:00:00, 0:30]>" right-aligned in light blue ; round Rare / Ex
         // badges in the top-right corner. AioHUD's box and font.
-        const float ctz = snap(k.tz * 1.0f), clH = snap(ctz * 1.3f), cpad = snap(8.0f * S) + k.bi, icon = snap(32.0f * S);   // cpad : + the frame border (the width is the caller's : it lines up with its neighbours)
+        const bool bare = g_cardBare; g_cardBare = false;          // one call
+        const ItemExtra* bareX = g_cardBareX; g_cardBareX = nullptr;
+        if (bare) { g_cardBottom = card_draw_sheet(f, k, bx, bw, top, bareX, A * (0.0f * tO + 1.0f)); return; }   // the Equipment sheet's sections
+        const float ctz = snap(k.tz * 1.0f), clH = snap(ctz * 1.3f), cpad = bare ? 0.0f : snap(8.0f * S) + k.bi, icon = bare ? -6.0f * S : snap(32.0f * S);   // cpad : + the frame border (the width is the caller's : it lines up with its neighbours)
         float colX = snap(bx + cpad + icon + 6.0f * S); const float tw = bx + bw - cpad - colX;   // colX again once placed
         char title[96]; item_title(g_card, title, sizeof(title));
         char kind[96]; item_kind_line(g_card, kind, sizeof(kind));
@@ -1549,7 +1892,7 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
         }
         // every line of the column, in order (the description wrapped to the column) ; then the client's page 2, when
         // its own card shows this item : the augments (their own colour), the "<...>" line, "<Item Level:n>"
-        const ItemExtra* X = native_item_extra(g_cardId);
+        const ItemExtra* X = bare ? bareX : native_item_extra(g_cardId);
         char lines[30][160]; int nl = 0, augFrom = 99;
         nl += wrap_lines(fo, title, ctz, tw, lines + nl, 2);                    // what is longer than the box wraps, as the client
         if (kind[0]) nl += wrap_lines(fo, kind, ctz, tw, lines + nl, 2);
@@ -1569,6 +1912,7 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
             if (an.t < -1.0f || dt < 0.0f || dt > 0.25f) { an.h = an.fold; dt = 0.0f; }
             if (dt > 0.1f) dt = 0.1f;
             an.h += (chT - an.h) * (1.0f - expf(-dt * 16.0f));
+            if (bare) an.h = chT;                                     // bare : no height animation (its host swaps it whole)
             if (fabsf(chT - an.h) < 0.75f) an.h = chT;
             an.t = f.t; an.ghost = false; }
         const float ch = snap(an.h);
@@ -1576,25 +1920,35 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
         // was all there, then popped (2026-11-25, "le texte pop un peu apres")
         const float prog = chT > an.fold + 1.0f ? (ch - an.fold) / (chT - an.fold) : 1.0f;
         const float pc = prog <= 0.3f ? 0.0f : prog >= 1.0f ? 1.0f : (prog - 0.3f) / 0.7f;
-        const float contentA = pc * pc * (3.0f - 2.0f * pc);
+        float contentA = pc * pc * (3.0f - 2.0f * pc);
+        {   // THE CLIENT'S PAGE 2 COMES A FEW FRAMES LATER (its own card refreshes after the cursor) : the augments / rank / item
+            // level popped in under a card already shown (2026-11-27, "on dirait qu'il est en retard"). Its card on ANOTHER item
+            // = it is about to refresh : the content waits for it, 0.4 s at most, then shows whole
+            static unsigned seenId[2] = { 0, 0 }, seenMs[2] = { 0, 0 };
+            const int sl = g_cardCur & 1; const unsigned nowMs = GetTickCount();
+            if (seenId[sl] != g_cardId) { seenId[sl] = g_cardId; seenMs[sl] = nowMs; }
+            const unsigned liveId = native_item_extra_live();
+            if (!bare && !X && liveId && liveId != g_cardId && nowMs - seenMs[sl] < 400u) contentA = 0.0f;
+            if (bare) contentA = 1.0f;                                // its host holds the previous one until this one is whole
+        }
         const bool clipContent = ch < chT - 0.5f;
         float cy = above ? snap(top - snap(4.0f * S) - ch) : top;
         if (above && cy < 4.0f) cy = snap(bottom + snap(4.0f * S));
         if (!above && cy + ch > f.screenH - 4.0f) cy = snap(f.screenH - 4.0f - ch);
         // glued to the box it describes (theme kit) ; not the compare card : it hangs under the first, past its gold arrow
-        const int jm = g_cardCur == 0 ? menu_place(f, CARD_KEY, bx, cy, bw, ch, nullptr, chT) : 0;   // chT : where it is going
+        const int jm = g_cardCur == 0 && !bare ? menu_place(f, CARD_KEY, bx, cy, bw, ch, nullptr, chT) : 0;   // chT : where it is going
         colX = snap(bx + cpad + icon + 6.0f * S);
         cy = snap(cy + (1.0f - tO) * 3.0f * S);
         g_cardBottom = cy + ch;
         g_frameJoin = jm;
-        draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
+        if (!bare) draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
         an.x = bx; an.y = cy; an.w = bw; an.A = A; an.S = S; an.above = above;
         A *= contentA;                                                    // the content : faded in with the unfolding
         if (A <= 0.0f) return;
         if (clipContent) clip_rect_begin(dev, bx, cy, bw, ch);            // ... and never past the box's edge
         struct ClipEnd { u32 d; bool on; ~ClipEnd() { if (on) clip_rect_end(d); } } clipEnd = { dev, clipContent };
         const float ix = snap(bx + cpad), iy = snap(cy + cpad);
-        if (g_cardIcon) {
+        if (g_cardIcon && !bare) {
             dTexQuadState(dev, g_cardIcon);
             tquad(dev, ix, iy, icon, icon, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
             dSetTex(dev, 0, 0); cs(dev);                                  // back to the colour state : the badges' rrects follow
@@ -1909,6 +2263,9 @@ void thousands(unsigned v, char* out) {      // 1628503 -> "1,628,503"
     out[o] = 0;
 }
 }
+// the Status panel's rest rect, last frame it was drawn (GetTickCount) : the Equipment screen's Current Gil hangs under it,
+// its edges on the panel's (2026-11-27, "Current Gil devrait etre parfaitement aligne sous Status")
+static float g_persRx = 0.0f, g_persRy = 0.0f, g_persRw = 0.0f, g_persRh = 0.0f; static unsigned g_persAtMs = 0;
 void persona_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     const NativePanel& PP = native_persona(); const NativePanel& PL = native_level();
@@ -1919,7 +2276,8 @@ void persona_draw(const Frame& f) {
     static PersonaMem lastD; static NativePanel lastP, lastL;
     // Currencies 1 / 2 open IN PLACE of the stat panels : the client hides them then (the user, 2026-11-18)
     const bool curOn = native_currencies().open || native_unity_info().open || native_search().open || native_job_points().open || native_faith().open || native_celestite().open || native_merit_cat().open;
-    const bool onP = PP.open && D.ok && !curOn, onL = PL.open && D.ok && !curOn;
+    const bool sheetUp = C.eqStyle == 1 && native_equip().open && !native_equip().setMode;   // the Equipment SHEET draws the stats itself
+    const bool onP = PP.open && D.ok && !curOn && !sheetUp, onL = PL.open && D.ok && !curOn;
     if (D.ok) lastD = D;
     if (onP) lastP = PP;
     if (onL) lastL = PL;
@@ -1945,7 +2303,8 @@ void persona_draw(const Frame& f) {
         char l1[40], l2[40], l3[32], hpS[24], mpS[24], tpS[12], av[7][8], ad[7][8];
         sprintf(l1, "Lv%d %s", d.mlvl, d.mjob >= 1 && d.mjob <= 22 ? JOB_FULL[d.mjob] : "?");
         if (d.sjob >= 1 && d.sjob <= 22 && d.slvl) sprintf(l2, "Lv%d %s", d.slvl, JOB_FULL[d.sjob]); else l2[0] = 0;
-        if (d.ilvl > 99) { if (d.su) sprintf(l3, "iLv %d / Su%d", d.ilvl, d.su); else sprintf(l3, "iLv %d", d.ilvl); } else l3[0] = 0;
+        { const int il = d.ilvlNow > 99 ? d.ilvlNow : d.ilvl;   // the current one, as the client's Status (the maximum before)
+          if (il > 99) { if (d.su) sprintf(l3, "iLv %d / Su%d", il, d.su); else sprintf(l3, "iLv %d", il); } else l3[0] = 0; }
         const int hp = live ? f.game->me.hp : (int)d.maxHp, mp = live ? f.game->me.mp : (int)d.maxMp, tp = live ? f.game->me.tp : 0;
         sprintf(hpS, "%d / %u", hp, d.maxHp); sprintf(mpS, "%d / %u", mp, d.maxMp); sprintf(tpS, "%d", tp);
         for (int a = 0; a < 7; ++a) { sprintf(av[a], "%u", (unsigned)d.base[a]); if (d.added[a]) sprintf(ad[a], "%+d", (int)d.added[a]); else ad[a][0] = 0; }
@@ -1969,6 +2328,7 @@ void persona_draw(const Frame& f) {
         float bx, by; place(lastP, bw, bh, bx, by);
         const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
         persBottom = by + bh; persX = bx; persW = bw;          // its REST place : the Master Level box hangs from it (it slides on its own)
+        g_persRx = bx; g_persRy = by; g_persRw = bw; g_persRh = bh; g_persAtMs = now;
         const float tO = ease_out(((float)(now - g_persB.openMs) / 1000.0f) / 0.08f);
         by = snap(by + (1.0f - tO) * 4.0f * S);
         const float A = g_persB.vis * tO;
@@ -3618,8 +3978,406 @@ void meritcat_draw(const Frame& f) {
 // it (the client's colours) ; the item card of what the hand is on. The client does the equipping (0x050).
 namespace { Block g_eqB, g_elB; unsigned g_eqMs = 0; bool g_eqPreview = false; }
 bool equip_preview_toggle() { g_eqPreview = !g_eqPreview; return g_eqPreview; }
+// a bag's name, short enough for a list row's right edge : the inventory and the wardrobes (where gear lives) ; the others
+// for completeness
+static const char* bag_short_name(int bag) {
+    switch (bag) {
+        case 0:  return gtr("Inventory", "Inventaire");
+        case 8:  return gtr("Wardrobe", "Garde-robe");
+        case 10: return gtr("Wardrobe 2", "Garde-robe 2"); case 11: return gtr("Wardrobe 3", "Garde-robe 3");
+        case 12: return gtr("Wardrobe 4", "Garde-robe 4"); case 13: return gtr("Wardrobe 5", "Garde-robe 5");
+        case 14: return gtr("Wardrobe 6", "Garde-robe 6"); case 15: return gtr("Wardrobe 7", "Garde-robe 7");
+        case 16: return gtr("Wardrobe 8", "Garde-robe 8");
+        case 1: return gtr("Mog Safe", "Coffre"); case 2: return gtr("Storage", "Entrep\xC3\xB4t"); case 4: return gtr("Locker", "Casier");
+        case 5: return gtr("Satchel", "Sacoche"); case 6: return gtr("Sack", "Sac"); case 7: return gtr("Case", "Valise"); case 9: return gtr("Mog Safe 2", "Coffre 2");
+        default: return 0;
+    }
+}
+// the worn piece's page 2 (augments, rank), cached per slot while its cell is on the grid : the worn card of the comparison
+static ItemExtra g_eqsWornX[16]; static unsigned g_eqsWornXid[16];
+// the client fills its card's page 2 ONE FRAME AFTER the card (measured 2026-11-27 : empty, then the augments / item level) :
+// an empty page never replaces a filled one of the same piece -- an Enter right on arrival kept the empty one
+static void eqs_worn_cache(int slot, unsigned id) {
+    const ItemExtra* wx = native_item_extra(id);
+    if (!wx || slot < 0 || slot > 15) return;
+    const bool filled = wx->aug[0] || wx->line[0] || wx->ilvl[0];
+    const bool had = g_eqsWornXid[slot] == id && (g_eqsWornX[slot].aug[0] || g_eqsWornX[slot].line[0] || g_eqsWornX[slot].ilvl[0]);
+    if (filled || !had) { g_eqsWornX[slot] = *wx; g_eqsWornXid[slot] = id; }
+}
+
+// ======== THE EQUIPMENT SHEET (Game UI -> Equipment screen : Sheet, the default ; 2026-11-27) ========
+// ONE COMPACT panel for what the screen is opened for : your stats, your gil, changing a piece (the user 2026-11-27 : a body
+// silhouette was "too much", the window huge). The header : who you are and your gil. Left : the stats. Centre : the
+// client's 4 x 4 grid (its arrows / pad as they are), Attack / Defense / the resists under it. Right, ONE column : on the
+// grid the piece worn ; in a slot its candidates -- and under the panel the DUEL : the piece worn beside the candidate.
+// The keys, the pad and the validation stay the client's (it equips : AioHUD sends nothing). Sets keep the Classic layout.
+static Block g_eqsB, g_eqsLB; static unsigned g_eqsMs = 0;
+static float g_eqsCardNeed = 0.0f, g_eqsH = 0.0f, g_eqsRightBot = 0.0f;   // + the right inset's bottom (the comparison goes under it)   // the worn card's bottom (from the panel's top) last frame ; the panel's eased height
+static bool equip_sheet_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeEquip& E0 = native_equip();
+    static NativeEquip last;
+    if (E0.open) last = E0;
+    if (last.setMode) return false;                                       // a set's grid : the Classic view
+    const unsigned now = GetTickCount();
+    float dt = g_eqsMs ? (float)(now - g_eqsMs) / 1000.0f : 0.0f; g_eqsMs = now; if (dt > 0.1f) dt = 0.1f;
+    if (!block_ease(g_eqsB, E0.open, now, dt) || last.uiW <= 0) return true;
+    const PersonaMem& D0 = native_persona_data(); static PersonaMem D; if (D0.ok) D = D0;
+    Metrics k = metrics(f);   // the sheet's text a size down (2026-11-27 : "trop gros, police, padding") -- cards included
+    k.tz = snap(k.tz * 0.88f); k.capH = snap(k.capH * 0.88f);
+    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz, gap = snap(7.0f * S);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float tO = ease_out(((float)(now - g_eqsB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_eqsB.vis * tO; if (A <= 0.0f) return true;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    const u32 cLab = 0xFF93A6BEu, cVal = 0xFFE4EAF2u, cGold = 0xFFE8D9B0u, cDim = 0xFF56627Au, cUp = 0xFF7CE07Cu, cDown = 0xFFFF7A6Au;
+    static const int SLOT_AT[16] = { 0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8 };
+    static const int ENTRY_OF[16] = { 1, 5, 9, 13, 2, 3, 7, 12, 16, 6, 8, 10, 14, 11, 15, 4 };
+    static const char* SLOT_EN[16] = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "L.Ear", "R.Ear", "L.Ring", "R.Ring", "Back" };
+    static const char* SLOT_FR[16] = { "Main", "Bouclier", "Distance", "Munition", "T\xC3\xAAte", "Corps", "Mains", "Jambes", "Pieds", "Cou", "Taille", "Oreille G", "Oreille D", "Anneau G", "Anneau D", "Dos" };
+    // ---- the geometry ----
+    const float headH = snap(tz * 2.7f);   // two lines : the name + the item level ; the jobs in full
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S);
+    // YOUR GIL under the stats (2026-11-27 : "il reste la place sous CHR, elargis status s'il le faut") -- the column as wide
+    // as the purse needs
+    unsigned gil = 0;
+    if (last.gilOk) gil = last.gil;                                     // the poller's (rule 6 : no memory read here)
+    char gilS[32]; thousands(gil, gilS); strcat(gilS, " G");
+    const float coinZ = snap(k.capH * 1.0f), gilW = snap(coinZ + 5.0f * S + fo->measure(gilS, tz));
+    const float colS = snap(fmaxf(92.0f * S, gilW)), colB = snap(4.0f * cell + 3.0f * cg), colL = snap(310.0f * S);
+    // the heights from the CONTENT (2026-11-27 : the stats were spaced to fill a fixed height -- "tres aere")
+    const float step0 = snap(tz * 1.4f);
+    const float gaugeBlk = snap(tz * 1.3f + 5.0f * S + 8.0f * S), attrStep = snap(tz * 1.2f);
+    const float gilBlk = snap(8.0f * S + tz * 1.4f);                  // a hairline, then the purse
+    const float statsH = 3.0f * gaugeBlk + 8.0f * S + 7.0f * attrStep + gilBlk;
+    const float gridSide = colB + 10.0f * S + step0 + 2.0f * snap(tz * 1.45f);
+    const float bodyH = snap(fmaxf(statsH, gridSide));
+    // the insets (ip round each column) : the SAME margin between two insets as between the frame and an inset (2026-11-27)
+    const float ip = snap(5.0f * S), colGap = snap(2.0f * ip + (pad - ip));
+    // TWO PANELS (2026-11-27, "fini le cadre principal apres equip view, la description collee a equip view") :
+    //  - the MAIN frame : the header, the stats and the grid, each in its own inset ;
+    //  - the DESCRIPTION panel (or the candidates), glued to the main frame's right edge, as tall as the main frame at least,
+    //    taller when its content asks (measured last frame : the card swaps whole)
+    const float Wm = snap(pad + colS + colGap + colB + pad), Wd = snap(pad + colL + pad);
+    const float W = snap(Wm + Wd);                                       // the two together (the mouse, the comparison under)
+    float Hw = snap(pad + headH + gap + bodyH + pad);
+    if (g_eqsH <= 0.0f || g_eqsB.vis < 0.05f) g_eqsH = Hw;
+    g_eqsH = Hw;
+    const float H = snap(g_eqsH);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap(16.0f * sx), by = snap((float)last.ry0 * sy);
+    if (bx + W > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - W); if (bx < 4.0f) bx = 4.0f;
+    if (by + H > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - H); if (by < 4.0f) by = 4.0f;
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    // the description panel's height : its content's bottom last frame
+    const float dxp = snap(bx + Wm - k.bi);                              // glued : the two borders on one line
+    const float yR = snap(by + pad);                                     // its content starts at its own top
+    float rightBot = snap(by + H - pad);
+    if (g_eqsCardNeed > 0.0f && by + g_eqsCardNeed > rightBot) rightBot = snap(by + g_eqsCardNeed);
+    if (last.lopen && (last.lfocused || last.compare) && last.lvis > 0) {
+        const float lb = snap(yR + snap(tz * 1.3f) + (float)last.lvis * snap(tz * 1.75f) + 4.0f * S);
+        if (lb > rightBot) rightBot = lb;
+    }
+    const float Hd = snap(rightBot + pad - by);
+    g_frameJoin = 0;
+    draw_themed_box(dev, f.skin, dxp, by, snap(Wd + k.bi), Hd, C.muBox, A, S);
+    g_frameJoin = 0;
+    draw_themed_box(dev, f.skin, bx, by, Wm, H, C.muBox, A, S);
+    const float L = bx + pad, R = bx + Wm - pad, top = by + pad;
+    const float yBody = snap(top + headH + gap);
+    const float xS = L, xB = snap(L + colS + colGap), xL = snap(dxp + k.bi + pad);
+    auto hair = [&](float x, float y, float w) { rrect(dev, x, snap(y), w, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A)); };
+    hair(L, top + headH, R - L);
+    {   // the main frame's two insets : a sunk pane each
+        const float ir = snap(6.0f * S);
+        cs(dev);
+        auto inset = [&](float x, float y, float w, float h) {
+            rrect(dev, x, y, w, h, ir, with_alpha(0x58080C12u, A), with_alpha(0x58101620u, A));
+            rrect_stroke(dev, x, y, w, h, ir, with_alpha(0x34C8D6EAu, A), 1.0f);
+            rrect_topcaps(dev, x + 1.0f, y + 1.0f, w - 2.0f, snap(6.0f * S), ir - 1.0f, with_alpha(0x30000000u, A), with_alpha(0x00000000u, A));
+        };
+        inset(snap(xS - ip), snap(yBody - ip), snap(colS + 2.0f * ip), snap(bodyH + 2.0f * ip));
+        inset(snap(xB - ip), snap(yBody - ip), snap(colB + 2.0f * ip), snap(bodyH + 2.0f * ip));
+    }
+    g_eqsRightBot = by + Hd;
+    // ---- the cells (the body), the cursor ----
+    int curCell = -1;
+    for (int c = 0; c < 16; ++c) if (ENTRY_OF[SLOT_AT[c]] == last.cursor) curCell = c;
+    auto cellX = [&](int i) { return snap(xB + (float)i * (cell + cg)); };
+    auto cellY = [&](int b) { return snap(yBody + (float)b * (cell + cg)); };
+    const MouseState* ms = f.mouse; int mcell = -1;
+    const unsigned encMask = party().encumbrance();
+    for (int c = 0; c < 16; ++c) {
+        const float cx = cellX(c % 4), cy = cellY(c / 4);
+        rrect(dev, cx, cy, cell, cell, 6.0f * S, with_alpha(0x80101826u, A), with_alpha(0x80080C14u, A));
+        rrect_stroke(dev, cx, cy, cell, cell, 6.0f * S, with_alpha(last.id[SLOT_AT[c]] ? 0x40C8D6EAu : 0x22C8D6EAu, A), 1.0f);
+        if (c == curCell) {
+            rrect_clip_begin(dev, cx, cy, cell, cell, 6.0f * S);
+            party_selframe(dev, cx, cy, cell, cell, f.t, A, 0);
+            rrect_clip_end(dev);
+            rrect_stroke(dev, cx, cy, cell, cell, 6.0f * S, with_alpha(0xD8FFDA8Au, A), 1.5f * S);
+        }
+        const unsigned id = last.id[SLOT_AT[c]];
+        if (id) {
+            const u32 tex = list_icon(f, 3, id);
+            const float z = snap(cell - 4.0f * S);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 2.0f * S), snap(cy + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+        }
+        if ((encMask >> SLOT_AT[c]) & 1u) {
+            const float m = snap(7.0f * S), th = snap(2.5f * S); const u32 red = with_alpha(0xD2FF3838u, A);
+            seg_soft(dev, cx + m, cy + m, cx + cell - m, cy + cell - m, th, red);
+            seg_soft(dev, cx + cell - m, cy + m, cx + m, cy + cell - m, th, red);
+        }
+        if (ms && ms->focused && ms->x >= cx && ms->x < cx + cell && ms->y >= cy && ms->y < cy + cell) mcell = c;
+    }
+    // NO HAND here (2026-11-27) : the lit cell / the lit row IS the cursor -- a hand beside it pointed at the wrong cell
+    // ---- the candidates (the client's list of the slot under the cursor) ----
+    const int nRows = last.lvis > 0 ? (last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis) : 0;
+    const float rowH = snap(tz * 1.75f), lTop = snap(yR + snap(tz * 1.3f)), iz = snap(rowH - 6.0f * S);
+    const int cr = last.lopen && last.lcursor >= last.ltop && last.lcursor < last.ltop + nRows ? last.lcursor - last.ltop : -1;
+    const bool listHand = last.lfocused || last.compare;
+    // the client's list is RIGHT only once the slot is entered : on the grid it still holds another slot's pieces, or every
+    // piece at once after a return (measured 2026-11-27 : Back's row showed earrings, then weapons). Shown then only.
+    const bool showList = last.lopen && listHand;
+    if (showList) {
+        for (int i = 0; i < nRows; ++i) if (!last.lrow[i].header && ((i + last.ltop) & 1) == 0)
+            rrect(dev, xL, snap(lTop + (float)i * rowH), colL, rowH, 4.0f * S, with_alpha(0x14FFFFFFu, A), with_alpha(0x0CFFFFFFu, A));
+        if (cr >= 0) {
+            const float targetY = lTop + (float)cr * rowH;
+            if (g_eqsLB.curY < 0.0f) g_eqsLB.curY = targetY;
+            g_eqsLB.curY += (targetY - g_eqsLB.curY) * (1.0f - expf(-dt * 30.0f));
+            if (fabsf(targetY - g_eqsLB.curY) < 0.3f) g_eqsLB.curY = targetY;
+            const float y = snap(g_eqsLB.curY), r = rowH * 0.5f, la = listHand ? 1.0f : 0.45f;   // the client's cursor : dim until the list has the hand
+            rrect_clip_begin(dev, xL, y, colL, rowH, r);
+            party_selframe(dev, xL, y, colL, rowH, f.t, A * la, 0);
+            rrect_clip_end(dev);
+            rrect_stroke(dev, xL, y, colL, rowH, r, with_alpha(0xC8FFDA8Au, A * la), 1.0f);
+        } else g_eqsLB.curY = -1.0f;
+        if (last.ln > last.lvis && last.lvis > 0) {
+            const float rx = snap(xL + colL + 3.0f * S), th = (float)last.lvis * rowH;
+            const float th2 = th * (float)last.lvis / (float)last.ln, ty2 = lTop + th * (float)last.ltop / (float)last.ln;
+            rrect(dev, rx, lTop, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+            rrect(dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+        }
+        for (int i = 0; i < nRows; ++i) if (!last.lrow[i].header && last.lrow[i].id) {
+            const u32 tex = list_icon(f, 3, last.lrow[i].id);
+            const float a = A * (last.lrow[i].col == 0x80404040u ? 0.5f : 1.0f);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(xL + 6.0f * S), snap(lTop + (float)i * rowH + 3.0f * S), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
+        }
+    }
+    // ---- the mouse : the client's own controls (its cursor follows ; a click validates, as its keys) ----
+    if (E0.open) {
+        g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = W / f.screenW; g_hit[9][3] = H / f.screenH;
+        g_hit[8][2] = 0.0f;
+        const int ent = mcell >= 0 ? ENTRY_OF[SLOT_AT[mcell]] : 0;
+        if (ent && ent != g_eqsB.hoverRow && ent != E0.cursor && E0.focused) native_equip_hover(ent);
+        g_eqsB.hoverRow = ent;
+        if (ent && ms->clicked) native_equip_pick(ent);
+        int mrow = -1;
+        if (E0.lopen && E0.lfocused && ms && ms->focused && ms->x >= xL && ms->x < xL + colL && ms->y >= lTop && ms->y < lTop + (float)nRows * rowH)
+            mrow = last.ltop + (int)((ms->y - lTop) / rowH);
+        if (mrow >= 0 && mrow + 1 != g_eqsLB.hoverRow && mrow != E0.lcursor) native_textlist_hover("inventor", mrow);
+        g_eqsLB.hoverRow = mrow + 1;
+        if (mrow >= 0 && ms->clicked) native_textlist_pick("inventor", mrow);
+    }
+    // ---- the text ----
+    fo->begin(dev);
+    {   // the header : who you are (name, jobs, item level) ; your gil, right
+        const bool live = f.game && f.game->me.name[0];
+        const float hy = snap(top + headH * 0.3f), hy2 = snap(top + headH * 0.74f);
+        const char* nm = live ? f.game->me.name : "";
+        fo->draw_lc(dev, L, hy, nm, snap(tz * 1.12f), with_alpha(0xFFF4F6FAu, A), sh, k.ow);
+        // the jobs IN FULL, the CURRENT item level and Su (as the client's Status, 2026-11-27)
+        char jl[96] = "", il[32] = "";
+        if (D.ok) {
+            _snprintf(jl, sizeof(jl), "%s %d", D.mjob >= 1 && D.mjob <= 22 ? JOB_FULL[D.mjob] : "?", D.mlvl); jl[sizeof(jl) - 1] = 0;
+            const int iv = D.ilvlNow > 99 ? D.ilvlNow : D.ilvl;
+            if (iv > 99) { if (D.su) sprintf(il, "iLv %d / Su %d", iv, D.su); else sprintf(il, "iLv %d", iv); }
+        }
+        const float jz = snap(tz * 0.9f);
+        if (il[0]) fo->draw_lc(dev, snap(R - fo->measure(il, jz)), hy, il, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+        // the MAIN job in the client's blue, the sub job plain (its own Status, 2026-11-27)
+        fo->draw_lc(dev, L, hy2, jl, jz, with_alpha(0xFF4FA8F0u, A), sh, k.ow);
+        if (D.ok && D.sjob >= 1 && D.sjob <= 22 && D.slvl) {
+            char sj[48]; _snprintf(sj, sizeof(sj), "/  %s %d", JOB_FULL[D.sjob], D.slvl); sj[sizeof(sj) - 1] = 0;
+            const float sx2 = snap(L + fo->measure(jl, jz) + 6.0f * S);
+            char cut[64]; fo->draw_lc(dev, sx2, hy2, fit_text(fo, sj, jz, R - sx2, cut, sizeof(cut)), jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+        }
+    }
+    {   // THE STATS (2026-11-27, redone : "pas tres quali, tres aere, les barres vertes") -- HP and MP as the party's gauges ;
+        // the attributes as a tight table (name, base, the gear's bonus in green), alternate rows ; no decorative bars
+        const float lz = tz;
+        const bool live = f.game && f.game->me.name[0];
+        char a[24], b[24];
+        float y = yBody;
+        if (D.ok) {
+            auto gauge = [&](const char* lab, int cur, unsigned mx, u32 c0, u32 c1, u32 vc) {
+                const float ty = snap(y + tz * 0.55f);
+                fo->begin(dev);
+                fo->draw_lc(dev, xS, ty, lab, lz, with_alpha(cLab, A), sh, k.ow);
+                sprintf(a, "%d", cur); sprintf(b, " / %u", mx);
+                const float wb = fo->measure(b, snap(lz * 0.9f));
+                fo->draw_lc(dev, snap(xS + colS - wb), ty, b, snap(lz * 0.9f), with_alpha(cDim, A), sh, k.ow);
+                fo->draw_lc(dev, snap(xS + colS - wb - fo->measure(a, lz)), ty, a, lz, with_alpha(vc, A), sh, k.ow);
+                const float gy = snap(y + tz * 1.3f), gh = snap(5.0f * S), r = gh * 0.5f;
+                const float fr = mx ? fminf(1.0f, fmaxf(0.0f, (float)cur / (float)mx)) : 0.0f;
+                cs(dev);
+                rrect(dev, xS, gy, colS, gh, r, with_alpha(0xC0080C12u, A), with_alpha(0xC0141A22u, A));   // the track, sunk
+                if (fr > 0.0f) {
+                    const float fw = snap(fmaxf(gh, colS * fr));
+                    rrect(dev, xS, gy, fw, gh, r, with_alpha(c0, A), with_alpha(c1, A));
+                    rrect_topcaps(dev, xS + 1.0f, gy + 0.5f, fw - 2.0f, snap(gh * 0.45f), r - 0.5f, with_alpha(0x50FFFFFFu, A), with_alpha(0x00FFFFFFu, A));   // its sheen
+                }
+                rrect_stroke(dev, xS, gy, colS, gh, r, with_alpha(0x40000000u, A), 1.0f);
+                y = snap(y + gaugeBlk);
+            };
+            gauge("HP", live ? f.game->me.hp : (int)D.maxHp, D.maxHp, 0xFF6ED36Au, 0xFF3E9E44u, 0xFFC8F4B4u);
+            gauge("MP", live ? f.game->me.mp : (int)D.maxMp, D.maxMp, 0xFF6AA8F0u, 0xFF3A6CC0u, 0xFFB8D4FFu);
+            gauge("TP", live ? f.game->me.tp : 0, 3000u, 0xFFF0C850u, 0xFFB8901Cu, 0xFFFFE8A0u);
+            y = snap(y + 8.0f * S);
+            static const char* ATTR[7] = { "STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR" };
+            cs(dev);
+            for (int i = 0; i < 7; ++i) if ((i & 1) == 0)
+                rrect(dev, snap(xS - 4.0f * S), snap(y + (float)i * attrStep), snap(colS + 8.0f * S), attrStep, 3.0f * S, with_alpha(0x10FFFFFFu, A), with_alpha(0x0AFFFFFFu, A));
+            fo->begin(dev);
+            // name, base, its gear bonus at the column's edge -- the comparison's deltas live in its table (STR..CHR included)
+            const float baseR = snap(xS + colS * 0.62f), addR = snap(xS + colS);
+            for (int i = 0; i < 7; ++i) {
+                const float ry = snap(y + (float)i * attrStep + attrStep * 0.5f);
+                fo->draw_lc(dev, snap(xS + 2.0f * S), ry, ATTR[i], lz, with_alpha(cLab, A), sh, k.ow);
+                sprintf(a, "%u", (unsigned)D.base[i]);
+                fo->draw_lc(dev, snap(baseR - fo->measure(a, lz)), ry, a, lz, with_alpha(cVal, A), sh, k.ow);
+                if (D.added[i]) { sprintf(b, "%+d", (int)D.added[i]); fo->draw_lc(dev, snap(addR - fo->measure(b, lz)), ry, b, lz, with_alpha(D.added[i] > 0 ? cUp : cDown, A), sh, k.ow); }
+            }
+            // the purse, under CHR : a hairline, the coin, the amount right-aligned
+            const float gy0 = snap(y + 7.0f * attrStep + 4.0f * S);
+            cs(dev); flat(dev, xS, gy0, colS, 1.0f, with_alpha(0x30C8D6EAu, A));
+            const float gcy = snap(gy0 + 4.0f * S + tz * 0.7f), gw = fo->measure(gilS, lz);
+            gil_coin(dev, snap(xS + colS - gw - 5.0f * S - coinZ * 0.5f), gcy, coinZ, A);
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(xS + colS - gw), gcy, gilS, lz, with_alpha(0xFFF4F6FAu, A), sh, k.ow);
+        }
+        if (last.statsOk) {   // under the grid : Attack, Defense ; the resists as compact chips (dim at 0)
+            const float gx0 = xB, gw = colB;
+            float yy = snap(yBody + colB + 10.0f * S + step0 * 0.5f);
+            fo->begin(dev);
+            sprintf(a, "%d", last.atk); sprintf(b, "%d", last.def);
+            // ATK / DEF : the stats column's own short labels (the grid is narrow : "Defense" ran into its value)
+            fo->draw_lc(dev, gx0, yy, "ATK", lz, with_alpha(cLab, A), sh, k.ow);
+            fo->draw_lc(dev, snap(gx0 + gw * 0.5f - 8.0f * S - fo->measure(a, lz)), yy, a, lz, with_alpha(cVal, A), sh, k.ow);
+            fo->draw_lc(dev, snap(gx0 + gw * 0.5f + 8.0f * S), yy, "DEF", lz, with_alpha(cLab, A), sh, k.ow);
+            fo->draw_lc(dev, snap(gx0 + gw - fo->measure(b, lz)), yy, b, lz, with_alpha(cVal, A), sh, k.ow);
+            static const u32 ELC[8] = { 0xFFE85A4Au, 0xFF7FD4F0u, 0xFF6CD48Au, 0xFFC8A060u, 0xFFB07CE8u, 0xFF5A8CE8u, 0xFFF0F0E0u, 0xFF8A6AA8u };
+            const float rs = snap(tz * 1.45f), cw4 = snap((gw - 3.0f * 4.0f * S) / 4.0f), chH = snap(rs - 5.0f * S);
+            const float y0r = snap(yy + step0 * 0.5f + 4.0f * S);
+            for (int i = 0; i < 8; ++i) {
+                const float cx = snap(gx0 + (float)(i % 4) * (cw4 + 4.0f * S)), cy = snap(y0r + (float)(i / 4) * rs);
+                const float ca = last.res[i] ? 1.0f : 0.75f;            // the value dims a little at 0 ; the orb keeps its colour
+                cs(dev);
+                const float ox = snap(cx + chH * 0.5f + 1.0f * S), oy = snap(cy + chH * 0.5f), orr = 4.4f * S;
+                disc(dev, ox, oy, orr, with_alpha(mix(ELC[i], 0xFF000000u, 0.35f), A));              // the orb : its colour, a dark rim
+                disc(dev, ox, oy - 0.6f * S, orr - 1.2f * S, with_alpha(ELC[i], A));
+                disc(dev, ox - 1.2f * S, oy - 1.6f * S, 1.3f * S, with_alpha(0xB0FFFFFFu, A));       // its glint
+                fo->begin(dev);
+                sprintf(a, "%d", (int)last.res[i]);
+                fo->draw_lc(dev, snap(cx + cw4 - 7.0f * S - fo->measure(a, snap(lz * 0.88f))), snap(cy + chH * 0.5f), a, snap(lz * 0.88f), with_alpha(cVal, A * ca), sh, k.ow);
+            }
+        }
+    }
+    {   // the body : each slot's name under it when empty ; the wardrobe number on a worn piece
+        for (int c = 0; c < 16; ++c) {
+            const float cx = cellX(c % 4), cy = cellY(c / 4);
+            const int sl = SLOT_AT[c];
+            if (!last.id[sl]) { const char* sn = gtr(SLOT_EN[sl], SLOT_FR[sl]); const float z = snap(tz * 0.72f); fo->draw_lc(dev, snap(cx + (cell - fo->measure(sn, z)) * 0.5f), snap(cy + cell * 0.5f), sn, z, with_alpha(cDim, A), sh, k.ow); }
+            else if (last.ward[sl]) { char w[4]; sprintf(w, "%d", last.ward[sl]); const float z = snap(tz * 0.72f); fo->draw_lc(dev, snap(cx + cell - 4.0f * S - fo->measure(w, z)), snap(cy + 8.0f * S), w, z, with_alpha(0xFFFFE6A8u, A), sh, k.ow); }
+        }
+        if (curCell >= 0) {   // the slot under the cursor : its name over the candidates
+            const int sl = SLOT_AT[curCell];
+            fo->draw_lc(dev, xL, snap(yR + tz * 0.6f), gtr(SLOT_EN[sl], SLOT_FR[sl]), tz, with_alpha(cGold, A), sh, k.ow);
+        }
+    }
+    if (showList) {   // the candidates' names
+        // the BAG shown : the client lists ONE bag at a time ("Storage Options" picks it) -- its name on that row ; a row's own
+        // tag only when the page mixes bags
+        int oneBag = -2;
+        for (int i = 0; i < nRows; ++i) { const NativeEqRow& r = last.lrow[i]; if (r.header || !r.id) continue; if (oneBag == -2) oneBag = r.bag; else if (oneBag != r.bag) oneBag = -3; }
+        const bool mixed = oneBag == -3;
+        for (int i = 0; i < nRows; ++i) {
+            const NativeEqRow& r = last.lrow[i];
+            const float cy = snap(lTop + (float)i * rowH + rowH * 0.5f);
+            if (r.header) {
+                const char* t = gtr("Storage Options", "Options de stockage");
+                fo->draw_lc(dev, snap(xL + 6.0f * S), cy, t, snap(tz * 0.9f), with_alpha(cLab, A), sh, k.ow);
+                const char* bn = oneBag >= 0 ? bag_short_name(oneBag) : 0;   // the bag listed, brass, at the row's right with its arrow
+                if (bn) {
+                    const float ar = 3.2f * S, ax = snap(xL + colL - 8.0f * S);
+                    fo->draw_lc(dev, snap(ax - ar * 2.0f - 6.0f * S - fo->measure(bn, tz)), cy, bn, tz, with_alpha(0xFFFFDA8Au, A), sh, k.ow);
+                    cs(dev); tri(dev, ax, cy, ax - ar * 1.6f, cy - ar, ax - ar * 1.6f, cy + ar, with_alpha(0xFFFFDA8Au, A)); fo->begin(dev);
+                }
+                continue;
+            }
+            const char* nm = r.id ? item_display_name(r.id) : (r.text[0] ? r.text : 0);
+            const u32 c = r.col == 0x80509050u ? cUp : r.col == 0x80404040u ? 0xFF6E7C8Eu : r.col == 0x80804020u ? 0xFFFFB45Au : (i == cr ? 0xFFFFFFFFu : cVal);
+            // WHERE IT IS (2026-11-27) : the bag, right-aligned, small -- "Inventory", "Wardrobe 2" ...
+            const char* bn = mixed && r.bag >= 0 ? bag_short_name(r.bag) : 0;
+            const float bz = snap(tz * 0.78f), bw0 = bn ? fo->measure(bn, bz) + 8.0f * S : 0.0f;
+            if (bn) fo->draw_lc(dev, snap(xL + colL - 6.0f * S - fo->measure(bn, bz)), cy, bn, bz, with_alpha(r.bag == 0 ? 0xFFB4BECCu : 0xFFE8C88Au, A), sh, k.ow);
+            char cut[64]; fo->draw_lc(dev, snap(xL + 6.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, colL - iz - 22.0f * S - bw0, cut, sizeof(cut)), tz, with_alpha(c, A), sh, k.ow);
+        }
+        if (!nRows) fo->draw_lc(dev, snap(xL + 6.0f * S), snap(lTop + rowH * 0.5f), gtr("Nothing else to wear here.", "Rien d'autre \xC3\xA0 porter ici."), tz, with_alpha(cDim, A), sh, k.ow);
+    }
+    // ---- the cards. On the grid : the piece worn, in the right column. In a slot : under the panel, the DUEL -- worn | candidate
+    {
+        const unsigned cellId = curCell >= 0 ? last.id[SLOT_AT[curCell]] : 0;
+        const unsigned rowId = showList && cr >= 0 && !last.lrow[cr].header ? last.lrow[cr].id : 0;
+        if (!showList) {
+            g_eqsCardNeed = 0.0f;
+            if (curCell >= 0 && cellId) eqs_worn_cache(SLOT_AT[curCell], cellId);
+            // the card SHOWN is held until the new piece is whole -- its page 2 (augments, rank) read by the client's own card,
+            // 0.4 s at most -- then swapped at once : no blank, no late lines (2026-11-27, moving from cell to cell)
+            static unsigned shownId = 0, pendMs = 0; static ItemExtra shownX; static bool shownHasX = false;
+            if (cellId != shownId) {
+                if (!pendMs) pendMs = now;
+                const ItemExtra* nx = native_item_extra(cellId);
+                if (!cellId || nx || now - pendMs > 400u || !shownId) { shownId = cellId; shownHasX = nx != nullptr; if (nx) shownX = *nx; pendMs = 0; }
+            } else { pendMs = 0; if (const ItemExtra* nx = native_item_extra(cellId)) { shownX = *nx; shownHasX = true; } }
+            const unsigned showId = shownId;
+            if (showId) { card_use(1); card_load(dev, showId); if (card_ready(showId)) { g_cardBare = true; g_cardBareX = shownHasX ? &shownX : nullptr; card_draw(f, k, xL, colL, lTop, lTop, tO, A, false); g_eqsCardNeed = g_cardBottom - by + 4.0f * S; } card_use(0); }
+            else { fo->begin(dev); fo->draw_lc(dev, xL, snap(lTop + rowH * 1.5f), gtr("Nothing worn.", "Rien de port\xC3\xA9."), tz, with_alpha(cDim, A), sh, k.ow); }
+        } else {
+            g_eqsCardNeed = 0.0f;
+            // THE TWO PIECES SIDE BY SIDE under stats + grid (the user, 2026-11-27) : the worn one's card, a gold chevron, the
+            // candidate's card -- each the description's sections, its augments included ; the two as tall as the taller
+            if (rowId && rowId == cellId && curCell >= 0) eqs_worn_cache(SLOT_AT[curCell], cellId);   // the worn row : its page 2
+            if (rowId) {
+                const int sl = curCell >= 0 ? SLOT_AT[curCell] : -1;
+                const ItemExtra* wX = sl >= 0 && cellId && g_eqsWornXid[sl] == cellId ? &g_eqsWornX[sl] : nullptr;
+                const ItemExtra* cX = native_item_extra(rowId);
+                // each under its SISTER above (2026-11-27) : the worn card under stats + grid, its width ; the candidate's under
+                // the description / list panel, its width ; glued, the chevron on the seam (it may overlap the borders)
+                const float cp = snap(8.0f * S) + k.bi;
+                const float y0 = snap(fmaxf(by + H, g_eqsRightBot) - k.bi);
+                const float xw = bx, wW = Wm, xc = dxp, wC = snap(Wd + k.bi);
+                float hW = 0.0f, hC = 0.0f;
+                if (cellId) { card_use(1); card_load(dev, cellId); if (card_ready(cellId)) hW = card_draw_sheet(f, k, xw + cp, wW - 2.0f * cp, y0 + cp, wX, 0.0f) - (y0 + cp); }
+                card_use(0); card_load(dev, rowId); if (card_ready(rowId)) hC = card_draw_sheet(f, k, xc + cp, wC - 2.0f * cp, y0 + cp, cX, 0.0f) - (y0 + cp);
+                const float hh = snap(fmaxf(fmaxf(hW, hC), tz * 2.0f) + 2.0f * cp);
+                g_frameJoin = 0; draw_themed_box(dev, f.skin, xw, y0, wW, hh, C.muBox, A, S);
+                g_frameJoin = 0; draw_themed_box(dev, f.skin, xc, y0, wC, hh, C.muBox, A, S);
+                {   const float ax = snap(xc + k.bi * 0.5f), ay = snap(y0 + hh * 0.5f), ar = 6.0f * S;   // the chevron, on the seam
+                    cs(dev); tri(dev, ax + ar, ay, ax - ar * 0.7f, ay - ar * 1.2f, ax - ar * 0.7f, ay + ar * 1.2f, with_alpha(0xFFFFD23Cu, A)); }
+                if (cellId) { card_use(1); card_load(dev, cellId); if (card_ready(cellId)) card_draw_sheet(f, k, xw + cp, wW - 2.0f * cp, y0 + cp, wX, A); }
+                else { fo->begin(dev); fo->draw_lc(dev, xw + cp, snap(y0 + cp + tz), gtr("Nothing worn.", "Rien de port\xC3\xA9."), tz, with_alpha(cDim, A), sh, k.ow); }
+                card_use(0); card_load(dev, rowId); if (card_ready(rowId)) card_draw_sheet(f, k, xc + cp, wC - 2.0f * cp, y0 + cp, cX, A);
+            }
+        }
+    }
+    return true;
+}
+
 void equipment_draw(const Frame& f) {
     const UiConfig& C = ui_config();
+    if (C.eqStyle == 1 && (C.nuHide & NU_MAIN) && f.font && f.screenH > 0.0f && f.screenW > 0.0f && equip_sheet_draw(f)) { g_eqB.vis = g_elB.vis = 0.0f; g_eqB.wasOpen = g_elB.wasOpen = false; return; }
     if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_eqB.vis = g_elB.vis = 0.0f; g_eqB.wasOpen = g_elB.wasOpen = false; return; }
     const unsigned now = GetTickCount();
     float dt = g_eqMs ? (float)(now - g_eqMs) / 1000.0f : 0.0f; g_eqMs = now; if (dt > 0.1f) dt = 0.1f;
@@ -3766,16 +4524,27 @@ void equipment_draw(const Frame& f) {
         { const float need = snap(2.0f * pad + fo->measure(gl, tz) + 24.0f * S); if (gw < need) gw = need; const float n2 = snap(2.0f * pad + fo->measure(g, tz)); if (gw < n2) gw = n2; }
         const float gh = snap(pad + headH + 6.0f * S + k.capH + pad);
         float gx = snap((float)last.money.rx0 * msx), gyy = snap((float)last.money.ry0 * msy);
+        // NEVER OVER THE GRID beside it (2026-11-27 : a 9-digit purse widened it over the Equipment box) : bounded by the
+        // grid's left edge ; the figure shrinks to fit instead
+        if (gx < bx && gx + gw > bx - 4.0f * S) { const float cap = snap(bx - 4.0f * S - gx); if (cap > 0.0f) gw = cap; }
+        // the Status panel drawn beside (this frame or the last) : UNDER it, its two edges on the panel's, the same gap as
+        // the client's two boxes
+        const bool underPers = g_persRw > 0.0f && now - g_persAtMs < 250u && g_persRx < bx;
         if (gx + gw > f.screenW - 4.0f) gx = snap(f.screenW - 4.0f - gw); if (gx < 4.0f) gx = 4.0f;
         if (gyy + gh > f.screenH - 4.0f) gyy = snap(f.screenH - 4.0f - gh); if (gyy < 4.0f) gyy = 4.0f;
         g_frameJoin = menu_place(f, __LINE__, gx, gyy, gw, gh, &gw);   // glued to its neighbour (theme kit) : one panel ; stacked -> its width
+        if (underPers) { gx = g_persRx; gw = g_persRw; gyy = snap(g_persRy + g_persRh + 3.0f * S); }   // after the placer : it moved it
         draw_themed_box(dev, f.skin, gx, gyy, gw, gh, C.muBox, A, S);
         const float Lg = gx + pad, Rg = gx + gw - pad, hyg = snap(gyy + pad + headH * 0.5f), vy = snap(gyy + pad + headH + 6.0f * S + k.capH * 0.5f);
         rrect(dev, Lg, snap(gyy + pad + headH), Rg - Lg, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
-        { const float gz = snap(k.capH * 1.1f); gil_coin(dev, snap(Rg - gz * 0.5f), hyg, gz, A); }   // the gil icon
+        const float coinZ = snap(k.capH * 1.1f);
+        gil_coin(dev, snap(Rg - coinZ * 0.5f), hyg, coinZ, A);   // the gil icon
         fo->begin(dev);
-        fo->draw_lc(dev, Lg, hyg, gl, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-        fo->draw_lc(dev, snap(Rg - fo->measure(g, tz)), vy, g, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+        { float lz = tz * 0.95f; const float room = Rg - Lg - coinZ - 6.0f * S, lw0 = fo->measure(gl, lz);   // the label never under the coin
+          if (lw0 > room && lw0 > 0.0f && room > 0.0f) lz = snap(lz * room / lw0);
+          fo->draw_lc(dev, Lg, hyg, gl, lz, with_alpha(0xFFE8D9B0u, A), sh, k.ow); }
+        { float gz = tz; const float gwT = fo->measure(g, gz); if (gwT > Rg - Lg && gwT > 0.0f) gz = snap(tz * (Rg - Lg) / gwT);   // the figure fits its box
+          fo->draw_lc(dev, snap(Rg - fo->measure(g, gz)), vy, g, gz, with_alpha(0xFFF2F5FAu, A), sh, k.ow); }
     }
     // ======== the slot's item list (inventor), beside the grid ========
     float dt2 = dt;
@@ -4677,9 +5446,9 @@ void items_draw(const Frame& f) {
     static const char* const VBAG_FR[17] = { "Objets", "Coffre", "Entrep\xC3\xB4t", "Temporaire", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe",
                                              "Coffre 2", "Garde-robe 2", "Garde-robe 3", "Garde-robe 4", "Garde-robe 5", "Garde-robe 6", "Garde-robe 7", "Garde-robe 8" };
     const int vb = last.viewBag > 0 && last.viewBag < 17 ? last.viewBag : 0;   // View House : the storage listed (read-only)
-    const char* title = last.synMode == 1 ? gtr("Crystals", "Cristaux") : last.synMode == 2 ? gtr("Materials", "Mat\xC3\xA9riaux") : gtr(VBAG_EN[vb], VBAG_FR[vb]);
+    const char* title = last.layout ? gtr("Furnishings", "Meubles") : last.synMode == 1 ? gtr("Crystals", "Cristaux") : last.synMode == 2 ? gtr("Materials", "Mat\xC3\xA9riaux") : gtr(VBAG_EN[vb], VBAG_FR[vb]);
     ItemsBox IL = { last.itRow, last.itN, last.itTop, last.itVis, last.itCursor, last.tempRows, last.focused, I0.open,
-                    title, last.synMode ? "" : cnt, !last.synMode && last.invCap > 0 && last.invUsed >= last.invCap };
+                    title, (last.synMode || last.layout) ? "" : cnt, !last.synMode && last.invCap > 0 && last.invUsed >= last.invCap };
     const float lw = keep_width(g_itB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.itVis * rowH + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float lx = snap(16.0f * sx), ly = snap(48.0f * sy);       // TOP LEFT, as the client opens it (the bin / the grid push it aside)

@@ -465,6 +465,7 @@ bool read_persona_mem(PersonaMem& p) {
     p.mjob = b[0x0C]; p.mlvl = b[0x0D]; p.sjob = b[0x0E]; p.slvl = b[0x0F];
     for (int a = 0; a < 7; ++a) { p.base[a] = (unsigned short)u16at(0x14 + 2 * a); p.added[a] = (short)u16at(0x22 + 2 * a); }
     p.su = b[0x52]; p.ilvl = b[0x54]; p.ml = b[0x65];
+    p.ilvlNow = b[0x55] ? 99 + b[0x55] : 0;   // fields.lua : "iLevel over 99" (0x10 -> 115) ; the client shows it (2026-11-27 : 117, max 119)
     p.epCur = u32at(0x68); p.epNext = u32at(0x6C);
     bool attr = false; for (int a = 0; a < 7; ++a) if (p.base[a]) attr = true;
     p.ok = p.mjob >= 1 && p.mjob <= 22 && p.mlvl >= 1 && p.mlvl <= 99 && p.sjob <= 22 && p.slvl <= 99 && p.maxHp > 0 && attr && p.ml <= 50;
