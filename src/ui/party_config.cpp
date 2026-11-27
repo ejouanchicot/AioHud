@@ -1099,25 +1099,41 @@ static const OptDef G_PARTY[] = {
     { "Bar height", "Hauteur des barres", OK_PCT, OL_SIMPLE, F_(barHeight[0]), 0.8f, 1.8f, nullptr, nullptr, 0, gw_round0, 0 },
     { "Bar width", "Largeur des barres", OK_PCT, OL_SIMPLE, F_(barWidth[0]), 0.7f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
 };
-static const OptDef G_PARTY_ROWS[] = {
-    { "Job badge", "Badge de job", OK_SELECT, OL_ADV, F_(jobBadge[0]), 0, 0, G_JB_EN, G_JB_FR, 4, nullptr, 0 },
-    { "Badge size", "Taille du badge", OK_PCT, OL_ADV, F_(badgeScale[0]), 0.6f, 1.8f, nullptr, nullptr, 0, gw_badge0, 0 },
-    { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Cursor size", "Taille du curseur", OK_PCT, OL_ADV, F_(cursorScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
-};
 static const OptDef G_ALLY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(allyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(box[1].scale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
 };
-static const OptDef G_ALLY_ROWS[] = {
+// ADVANCED (2026-11-27 restructure) : ONE set of rows, for the box the switch picks -- no option twice on the page
+static const OptDef G_DISP0[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_ADV, F_(partyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_ADV, F_(box[0].scale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Gauge style", "Style de jauge", OK_SELECT, OL_ADV, F_(gaugeStyle[0]), 0, 0, G_GS_EN, G_GS_FR, 8, nullptr, 0 },
+    { "Bar height", "Hauteur des barres", OK_PCT, OL_ADV, F_(barHeight[0]), 0.8f, 1.8f, nullptr, nullptr, 0, gw_round0, 0 },
+    { "Bar width", "Largeur des barres", OK_PCT, OL_ADV, F_(barWidth[0]), 0.7f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_DISP1[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_ADV, F_(allyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_ADV, F_(box[1].scale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "Gauge style", "Style de jauge", OK_SELECT, OL_ADV, F_(gaugeStyle[1]), 0, 0, G_GS_EN, G_GS_FR, 8, nullptr, 0 },
     { "Bar height", "Hauteur des barres", OK_PCT, OL_ADV, F_(barHeight[1]), 0.8f, 1.8f, nullptr, nullptr, 0, gw_round1, 0 },
     { "Bar width", "Largeur des barres", OK_PCT, OL_ADV, F_(barWidth[1]), 0.7f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_ROWS0[] = {
+    { "Job badge", "Badge de job", OK_SELECT, OL_ADV, F_(jobBadge[0]), 0, 0, G_JB_EN, G_JB_FR, 4, nullptr, 0 },
+    { "Badge size", "Taille du badge", OK_PCT, OL_ADV, F_(badgeScale[0]), 0.6f, 1.8f, nullptr, nullptr, 0, gw_badge0, 0 },
+    { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_ROWS1[] = {
     { "Job badge", "Badge de job", OK_SELECT, OL_ADV, F_(jobBadge[1]), 0, 0, G_JB_EN, G_JB_FR, 4, nullptr, 0 },
     { "Badge size", "Taille du badge", OK_PCT, OL_ADV, F_(badgeScale[1]), 0.6f, 1.8f, nullptr, nullptr, 0, gw_badge1, 0 },
     { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_BEHAV[] = {   // both boxes
+    { "Low HP blink", "Clignote si PV bas", OK_BTOGGLE, OL_ADV, F_(animHP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "TP ready pulse", "Pulse quand TP pr\xC3\xAAt", OK_BTOGGLE, OL_ADV, F_(animTP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Cursor size", "Taille du curseur", OK_PCT, OL_ADV, F_(cursorScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
 };
 static const char* const G_BS_EN[3] = { "Auto", "Left", "Right" }, * const G_BS_FR[3] = { "Auto", "Gauche", "Droite" };   // Auto = where there is room (the note under it says so)
 static const OptDef G_BUFFS_SIMPLE[] = {   // Simple's Buffs section : just the side
@@ -1144,42 +1160,47 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (v2_section(K, ctrl_uid_i(base, 4), 1, "Party", "Groupe", x, ry, w, cfg_count_modified(G_PARTY, NOPT(G_PARTY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 5), G_PARTY, NOPT(G_PARTY), x, ry, w);
-    if (adv) {   // (after the Party section : the same order as every page -- 2026-11-27) the MASTER frame : the theme every box that "follows the Party" takes
-        const FrameRefs fr = { nullptr, nullptr, &c.skinBoxAlpha, nullptr, nullptr, &c.skinTheme, &c.skinHue, &c.skinLum, &c.border[0] };
-        if (v2_section(K, ctrl_uid_i(base, 1), 19, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr) + cfg_count_modified(G_PARTY_FRAME_X, 1, true))) {
-            cfg_frame_rows(K, ctrl_uid_i(base, 2), x, ry, w, fr);
-            v2_rows(K, ctrl_uid_i(base, 3), G_PARTY_FRAME_X, 1, x, ry, w);
-        }
-    }
     if (adv) {
-        if (v2_section(K, ctrl_uid_i(base, 6), 17, "Party rows", "Lignes du groupe", x, ry, w, cfg_count_modified(G_PARTY_ROWS, NOPT(G_PARTY_ROWS), true))) {
-            cfg_rows(K, ctrl_uid_i(base, 7), G_PARTY_ROWS, NOPT(G_PARTY_ROWS), x, ry, w, true);
-            {   // the cursor's look : the hand, or one of the client's pointers (a list read at run time)
-                int cs = c.cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
-                if (int d = cfg_select_row(K, ctrl_uid_i(base, 8), x, ry, w, tr("Cursor style", "Style du curseur"), cursor_style_name(cs), nullptr, &c.cursorStyle, 4)) {
-                    c.cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
-            }
-            {   // the distance colours : which zone, then its colour (the alliance's distance uses them too)
-                const char* noDist = (c.dist[0] || c.dist[1]) ? nullptr : tr("inactive : no distance shown", "inactif : aucune distance affich\xC3\xA9""e");
-                unsigned* dcol[3] = { &c.distColClose, &c.distColNormal, &c.distColFar };
-                const char* zn[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
-                int z = (pcDistPick_ < 0 || pcDistPick_ > 2) ? 0 : pcDistPick_;
-                if (int d = cfg_select_row(K, ctrl_uid_i(base, 9), x, ry, w, tr("Distance colour", "Couleur de distance"), zn[z], noDist, dcol[z], 4)) pcDistPick_ = wrap(z + d, 3);
-                if (!noDist) cfg_color_row(K, ctrl_uid_i(base, 10), x, ry, w, dcol[z]);
-            }
-            v2_end(K, ry);
+        // ---- THE BOX : one switch, the same sections for either box (2026-11-27 : every option was on the page twice,
+        //      behind three different mechanisms -- twin sections, "Same as Party" selectors, a Box selector in Text) ----
+        {   const char* bl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
+            const float segW = K.px(170.0f), sh = K.px(36.0f);
+            const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+            const int hit = chrome_segment(K, ctrl_uid_i(base, 30), x + (w - 2.0f * segW) * 0.5f, ry + K.px(4.0f), segW, sh, bl, 2, T);
+            if (hit >= 0) cfgTarget_ = hit;
+            ry += sh + K.px(16.0f);
         }
-    }
-    if (v2_section(K, ctrl_uid_i(base, 11), 7, "Alliance", "Alliance", x, ry, w, cfg_count_modified(G_ALLY, NOPT(G_ALLY), adv)))
-        v2_rows(K, ctrl_uid_i(base, 12), G_ALLY, NOPT(G_ALLY), x, ry, w);
-    if (adv) {
-        const FrameRefs fr = { nullptr, nullptr, &c.allyBoxAlpha, &c.allyAlphaOwn, &c.allyThemeCopy, &c.allyTheme, &c.allyHue, &c.allyLum, &c.border[1] };
-        if (v2_section(K, ctrl_uid_i(base, 13), 22, "Alliance frame", "Cadre de l'alliance", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 14), x, ry, w, fr); v2_end(K, ry); }
-        if (v2_section(K, ctrl_uid_i(base, 15), 18, "Alliance rows", "Lignes de l'alliance", x, ry, w, cfg_count_modified(G_ALLY_ROWS, NOPT(G_ALLY_ROWS), true)))
-            v2_rows(K, ctrl_uid_i(base, 16), G_ALLY_ROWS, NOPT(G_ALLY_ROWS), x, ry, w);
-        if (v2_section(K, ctrl_uid_i(base, 17), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS, NOPT(G_BUFFS), true))) {
+        const int B = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+        const OptDef* disp = B ? G_DISP1 : G_DISP0; const int nDisp = B ? NOPT(G_DISP1) : NOPT(G_DISP0);
+        const OptDef* rows = B ? G_ROWS1 : G_ROWS0; const int nRows = B ? NOPT(G_ROWS1) : NOPT(G_ROWS0);
+        if (v2_section(K, ctrl_uid_i(base, 31), 1, "Display", "Affichage", x, ry, w, cfg_count_modified(disp, nDisp, true)))
+            v2_rows(K, ctrl_uid_i(base, 32 + B), disp, nDisp, x, ry, w);
+        if (B == 0) {   // the Party's frame : the MASTER theme (the alliance may follow it)
+            const FrameRefs fr = { nullptr, nullptr, &c.skinBoxAlpha, nullptr, nullptr, &c.skinTheme, &c.skinHue, &c.skinLum, &c.border[0] };
+            if (v2_section(K, ctrl_uid_i(base, 1), 19, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr) + cfg_count_modified(G_PARTY_FRAME_X, 1, true))) {
+                cfg_frame_rows(K, ctrl_uid_i(base, 2), x, ry, w, fr);
+                v2_rows(K, ctrl_uid_i(base, 3), G_PARTY_FRAME_X, 1, x, ry, w);
+            }
+        } else {        // the Alliance's : ONE "Same as Party" (its transparency AND theme), else the very rows the Party has
+            const bool follow = c.allyThemeCopy && !c.allyAlphaOwn;
+            const FrameRefs fr = { nullptr, nullptr, &c.allyBoxAlpha, nullptr, nullptr, &c.allyTheme, &c.allyHue, &c.allyLum, &c.border[1] };
+            const int nMod = (follow ? 0 : cfg_frame_modified(fr) + 1) + (c.border[1] != UiConfig{}.border[1] ? 1 : 0);
+            if (v2_section(K, ctrl_uid_i(base, 13), 19, "Frame", "Cadre", x, ry, w, nMod)) {
+                if (cfg_toggle_row(K, ctrl_uid_i(base, 34), x, ry, w, tr("Same as Party", "Comme le Groupe"), follow, nullptr, nullptr, 0)) {
+                    if (follow) {   // its own, starting from what it shows (the Party's)
+                        c.allyBoxAlpha = c.skinBoxAlpha; c.allyTheme = c.skinTheme; c.allyHue = c.skinHue; c.allyLum = c.skinLum;
+                        c.allyAlphaOwn = 1; c.allyThemeCopy = 0;
+                    } else { c.allyAlphaOwn = 0; c.allyThemeCopy = 1; }
+                    save_ui_config();
+                }
+                if (follow) { if (cfg_toggle_row(K, ctrl_uid_i(base, 35), x, ry, w, tr("Border", "Bordure"), c.border[1], nullptr, &c.border[1], 1)) { c.border[1] = !c.border[1]; save_ui_config(); } }
+                else cfg_frame_rows(K, ctrl_uid_i(base, 14), x, ry, w, fr);
+                v2_end(K, ry);
+            }
+        }
+        if (v2_section(K, ctrl_uid_i(base, 6), 17, "Rows", "Lignes", x, ry, w, cfg_count_modified(rows, nRows, true)))
+            v2_rows(K, ctrl_uid_i(base, 36 + B), rows, nRows, x, ry, w);
+        if (B == 0 && v2_section(K, ctrl_uid_i(base, 17), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS, NOPT(G_BUFFS), true))) {   // the Party's only
             cfg_rows(K, ctrl_uid_i(base, 18), G_BUFFS, NOPT(G_BUFFS), x, ry, w, true);
             {   // how many : None / 16 / 20 / 24 / 32 (0 = no buff strip)
                 static const int BM[] = { 0, 16, 20, 24, 32 };
@@ -1199,24 +1220,51 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
             g_fade = e;
             v2_end(K, ry);
         }
-        {   // TEXT : which box, which element (Interface is set on its own page ; the alliance has no Cost box)
+        {   // TEXT : the element, then its style -- for the box the switch picks (the alliance has no Cost box)
             if (v2_section(K, ctrl_uid_i(base, 21), 0, "Text", "Texte", x, ry, w, 0)) {
-                const char* tb[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
-                const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
-                if (int d = cfg_select_row(K, ctrl_uid_i(base, 22), x, ry, w, tr("Box", "Bo\xC3\xAEte"), tb[T], nullptr, nullptr, 0)) cfgTarget_ = wrap(T + d, 2);
-                const int T2 = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
                 const char* lab[TE_COUNT]; TextStyle* ts[TE_COUNT]; int idx[TE_COUNT]; int n = 0, sel = 0;
                 for (int k = 0; k < TE_COUNT; ++k) {
-                    if (k == TE_UI || (T2 == 1 && k == TE_COST)) continue;
+                    if (k == TE_UI || (B == 1 && k == TE_COST)) continue;
                     if (k == cfgTextElem_) sel = n;
-                    lab[n] = te_label_tr(k); ts[n] = &c.text[T2][k]; idx[n] = k; ++n;
+                    lab[n] = te_label_tr(k); ts[n] = &c.text[B][k]; idx[n] = k; ++n;
                 }
-                cfg_text_rows(K, ctrl_uid_i(base, 23), x, ry, w, lab, ts, n, &sel);
+                cfg_text_rows(K, ctrl_uid_i(base, 23 + 20 * B), x, ry, w, lab, ts, n, &sel);
                 cfgTextElem_ = idx[sel < 0 || sel >= n ? 0 : sel];
+                if (B == 1) {   // the alliance's text starts from the Party's in one click
+                    const float kw = K.px(260.0f), kh = K.px(38.0f);
+                    if (chrome_keybtn(K, ctrl_uid_i(base, 38), x + w - kw - K.px(18.0f), ry + K.px(6.0f), kw, kh, tr("Copy the Party's text", "Copier le texte du Groupe"), 0, true, false) && K.click) {
+                        for (int k = 0; k < TE_COUNT; ++k) if (k != TE_UI && k != TE_COST) c.text[1][k] = c.text[0][k];
+                        save_ui_config(); }
+                    ry += kh + K.px(14.0f);
+                }
                 v2_end(K, ry);
             }
         }
+        // ---- BEHAVIOUR : both boxes (the switch does not apply) ----
+        if (v2_section(K, ctrl_uid_i(base, 40), 7, "Behaviour (both boxes)", "Comportement (les deux bo\xC3\xAEtes)", x, ry, w, cfg_count_modified(G_BEHAV, NOPT(G_BEHAV), true) + (c.cursorStyle != UiConfig{}.cursorStyle ? 1 : 0))) {   // + the cursor style row
+            cfg_rows(K, ctrl_uid_i(base, 41), G_BEHAV, NOPT(G_BEHAV), x, ry, w, true);   // (no section end : the cursor and distance rows follow)
+            {   // the cursor's look : the hand, or one of the client's pointers (a list read at run time)
+                int cs = c.cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 8), x, ry, w, tr("Cursor style", "Style du curseur"), cursor_style_name(cs), nullptr, &c.cursorStyle, 4)) {
+                    c.cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
+            }
+            {   // the distance colours : three named plates ; one click opens that zone's picker (one at a time)
+                const char* noDist = (c.dist[0] || c.dist[1]) ? nullptr : tr("inactive : no distance shown", "inactif : aucune distance affich\xC3\xA9""e");
+                unsigned* dcol[3] = { &c.distColClose, &c.distColNormal, &c.distColFar };
+                const char* zn[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
+                const u32 cols[3] = { c.distColClose, c.distColNormal, c.distColFar };
+                const int z = (pcDistPick_ < 0 || pcDistPick_ > 2) ? -1 : pcDistPick_;
+                const int hit = cfg_plates_row(K, ctrl_uid_i(base, 9), x, ry, w, tr("Distance colours", "Couleurs de distance"), cols, zn, 3, z, noDist);
+                if (hit >= 0) pcDistPick_ = (hit == z) ? -1 : hit;
+                if (!noDist && z >= 0) cfg_color_row(K, ctrl_uid_i(base, 10), x, ry, w, dcol[z]);
+            }
+            v2_end(K, ry);
+        }
     } else {   // SIMPLE : the buffs' side and their ORDER too -- most players set both (2026-11-27) ; the sizes stay Advanced
+        if (v2_section(K, ctrl_uid_i(base, 4), 1, "Party", "Groupe", x, ry, w, cfg_count_modified(G_PARTY, NOPT(G_PARTY), false)))
+            v2_rows(K, ctrl_uid_i(base, 5), G_PARTY, NOPT(G_PARTY), x, ry, w);
+        if (v2_section(K, ctrl_uid_i(base, 11), 7, "Alliance", "Alliance", x, ry, w, cfg_count_modified(G_ALLY, NOPT(G_ALLY), false)))
+            v2_rows(K, ctrl_uid_i(base, 12), G_ALLY, NOPT(G_ALLY), x, ry, w);
         if (v2_section(K, ctrl_uid_i(base, 24), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), false))) {
             v2_rows(K, ctrl_uid_i(base, 25), G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), x, ry, w);
             g_fade = e;

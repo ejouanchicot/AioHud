@@ -24,6 +24,7 @@ public:
     void set_tab(int t);
     void set_section(int s) { if (s != section_) v2Hot_ = -1; section_ = s; }
     void toggle_kit() { kitSheet_ = !kitSheet_; }
+    void set_box(int b) { cfgTarget_ = (b == 1) ? 1 : 0; }   // //aio config box 0|1 : the Party / Alliance switch (Party page, Advanced)
     void set_v2(bool on) { v2_ = on; }   // //aio config v1 | v2 : the old / the new pages (the redesign's comparison)   // //aio config kit : the redesign's component sheet (cfg_kit.cpp)
     void set_help(int h) { helpSel_ = h; helpScroll_ = 0.0f; }   // //aio config help N : that Help page
     // the section the preview follows : in the redesign, the one the pointer last went over (a Simple page shows every

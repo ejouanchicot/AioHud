@@ -40,6 +40,7 @@ struct OptDef {
 bool cfg_toggle_row(Kit& K, int uid, float x, float& y, float w, const char* label, bool on, const char* why, void* p, int size);   // true = clicked
 bool cfg_slider_row(Kit& K, int uid, float x, float& y, float w, const char* label, float* v01, const char* val, const char* why, void* p, int size, bool isFloat);   // true = moved (saved on release)
 int  cfg_select_row(Kit& K, int uid, float x, float& y, float w, const char* label, const char* val, const char* why, void* p, int size);   // -1 / +1 = an arrow
+int  cfg_plates_row(Kit& K, int uid, float x, float& y, float w, const char* label, const u32* cols, const char* const* names, int n, int sel, const char* why);   // clicked plate / -1
 int  cfg_hue_row(Kit& K, int uid, float x, float& y, float w, const char* label, const u32* cols, int n, int sel, const char* why, void* p, int size);   // clicked hue / -1
 void cfg_note(Kit& K, float x, float& y, const char* text);
 void cfg_color_row(Kit& K, int uidBase, float x, float& y, float w, unsigned* col);   // the colour picker, under the row that chose "custom"

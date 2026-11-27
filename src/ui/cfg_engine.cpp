@@ -82,6 +82,22 @@ static int select_row(Kit& K, int uid, float x, float& y, float w, const char* l
 int cfg_select_row(Kit& K, int uid, float x, float& y, float w, const char* label, const char* val, const char* why, void* p, int size) {
     return select_row(K, uid, x, y, w, label, val, why, p, size, nullptr);
 }
+// a row of NAMED enamel plates (one ruler, a name cut in each) : picks which one to edit -- the distance colours
+int cfg_plates_row(Kit& K, int uid, float x, float& y, float w, const char* label, const u32* cols, const char* const* names, int n, int sel, const char* why) {
+    if (culled(K, y, why)) return -1;
+    const Row r = row_begin(K, x, y, w, label, why, false);
+    const float sw = K.px(110.0f) * n, sh = K.px(30.0f), sx = r.right - sw, sy = r.cy - sh * 0.5f;
+    const int hit = chrome_hue_strip(K, uid, sx, sy, sw, sh, cols, n, sel, (r.st & KS_DISABLED) != 0);
+    const float g = K.px(3.0f), segW = (sw - 2.0f * g) / n;
+    K.fs->begin(K.dev);
+    for (int i = 0; i < n; ++i) {   // the name, dark or light by the plate's luminance
+        const u32 c = cols[i];
+        const int lum = (77 * (int)((c >> 16) & 0xFF) + 150 * (int)((c >> 8) & 0xFF) + 29 * (int)(c & 0xFF)) >> 8;
+        K.fs->draw_c(K.dev, snap(sx + g + segW * (i + 0.5f)), snap(r.cy), names[i], K.px(12.5f), fa(lum > 140 ? 0xFF14100Au : 0xFFF4EEE4u), 0, 0.0f);
+    }
+    row_end(K, x, y, w, r, nullptr, 0);
+    return why ? -1 : hit;
+}
 // a HUE row : the label, and the hues as one enamel ruler on the right (the preset tints of a frame)
 int cfg_hue_row(Kit& K, int uid, float x, float& y, float w, const char* label, const u32* cols, int n, int sel, const char* why, void* p, int size) {
     if (culled(K, y, why)) return -1;
