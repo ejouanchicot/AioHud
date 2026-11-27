@@ -725,6 +725,8 @@ static const char* known_label(const char* win, int row, int n) {
         { "mcrmenu",  2, { "Edit Macro", "Edit Equip. Set" }, { "Modifier une macro", "Modifier un set" } },
         { "mogcont", 15, { "Mog Safe", "Mog Safe 2", "Storage", "Mog Locker", "Mog Satchel", "Mog Sack", "Mog Case", "Mog Wardrobe", "Mog Wardrobe 2", "Mog Wardrobe 3", "Mog Wardrobe 4", "Mog Wardrobe 5", "Mog Wardrobe 6", "Mog Wardrobe 7", "Mog Wardrobe 8" },
                           { "Coffre", "Coffre 2", "EntrepÃ´t", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe", "Garde-robe 2", "Garde-robe 3", "Garde-robe 4", "Garde-robe 5", "Garde-robe 6", "Garde-robe 7", "Garde-robe 8" } },
+        { "mcresmn",  8, { "Edit", "Change Name", "Copy", "Paste", "Delete", "Use Current", "Equip", "Style Lock" },
+                          { "Modifier", "Renommer", "Copier", "Coller", "Supprimer", "Prendre l'actuel", "Ãquiper", "Style Lock" } },
         { "mcrselop", 5, { "Confirm", "Change Name", "Copy", "Paste", "Delete" }, { "Confirmer", "Renommer", "Copier", "Coller", "Supprimer" } },
     };
     for (const K& k : T) if (!strcmp(win, k.w)) return n == k.n && row >= 0 && row < k.n ? gtr(k.en[row], k.fr[row]) : 0;
@@ -2279,7 +2281,7 @@ void persona_draw(const Frame& f) {
     // Currencies 1 / 2 open IN PLACE of the stat panels : the client hides them then (the user, 2026-11-18)
     const bool curOn = native_currencies().open || native_unity_info().open || native_search().open || native_job_points().open || native_faith().open || native_celestite().open || native_merit_cat().open;
     const bool sheetUp = C.eqStyle == 1 && native_equip().open && !native_equip().setMode;   // the Equipment SHEET draws the stats itself
-    const bool onP = PP.open && D.ok && !curOn && !sheetUp, onL = PL.open && D.ok && !curOn;
+    const bool onP = PP.open && D.ok && !curOn && !sheetUp, onL = PL.open && D.ok && !curOn && !native_levmerit().open;   // Merit Points' box takes its place
     if (D.ok) lastD = D;
     if (onP) lastP = PP;
     if (onL) lastL = PL;
@@ -2315,14 +2317,25 @@ void persona_draw(const Frame& f) {
         // main job in blue, the sub job), the same HP / MP / TP gauges, the same attribute rows -- its text size, its pitch ;
         // sized by the content, at the client's place
         (void)tpS; (void)hpS; (void)mpS;
-        const float lzz = k.tz, jz = snap(lzz * 0.9f), gaugeBlk = snap(lzz * 1.3f + 5.0f * S + 8.0f * S), attrStep = snap(lzz * 1.2f), headL = snap(lzz * 1.35f);
+        // THE CLIENT'S RECT, exactly (2026-11-27) : the panels it opens beside / under (Profile, Job / Master Levels, Skills,
+        // Merit Points ...) sit at THEIR places, flush -- a bigger Status covered them, or showed the client's own window under
+        // it. The content fitted into it : the text a touch smaller when it must (as the client's)
+        const float sxP = f.screenW / (float)lastP.uiW, syP = f.screenH / (float)lastP.uiH;
+        const float cW = snap((float)(lastP.rx1 - lastP.rx0) * sxP), cH = snap((float)(lastP.ry1 - lastP.ry0) * syP);
+        float lzz = k.tz;
+        auto needH = [&](float z) { return 2.0f * (snap(7.0f * S) + k.bi) + 4.0f * snap(z * 1.15f) + 6.0f * S + 3.0f * snap(z * 1.25f + 5.0f * S + 5.0f * S) + 6.0f * S + 7.0f * snap(z * 1.12f); };
+        for (int it = 0; it < 12 && needH(lzz) > cH + 2.0f * k.bi && lzz > k.tz * 0.7f; ++it) lzz = snap(lzz * 0.96f);
+        const float jz = snap(lzz * 0.9f), gaugeBlk = snap(lzz * 1.25f + 5.0f * S + 5.0f * S), attrStep = snap(lzz * 1.12f), headL = snap(lzz * 1.15f / 0.85f);
         char mj[48] = "", sj[48] = "";
         _snprintf(mj, sizeof(mj), "%s %d", d.mjob >= 1 && d.mjob <= 22 ? JOB_FULL[d.mjob] : "?", d.mlvl); mj[sizeof(mj) - 1] = 0;
         if (d.sjob >= 1 && d.sjob <= 22 && d.slvl) { _snprintf(sj, sizeof(sj), "/  %s %d", JOB_FULL[d.sjob], d.slvl); sj[sizeof(sj) - 1] = 0; }
-        float w = 130.0f * S;
-        { const float w1 = fo->measure(nm, snap(lzz * 1.12f)) + 10.0f * S + fo->measure(l3, jz); if (w1 > w) w = w1;
-          const float w2 = fo->measure(mj, jz) + 6.0f * S + fo->measure(sj, jz); if (w2 > w) w = w2; }
-        const float bw = snap(w + 2.0f * pad), bh = snap(pad + 2.0f * headL + 6.0f * S + 3.0f * gaugeBlk + 6.0f * S + 7.0f * attrStep + pad);
+        // THE CLIENT'S WIDTH (its rect) : the panels it opens beside (Profile, Job / Master Levels, Skills ...) sit at THEIR
+        // places, flush -- a wider Status covered them / showed the client's own under it (2026-11-27). Four header lines then :
+        // the name, the main job, the sub job, iLv / Su
+        float w = cW - 2.0f * pad + 2.0f * k.bi;                              // the content width inside the client's rect
+        { const float wn = fo->measure(nm, snap(lzz * 1.12f)); if (wn > w) w = wn;
+          const float w2 = fo->measure(mj, jz); if (w2 > w) w = w2; const float w3 = fo->measure(sj, jz); if (w3 > w) w = w3; }
+        const float bw = snap(w + 2.0f * pad), bh = snap(fmaxf(cH + 2.0f * k.bi, pad + 4.0f * headL * 0.85f + 6.0f * S + 3.0f * gaugeBlk + 6.0f * S + 7.0f * attrStep + pad));
         float bx, by; place(lastP, bw, bh, bx, by);
         const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
         persBottom = by + bh; persX = bx; persW = bw;          // its REST place : the Master Level box hangs from it (it slides on its own)
@@ -2337,12 +2350,12 @@ void persona_draw(const Frame& f) {
             const float L = bx + pad, R = bx + bw - pad;
             float y = by + pad;
             fo->begin(dev);
-            {   const float hy = snap(y + headL * 0.5f), hy2 = snap(y + headL * 1.5f);
-                fo->draw_lc(dev, L, hy, nm, snap(lzz * 1.12f), with_alpha(0xFFF4F6FAu, A), sh, k.ow);
-                if (l3[0]) fo->draw_lc(dev, snap(R - fo->measure(l3, jz)), hy, l3, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
-                fo->draw_lc(dev, L, hy2, mj, jz, with_alpha(0xFF4FA8F0u, A), sh, k.ow);
-                if (sj[0]) fo->draw_lc(dev, snap(L + fo->measure(mj, jz) + 6.0f * S), hy2, sj, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
-                y = snap(y + 2.0f * headL + 3.0f * S);
+            {   const float hl = snap(headL * 0.85f);
+                fo->draw_lc(dev, L, snap(y + hl * 0.5f), nm, snap(lzz * 1.12f), with_alpha(0xFFF4F6FAu, A), sh, k.ow);
+                fo->draw_lc(dev, L, snap(y + hl * 1.5f), mj, jz, with_alpha(0xFF4FA8F0u, A), sh, k.ow);
+                if (sj[0]) fo->draw_lc(dev, L, snap(y + hl * 2.5f), sj + 3, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);   // (no "/  ")
+                if (l3[0]) fo->draw_lc(dev, L, snap(y + hl * 3.5f), l3, jz, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+                y = snap(y + 4.0f * hl + 3.0f * S);
                 rrect(dev, L, y, R - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
                 y = snap(y + 3.0f * S); }
             auto gauge = [&](const char* lab, int cur, unsigned mx, u32 c0, u32 c1, u32 vc2) {
@@ -2467,6 +2480,8 @@ void jobs_draw(const Frame& f) {
     const float A = g_jobB.vis * tO; if (A <= 0.0f) return;
     const u32 dev = f.dev; Font* fo = f.font;
     g_frameJoin = jm;
+    // an OPAQUE base : the client's Master Levels leaves its text drawn here though its window is parked (2026-11-27)
+    rrect(dev, bx + 1.0f, by + 1.0f, bw - 2.0f, bh - 2.0f, snap(6.0f * S), with_alpha(0xFF0E131Au, A), with_alpha(0xFF0A0E14u, A));
     draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     // the column split : a hairline between the two columns
     rrect(dev, snap(bx + bw * 0.5f), by + vpad, 1.0f, bh - 2.0f * vpad, 0.0f, with_alpha(0x24C8D6EAu, A), with_alpha(0x24C8D6EAu, A));
@@ -2616,6 +2631,8 @@ void crafts_draw(const Frame& f) {
             const float lh = (bh - 2.0f * vpad) / 4.0f;
             float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
             float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
+            // where the M.Level box was : right under the stats (2026-11-27 : at the client's place it covered the stats' bottom)
+            if (g_persRw > 0.0f && GetTickCount() - g_persAtMs < 250u) { bx = g_persRx; by = snap(g_persRy + g_persRh + 3.0f * S); }
             if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
             if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
             const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
@@ -4423,7 +4440,7 @@ void equipment_draw(const Frame& f) {
     static const int SLOT_AT[16] = { 0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8 };
     static const int ENTRY_OF[16] = { 1, 5, 9, 13, 2, 3, 7, 12, 16, 6, 8, 10, 14, 11, 15, 4 };   // by packet slot
     static const char* SLOT_EN[16] = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "L.Ear", "R.Ear", "L.Ring", "R.Ring", "Back" };
-    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S);
+    const float cell = snap(30.0f * S), cg = snap(2.0f * S);   // the standard cell (the sheet's)
     const float gridW = 4.0f * cell + 3.0f * cg;
     const float statH = snap(k.capH * 0.9f);
     const float bw = snap(pad + gridW + pad), bh = snap(pad + headH + 6.0f * S + gridW + (last.setMode ? 0.0f : 8.0f * S + 3.0f * statH) + pad);
@@ -4464,8 +4481,8 @@ void equipment_draw(const Frame& f) {
         const unsigned id = lastS.id[SLOT_AT[c]];
         if (id) {
             const u32 tex = list_icon(f, 3, id);
-            const float z = snap(cell - 8.0f * S);
-            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 4.0f * S), snap(cy + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+            const float z = snap(cell - 4.0f * S);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 2.0f * S), snap(cy + 2.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
         }
         if (id && lastS.ward[SLOT_AT[c]]) {                     // the wardrobe it comes from : a small plate, top right
             const float bz = snap(cell * 0.34f);
@@ -5471,7 +5488,7 @@ void items_draw(const Frame& f) {
     const char* title = last.layout ? gtr("Furnishings", "Meubles") : last.synMode == 1 ? gtr("Crystals", "Cristaux") : last.synMode == 2 ? gtr("Materials", "Mat\xC3\xA9riaux") : gtr(VBAG_EN[vb], VBAG_FR[vb]);
     ItemsBox IL = { last.itRow, last.itN, last.itTop, last.itVis, last.itCursor, last.tempRows, last.focused, I0.open,
                     title, (last.synMode || last.layout) ? "" : cnt, !last.synMode && last.invCap > 0 && last.invUsed >= last.invCap };
-    const float lw = keep_width(g_itB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.itVis * rowH + pad);
+    const float lw = keep_width(g_itB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)(last.synMode && last.itN > 0 && last.itN < last.itVis ? last.itN : last.itVis) * rowH + pad);   // Synthesis's short pickers : as tall as their rows
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float lx = snap(16.0f * sx), ly = snap(48.0f * sy);       // TOP LEFT, as the client opens it (the bin / the grid push it aside)
     unsigned iid = 0;

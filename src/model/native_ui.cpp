@@ -4292,6 +4292,8 @@ static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "log
     "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "cfilter", "fxfilter", "friend", "titlehan", "olstat", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "mapv3", "mapframe",               // the map (its module, map_poll)
+    "meritcat", "bluehelp", "meritinf", // Merit Points (its module ; 2026-11-27 : learned while the module read it, its rows drawn a
+                                       // second time over the module's list -- "Select the category..." on every row)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
     0 };
