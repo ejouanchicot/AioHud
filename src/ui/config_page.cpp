@@ -250,6 +250,7 @@ static void ground(u32 dev, float x, float y, float w, float h, float sh) {
 static u32 rim_col() { return s_ck ? 0xFF343B45u : C_STEEL; }   // the frame's rims : dark forged steel in the redesign
 
 struct NavEntry { int id; const char* en; const char* fr; };   // id >= 0 : a module (en/fr unused) ; id < 0 : a title
+static int unseen_releases();   // the releases newer than the last one the Update tab showed (defined after config_changelog.h)
 static int nav_rail(u32 dev, Font* fo, const MouseState* mo, bool click, float x, float top, float w, float bot,
                     const NavEntry* ent, int n, int sel, const char* (*label)(int), float& scroll, int barId,
                     float pulse, u32 uidSeed) {
@@ -493,11 +494,12 @@ void ConfigPage::draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (v2_section(K, ctrl_uid_i(base, 1), 3, "HUD", "HUD", x, ry, w, 0)) {   // what belongs to no single box
+    if (v2_section(K, ctrl_uid_i(base, 1), 3, "HUD", "HUD", x, ry, w, (c.text[0][TE_UI].face != UiConfig{}.text[0][TE_UI].face ? 1 : 0) + (c.hidePeekMode != UiConfig{}.hidePeekMode ? 1 : 0))) {   // what belongs to no single box
     {   // the config menu's font -- also the HUD's default text face
         int gf = c.text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
         if (int d = cfg_select_row(K, ctrl_uid_i(base, 2), x, ry, w, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf), nullptr, &c.text[0][TE_UI].face, 4)) {
             gf = wrap(gf + d, ui_font_count()); c.text[0][TE_UI].face = gf; c.fontFace = gf; save_ui_config(); }
+        if (c.fontFace != c.text[0][TE_UI].face) { c.fontFace = c.text[0][TE_UI].face; save_ui_config(); }   // a right-click reset set only the face : both, always
     }
     {   // the status-icon sheet the whole HUD draws from (the list found on disk when the page opened)
         const int pn = icon_pack_count(buff_custom_path(), buff_atlas_path());
@@ -1030,7 +1032,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float cxT = tx + tabW * 0.5f, cyT = tabY + tabH * 0.5f;
         const bool active = (i == tab_);
         const bool hover  = inrect(mo, tx, tabY, tabW, tabH);
-        if (hover && click) { if (i == 2) { ui_config().editLayout = true; } else { if (tab_ != i) { nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; } tab_ = i; if (i == 1) profDirty_ = true; nameFocus_ = false; } }   // Edit Layout tab = a launch button into the full-screen drag mode (tab_ stays on the page you came from)
+        if (hover && click) { if (i == 2) { ui_config().editLayout = true; } else { if (tab_ != i) { nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; relNewN_ = -1; } tab_ = i; if (i == 1) profDirty_ = true; nameFocus_ = false; } }   // Edit Layout tab = a launch button into the full-screen drag mode (tab_ stays on the page you came from)
         hov_[i] += (((hover ? 1.0f : 0.0f) - hov_[i]) * clampf(dt * 14.0f, 0.0f, 1.0f));   // eased hover
         if (active) activeX = tx;
         if (s_ck) {   // the redesign : steel tabs, the chosen one cast in brass, its label in ink
@@ -1040,6 +1042,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float textW2 = fo->measure(tab_label(i), snap(15.0f)), groupW2 = iconS + iconGap + textW2, leftX2 = cxT - groupW2 * 0.5f;
             tab_icon(dev, i, leftX2 + iconS * 0.5f, cyT2, iconS, fg2, fo, fg2, 0.0f);
             chrome_tab_text(*s_ck, leftX2 + iconS + iconGap + textW2 * 0.5f, cyT2, tab_label(i), active, t2, snap(15.0f));
+            if (i == 4) {   // UNSEEN releases : a lit green bead with their count on the Update tab
+                const int nNew = unseen_releases();
+                if (nNew > 0) {
+                    char nb[8]; _snprintf(nb, sizeof(nb), "%d", nNew); nb[7] = 0;
+                    const float br = snap(10.0f), bx = tx + tabW - br - snap(8.0f), by = tabY + tabH * 0.5f;
+                    cs(dev); cs_add(dev); disc_glow(dev, bx, by, br, fa(0x6030FF60u), br * 0.9f); cs(dev);
+                    disc(dev, bx, by, br, fa(0xFF1C9A3Cu)); disc(dev, bx, by - snap(1.0f), br - snap(2.0f), fa(0xFF3FD068u));
+                    fo->begin(dev); fo->draw_c(dev, bx, by, nb, snap(12.0f), fa(0xFFFFFFFFu), fa(0x90000000u), 1.0f);
+                }
+            }
             continue;
         }
 
@@ -2210,7 +2222,7 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
         if (profErrMs_ && (unsigned)(GetTickCount() - profErrMs_) < 8000u) {
             char eb[160];
             _snprintf(eb, sizeof(eb), tr("Could not save \"%s\" -- check that the plugin folder is writable.",
-                                         "Impossible d'enregistrer \"%s\" -- verifie que le dossier du plugin est accessible en ecriture."), profErrName_);
+                                         "Impossible d'enregistrer \"%s\" -- v\xC3\xA9rifie que le dossier du plugin est accessible en \xC3\xA9""criture."), profErrName_);
             eb[sizeof(eb) - 1] = 0;
             fo->begin(dev); fo->draw_lc(dev, pX, py, eb, snap(12.0f), fa(0xFFF06060), fa(C_STROKE), 1.2f);
         }
@@ -2400,7 +2412,7 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         ry0 += ccH + snap(12.0f);
         if (dirty) {   // undo the unsaved changes : back to the profile as saved
             if (chrome_keybtn(K, CTRL_ID, cx0, ry0, cw0, snap(42.0f), tr("Discard the changes", "Annuler les modifications"), 0, !modal) && clk) {
-                char nmK[64]; lstrcpynA(nmK, activeProf_, sizeof(nmK)); profile_load(nmK); prof_msg(false, tr("Changes discarded.", "Modifications annul\xC3\xA9""es.")); }
+                char nmK[64]; lstrcpynA(nmK, activeProf_, sizeof(nmK)); if (profile_load(nmK)) prof_msg(false, tr("Changes discarded.", "Modifications annul\xC3\xA9""es.")); else prof_msg(true, tr("Could not reload that profile.", "Impossible de recharger ce profil.")); }
             ry0 += snap(42.0f) + snap(10.0f);
         }
         ry0 += snap(18.0f);
@@ -2472,7 +2484,7 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
     else if (profErrMs_ && (unsigned)(GetTickCount() - profErrMs_) < 8000u) {
         char eb[160];
         _snprintf(eb, sizeof(eb), tr("Could not save \"%s\" -- check that the plugin folder is writable.",
-                                     "Impossible d'enregistrer \"%s\" -- verifie que le dossier du plugin est accessible en ecriture."), profErrName_);
+                                     "Impossible d'enregistrer \"%s\" -- v\xC3\xA9rifie que le dossier du plugin est accessible en \xC3\xA9""criture."), profErrName_);
         eb[sizeof(eb) - 1] = 0;
         chrome_label(K, pX, py + snap(6.0f), eb, NOTE, 3);
     }
@@ -2515,7 +2527,8 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         float kx = pX + pW - actW - snap(8.0f);
         if (!active) {
             if (chrome_keybtn(K, ctrl_uid_i(CTRL_ID, 300 + i), kx, kY, kbw, kbh, tr("Load", "Charger"), 0, !modal) && clk) {
-                profile_load(nm); record_char_profile(nm);
+                if (!profile_load(nm)) { prof_msg(true, tr("Could not load that profile.", "Impossible de charger ce profil.")); profDirty_ = true; continue; }
+                record_char_profile(nm);
                 strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
                 nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;
             }
@@ -3043,6 +3056,11 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 }
 
 #include "ui/config_changelog.h"   // CL_<ver> groups + RELEASES[] (data only -- see the header)
+static int unseen_releases() {
+    if (!ui_config().updSeen[0]) return 0;   // never opened the tab : nothing to flag (everything would be "new")
+    int n = 0; while (n < RELEASES_N && strcmp(RELEASES[n].version, ui_config().updSeen) != 0) ++n;
+    return n < RELEASES_N ? n : 0;          // an unknown "seen" version (a downgrade) : no badge
+}
 
 // ---- Update tab (tab_ == 4) : version + release check + one-click update (top), then a "What's new" changelog
 //      (below, scrollable when the release is big). ----
@@ -3232,22 +3250,27 @@ static float v2_lines(Kit& K, u32 dev, Font* fo, float x, float y, float w, floa
     return y;
 }
 
-// a changelog line as a LEDGER entry : its subject ("Timers", "Fixed", ...) in a steel tag in the left gutter, the
-// sentence beside it -- the subject is what a reader scans for, so it gets its own column. A line with no
-// "Subject : " lead keeps the gutter empty.
-static float v2_ledger(Kit& K, u32 dev, Font* fo, float x, float y, float w, float top, float bot, const char* text) {
-    const float lh = snap(19.0f), tsz = snap(14.0f), G = snap(150.0f);
-    char tag[32] = { 0 }; const char* body = text;
-    if (const char* p = strstr(text, " : ")) {
-        const int n = (int)(p - text);
-        if (n > 0 && n < 26) {   // the subject, without the *bold* / _gold_ markers draw_wrapped would have consumed
-            int k = 0; for (int i = 0; i < n && k < 31; ++i) if (text[i] != '*' && text[i] != '_') tag[k++] = text[i];
-            tag[k] = 0; body = p + 3; }
+
+static u32 m_toward_cp(u32 a, u32 b, float t); static u32 m_scale_cp(u32 c, float k);
+// PATCH NOTES (2026-11-27) : a kind's name as an enamel pill -- New green, Improved brass, Fixed steel blue
+static const char* ck_name(int k, bool plural) {
+    switch (k) {
+    case CK_NEW:      return plural ? tr("New", "Nouveaut\xC3\xA9s") : tr("new", "nouveaut\xC3\xA9");
+    case CK_IMPROVED: return plural ? tr("Improved", "Am\xC3\xA9liorations") : tr("improvement", "am\xC3\xA9lioration");
+    case CK_FIXED:    return plural ? tr("Fixed", "Corrections") : tr("fix", "correction");
+    default:          return "";
     }
-    if (tag[0] && y + lh * 0.5f > top && y + lh * 0.5f < bot) chrome_tag_steel(K, x, y + lh * 0.5f, tag);
-    y = draw_wrapped(dev, fo, x + G, y, w - G, top, bot, body, tsz, C_TEXT, lh);
-    return y + snap(9.0f);
 }
+static u32 ck_col(int k) { return k == CK_NEW ? 0xFF3FA65Eu : k == CK_IMPROVED ? 0xFFB79A61u : 0xFF5C8FC2u; }
+static float ck_pill(Kit& K, u32 dev, float x, float cy, int k) {   // returns its right edge
+    const char* s = ck_name(k, true); const float sz = K.px(12.5f), h = K.px(22.0f), w = chrome_label_w(K, s, sz) + K.px(20.0f);
+    const u32 c = ck_col(k);
+    cs(dev); rrect(dev, x, cy - h * 0.5f, w, h, h * 0.5f, fa(m_toward_cp(c, 0xFFFFFFFFu, 0.12f)), fa(m_scale_cp(c, 0.62f)));
+    K.fs->begin(dev); K.fs->draw_c(dev, snap(x + w * 0.5f), snap(cy), s, sz, fa(0xFFF6F2EAu), 0, 0.0f);
+    return x + w;
+}
+static u32 m_toward_cp(u32 a, u32 b, float t) { return lerpc(a, b, t); }
+static u32 m_scale_cp(u32 c, float k) { const u32 r = (u32)(((c >> 16) & 0xFF) * k), g = (u32)(((c >> 8) & 0xFF) * k), b2 = (u32)((c & 0xFF) * k); return (c & 0xFF000000u) | (r << 16) | (g << 8) | b2; }
 
 void ConfigPage::draw_update_tab_v2(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                     float ix, float iw, float bodyY, float pageBot) {
@@ -3321,48 +3344,171 @@ void ConfigPage::draw_update_tab_v2(const Frame& f, u32 dev, Font* fo, const Mou
         y = v2_lines(K, dev, fo, lx - snap(4.0f), y, lw + snap(4.0f), top, bot - bt, lines, n) + snap(14.0f);
     }
 
-    // ===== RIGHT : the ledger of what changed -- newest open, five before it, the rest folded =====
-    const float cx = M + bt + snap(34.0f), cwAll = (R - bt - snap(40.0f)) - cx, cw = cwAll < snap(1400.0f) ? cwAll : snap(1400.0f);   // the gutter takes 150 : the sentences keep a ~1250 measure
-    float hy = top + snap(32.0f);
-    chrome_label(K, cx, hy, tr("WHAT'S NEW", "NOUVEAUT\xC3\x89S"), K.px(13.5f), 4);
-    const float listTop = hy + snap(20.0f), listBot = bot - bt - snap(10.0f);
-    if (ui_config().wheel != 0 && mo && mo->x >= cx && mo->x <= cx + cw && mo->y >= listTop && mo->y <= listBot) {
-        updScroll_ -= (float)ui_config().wheel * snap(48.0f); ui_config().wheel = 0;
-        if (updScroll_ < 0.0f) updScroll_ = 0.0f; if (updScroll_ > updMaxScroll_) updScroll_ = updMaxScroll_;
+    // ===== RIGHT : the changelog as LIST + NOTES (2026-11-27 : "the notes must stay in one place ; click a version's
+    // name ; no ultra-wide bars ; the text readable"). A compact list of versions on the left -- new since your last
+    // visit, recent, the archive by series -- and ONE fixed pane on the right with the chosen version's notes, grouped
+    // New / Improved / Fixed, each with its module. Built for hundreds of releases : no per-release state.
+    const float ax = M + bt + snap(30.0f), aR = R - bt - snap(30.0f);
+    float hy = top + snap(26.0f);
+    // the search + the kind filter, over both columns
+    {   const float fH = snap(42.0f), fw = snap(560.0f);
+        const bool fHov = inrect(mo, ax, hy, fw, fH);
+        if (click) { const bool was = nameFocus_; nameFocus_ = fHov; if (fHov && !was) nameCur_ = nameLen_; }
+        chrome_field(K, ax, hy, fw, fH, ease(CTRL_ID, nameFocus_ ? 1.0f : 0.0f));
+        const float tsz = K.px(15.0f);
+        if (nameLen_ > 0) chrome_label(K, ax + snap(16.0f), hy + fH * 0.5f, nameBuf_, tsz, 0);
+        else chrome_label(K, ax + snap(16.0f), hy + fH * 0.5f, tr("Search every change...", "Rechercher dans toutes les nouveaut\xC3\xA9s..."), tsz, 1);
+        if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) {
+            int cn = nameCur_ < 0 ? 0 : (nameCur_ > nameLen_ ? nameLen_ : nameCur_); char pre[48]; memcpy(pre, nameBuf_, cn); pre[cn] = 0;
+            cs(dev); flat(dev, ax + snap(16.0f) + (cn ? chrome_label_w(K, pre, tsz) : 0.0f) + snap(1.0f), hy + snap(10.0f), snap(2.0f), fH - snap(20.0f), fa(0xFFE2C482u)); }
+        const char* KL[4] = { tr("All", "Tout"), ck_name(CK_NEW, true), ck_name(CK_IMPROVED, true), ck_name(CK_FIXED, true) };
+        const float segW = snap(150.0f), sh = snap(34.0f);
+        const int hit = chrome_segment(K, CTRL_ID, ax + fw + snap(24.0f), hy + (fH - sh) * 0.5f, segW, sh, KL, 4, relKind_);
+        if (hit >= 0) { relKind_ = hit; relDetScroll_ = 0.0f; }
+        hy += fH + snap(20.0f);
     }
-    clip_rect_begin(dev, cx - snap(4.0f), listTop, cw + snap(8.0f), listBot - listTop);
-    K.click = click && mo && mo->y >= listTop && mo->y <= listBot;
+    // "new since" : frozen when the tab opens, then the newest is recorded as seen
+    if (relNewN_ < 0) {
+        int k = 0; while (k < RELEASES_N && strcmp(RELEASES[k].version, ui_config().updSeen) != 0) ++k;
+        relNewN_ = (ui_config().updSeen[0] && k < RELEASES_N) ? k : 0;
+        if (RELEASES_N > 0 && strcmp(ui_config().updSeen, RELEASES[0].version) != 0) { lstrcpynA(ui_config().updSeen, RELEASES[0].version, (int)sizeof(ui_config().updSeen)); save_ui_config(); }
+        relOpenIdx_ = 0; relDetScroll_ = 0.0f;
+    }
+    if (relOpenIdx_ < 0 || relOpenIdx_ >= RELEASES_N) relOpenIdx_ = 0;
+    auto passes = [&](const ChangeLine& L) { return relKind_ == 0 || L.kind == relKind_; };
+
+    // ---- the LIST : narrow, one row per version ----
+    const float lx0 = ax, lw0 = snap(400.0f), listTop = hy, listBot = bot - bt - snap(10.0f);
+    const float dx0 = lx0 + lw0 + snap(40.0f), dw0All = aR - dx0, dw0 = dw0All < snap(1100.0f) ? dw0All : snap(1100.0f);
+    const bool overList = mo && mo->x >= lx0 && mo->x <= lx0 + lw0 && mo->y >= listTop && mo->y <= listBot;
+    const bool overDet  = mo && mo->x >= dx0 && mo->x <= dx0 + dw0 + snap(20.0f) && mo->y >= listTop && mo->y <= listBot;
+    if (ui_config().wheel != 0 && (overList || overDet)) {
+        float& sc = overList ? updScroll_ : relDetScroll_; const float mx = overList ? updMaxScroll_ : relDetMax_;
+        sc -= (float)ui_config().wheel * snap(48.0f); ui_config().wheel = 0;
+        if (sc < 0.0f) sc = 0.0f; if (sc > mx) sc = mx;
+    }
+    clip_rect_begin(dev, lx0 - snap(4.0f), listTop, lw0 + snap(8.0f), listBot - listTop);
+    K.click = click && overList;
     float yy = listTop - updScroll_;
-    const int RECENT = 6;
-    for (int r = 0; r < RELEASES_N && r < (int)(sizeof(relOpen_) / sizeof(relOpen_[0])); ++r) {
-        if (r == RECENT) {
-            char ob[64]; _snprintf(ob, sizeof(ob), tr("Older versions  (%d)", "Versions plus anciennes  (%d)"), RELEASES_N - RECENT); ob[63] = 0;
-            if (kit_section(K, ctrl_uid_i(CTRL_ID, RELEASES_N + 1), cx, yy, cw, ob, relOlder_, 0, 0)) relOlder_ = !relOlder_;
-            yy += K.px(34.0f) + snap(10.0f);
-            if (!relOlder_) break;
+    const float rowH = snap(40.0f), rGap = snap(3.0f);
+    auto vrow = [&](int r) {   // a version : its lamp (lit = the one shown), V + number, its date, a dot per kind it holds
+        const Release& RL = RELEASES[r];
+        int shown = 0; for (int i = 0; i < RL.n; ++i) if (passes(RL.lines[i])) ++shown;
+        if (!shown) return;
+        char dt[16] = { 0 };
+        if (RL.date && strlen(RL.date) == 10) { if (ui_config().lang == 1) _snprintf(dt, sizeof(dt), "%.2s/%.2s/%.2s", RL.date + 8, RL.date + 5, RL.date + 2); else _snprintf(dt, sizeof(dt), "%.10s", RL.date); dt[15] = 0; }
+        char vb[24]; _snprintf(vb, sizeof(vb), "V%s", RL.version); vb[23] = 0;
+        const char* cells[2] = { vb, dt }; const float cx2[2] = { lx0 + snap(30.0f), lx0 + lw0 - snap(16.0f) }; const int al2[2] = { 0, 2 };
+        if (yy + rowH > listTop - rowH && yy < listBot + rowH)
+            if (chrome_ledger_row(K, ctrl_uid_i(CTRL_ID, 1000 + r), lx0, yy, lw0, rowH, cells, cx2, al2, 2, r == relOpenIdx_, false) && r != relOpenIdx_) { relOpenIdx_ = r; relDetScroll_ = 0.0f; }
+        if (strcmp(RL.version, cur) == 0 && yy + rowH * 0.5f > listTop && yy + rowH * 0.5f < listBot) {   // the installed one : a small brass mark
+            cs(dev); disc(dev, lx0 + lw0 * 0.47f, yy + rowH * 0.5f, snap(3.0f), fa(0xFFD4B574u)); }
+        yy += rowH + rGap;
+    };
+    auto group = [&](const char* t) { if (yy + snap(10.0f) > listTop && yy < listBot) chrome_label(K, lx0, yy + snap(12.0f), t, K.px(12.5f), 4); yy += snap(28.0f); };
+    {
+        const int nNew = relNewN_ > RELEASES_N ? RELEASES_N : relNewN_;
+        int r = 0;
+        if (nNew > 0) {
+            char gb[64]; _snprintf(gb, sizeof(gb), tr("NEW SINCE YOUR LAST VISIT  (%d)", "NOUVEAU DEPUIS TA DERNI\xC3\x88RE VISITE  (%d)"), nNew); gb[63] = 0;
+            group(gb); for (; r < nNew; ++r) vrow(r); yy += snap(12.0f);
         }
-        const int n = RELEASES[r].n;
-        char vb[96];
-        const bool inst = strcmp(RELEASES[r].version, cur) == 0;
-        _snprintf(vb, sizeof(vb), "V%s     %d %s%s", RELEASES[r].version, n, n > 1 ? tr("changes", "changements") : tr("change", "changement"),
-                  inst ? tr("     -- installed", "     -- install\xC3\xA9""e") : (r == 0 ? tr("     -- latest", "     -- la derni\xC3\xA8re") : ""));
-        vb[95] = 0;
-        const bool open = relOpen_[r];
-        if (kit_section(K, ctrl_uid_i(CTRL_ID, r), cx, yy, cw, vb, open, 0, 0)) relOpen_[r] = !relOpen_[r];
-        yy += K.px(34.0f) + snap(12.0f);
-        if (open) {
-            for (int i = 0; i < n; ++i)
-                yy = v2_ledger(K, dev, fo, cx + snap(8.0f), yy, cw - snap(16.0f), listTop, listBot, (ui_config().lang == 1) ? RELEASES[r].lines[i].fr : RELEASES[r].lines[i].en);
-            yy += snap(10.0f);
+        group(tr("RECENT", "R\xC3\x89""CENTES"));
+        const int recentEnd = (r + 6 < RELEASES_N) ? r + 6 : RELEASES_N;
+        for (; r < recentEnd; ++r) vrow(r);
+        if (r < RELEASES_N) {
+            yy += snap(12.0f); group(tr("ARCHIVE", "ARCHIVES"));
+            int series = 0;
+            while (r < RELEASES_N) {
+                char key[16]; const char* v = RELEASES[r].version; const char* d2 = strchr(v, '.'); d2 = d2 ? strchr(d2 + 1, '.') : 0;
+                const int kl = d2 ? (int)(d2 - v) : (int)strlen(v); lstrcpynA(key, v, kl + 1 < 16 ? kl + 1 : 16);
+                const size_t kL = strlen(key);
+                int e2 = r; while (e2 < RELEASES_N && strncmp(RELEASES[e2].version, key, kL) == 0 && (RELEASES[e2].version[kL] == '.' || !RELEASES[e2].version[kL])) ++e2;
+                if (e2 == r) e2 = r + 1;
+                char sb[80]; _snprintf(sb, sizeof(sb), tr("Series %s  (%d)", "S\xC3\xA9rie %s  (%d)"), key, e2 - r); sb[79] = 0;
+                const bool so = relSeriesOpen_ == series;
+                if (kit_section(K, ctrl_uid_i(CTRL_ID, 900 + series), lx0, yy, lw0, sb, so, 0, 0)) relSeriesOpen_ = so ? -1 : series;
+                yy += K.px(34.0f) + snap(8.0f);
+                if (so) for (int q = r; q < e2; ++q) vrow(q);
+                r = e2; ++series;
+            }
         }
-        yy += snap(4.0f);
+    }
+    clip_rect_end(dev);
+    {   const float viewH = listBot - listTop, contentH = (yy + updScroll_) - listTop + snap(6.0f);
+        float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f; updMaxScroll_ = maxS; if (updScroll_ > maxS) updScroll_ = maxS;
+        scrollbar_vert(dev, mo, 3, lx0 + lw0 + snap(12.0f), listTop, snap(5.0f), viewH, contentH, updScroll_, maxS); }
+
+    // ---- the NOTES : the chosen version (or the search's matches), in one fixed pane, readable ----
+    clip_rect_begin(dev, dx0 - snap(4.0f), listTop, dw0 + snap(8.0f), listBot - listTop);
+    K.click = click && overDet;
+    float dy = listTop - relDetScroll_;
+    const float lh = snap(24.0f), tsz = snap(16.0f), G = snap(170.0f);
+    auto note = [&](const ChangeLine& L) {   // the module in the gutter, the sentence beside it -- a reading size
+        const char* mod = (ui_config().lang == 1) ? L.modFr : L.modEn;
+        const char* tx = (ui_config().lang == 1) ? L.fr : L.en;
+        if (L.kind == CK_NONE) {   // an old line : its "Subject : " lead as the tag
+            char tag[32] = { 0 }; const char* body = tx;
+            if (const char* p = strstr(tx, " : ")) { const int n = (int)(p - tx); if (n > 0 && n < 26) { int k = 0; for (int q = 0; q < n && k < 31; ++q) if (tx[q] != '*' && tx[q] != '_') tag[k++] = tx[q]; tag[k] = 0; body = p + 3; } }
+            if (tag[0] && dy + lh * 0.5f > listTop && dy + lh * 0.5f < listBot) chrome_tag_steel(K, dx0, dy + lh * 0.5f, tag);
+            dy = draw_wrapped(dev, fo, dx0 + G, dy, dw0 - G, listTop, listBot, body, tsz, C_TEXT, lh) + snap(12.0f);
+            return;
+        }
+        if (mod && dy + lh * 0.5f > listTop && dy + lh * 0.5f < listBot) chrome_tag_steel(K, dx0, dy + lh * 0.5f, mod);
+        dy = draw_wrapped(dev, fo, dx0 + G, dy, dw0 - G, listTop, listBot, tx, tsz, C_TEXT, lh) + snap(12.0f);
+    };
+    if (nameLen_ > 0) {   // SEARCH : every matching line, its version and kind before it ; a click on the version opens it
+        int shown = 0;
+        for (int r = 0; r < RELEASES_N; ++r) for (int i = 0; i < RELEASES[r].n; ++i) {
+            const ChangeLine& L = RELEASES[r].lines[i];
+            const char* tx = (ui_config().lang == 1) ? L.fr : L.en; const char* md = (ui_config().lang == 1) ? L.modFr : L.modEn;
+            if (!passes(L) || (help_find(tx, nameBuf_) < 0 && (!md || help_find(md, nameBuf_) < 0))) continue;
+            char vt[24]; _snprintf(vt, sizeof(vt), "V%s", RELEASES[r].version); vt[23] = 0;
+            float px2 = dx0;
+            if (dy + snap(12.0f) > listTop && dy + snap(12.0f) < listBot) {
+                if (L.kind != CK_NONE) px2 = ck_pill(K, dev, dx0, dy + snap(12.0f), L.kind) + snap(10.0f);
+                chrome_label(K, px2, dy + snap(12.0f), vt, K.px(13.5f), 2);
+                if (K.click && inrect(mo, px2, dy, chrome_label_w(K, vt, K.px(13.5f)) + snap(8.0f), snap(24.0f))) { relOpenIdx_ = r; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; relDetScroll_ = 0.0f; }
+            }
+            dy += snap(30.0f); note(L); ++shown;
+        }
+        if (!shown) { chrome_label(K, dx0, dy + snap(20.0f), tr("Nothing found.", "Rien trouv\xC3\xA9."), K.px(16.0f), 1); dy += snap(40.0f); }
+    } else {
+        const Release& RL = RELEASES[relOpenIdx_];
+        int cnt[4] = { 0, 0, 0, 0 }; for (int i = 0; i < RL.n; ++i) { const int k = RL.lines[i].kind; cnt[(k >= 0 && k <= 3) ? k : 0]++; }
+        {   // the version's head : V + number large, its date, what it holds
+            char vb[24]; _snprintf(vb, sizeof(vb), "V%s", RL.version); vb[23] = 0;
+            if (dy + snap(20.0f) > listTop && dy < listBot) {
+                chrome_label(K, dx0, dy + snap(18.0f), vb, K.px(26.0f), 0);
+                float hx2 = dx0 + chrome_label_w(K, vb, K.px(26.0f)) + snap(20.0f);
+                char dt[40] = { 0 };
+                if (RL.date && strlen(RL.date) == 10) { if (ui_config().lang == 1) _snprintf(dt, sizeof(dt), "%.2s/%.2s/%.4s", RL.date + 8, RL.date + 5, RL.date); else _snprintf(dt, sizeof(dt), "%.10s", RL.date); dt[39] = 0;
+                    chrome_label(K, hx2, dy + snap(20.0f), dt, K.px(15.0f), 1); hx2 += chrome_label_w(K, dt, K.px(15.0f)) + snap(20.0f); }
+                if (strcmp(RL.version, cur) == 0) hx2 = chrome_tag(K, hx2, dy + snap(20.0f), tr("INSTALLED", "INSTALL\xC3\x89""E")) + snap(8.0f);
+                else if (relOpenIdx_ == 0) hx2 = chrome_tag(K, hx2, dy + snap(20.0f), tr("LATEST", "LA DERNI\xC3\x88RE")) + snap(8.0f);
+            }
+            dy += snap(46.0f);
+            cs(dev); if (dy > listTop && dy < listBot) { flat(dev, dx0, dy, dw0, 1.0f, fa(0xFF07090Cu)); flat(dev, dx0, dy + 1.0f, dw0, 1.0f, (((u32)(0x30 * g_fade)) << 24) | 0x00FFFFFFu); }
+            dy += snap(18.0f);
+        }
+        for (int k = 1; k <= 3; ++k) {   // New, Improved, Fixed -- each kind's pill, then its lines
+            if (!cnt[k] || (relKind_ && relKind_ != k)) continue;
+            if (dy + snap(12.0f) > listTop && dy + snap(12.0f) < listBot) {
+                const float pr = ck_pill(K, dev, dx0, dy + snap(12.0f), k);
+                char nb[8]; _snprintf(nb, sizeof(nb), "%d", cnt[k]); nb[7] = 0; chrome_label(K, pr + snap(10.0f), dy + snap(12.0f), nb, K.px(13.5f), 1);
+            }
+            dy += snap(34.0f);
+            for (int i = 0; i < RL.n; ++i) if (RL.lines[i].kind == k) note(RL.lines[i]);
+            dy += snap(12.0f);
+        }
+        if (cnt[0] && relKind_ == 0) for (int i = 0; i < RL.n; ++i) if (RL.lines[i].kind == CK_NONE) note(RL.lines[i]);   // not classified yet : the plain list
+        if (relKind_ && !cnt[relKind_]) chrome_label(K, dx0, dy + snap(10.0f), tr("Nothing of this kind in this version.", "Rien de ce type dans cette version."), K.px(15.0f), 1);
     }
     clip_rect_end(dev);
     K.click = click;
-    const float viewH = listBot - listTop, contentH = (yy + updScroll_) - listTop + snap(6.0f);
-    float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
-    updMaxScroll_ = maxS; if (updScroll_ > maxS) updScroll_ = maxS;
-    scrollbar_vert(dev, mo, 3 /*Update changelog*/, cx + cw + snap(14.0f), listTop, snap(6.0f), viewH, contentH, updScroll_, maxS);
+    {   const float viewH = listBot - listTop, contentH = (dy + relDetScroll_) - listTop + snap(6.0f);
+        float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f; relDetMax_ = maxS; if (relDetScroll_ > maxS) relDetScroll_ = maxS;
+        scrollbar_vert(dev, mo, 6 /*Update notes*/, dx0 + dw0 + snap(14.0f), listTop, snap(5.0f), viewH, contentH, relDetScroll_, maxS); }
 }
 
 

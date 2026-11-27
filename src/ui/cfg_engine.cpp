@@ -43,7 +43,7 @@ static Row row_begin(Kit& K, float x, float y, float w, const char* label, const
 }
 // right-click on a modified, live row : back to the factory value. `custom` replaces the plain copy (a grow keeps its box).
 static void row_end(Kit& K, float x, float& y, float w, const Row& r, void* p, int size, void (*custom)(void*) = nullptr) {
-    if ((r.st & KS_MODIFIED) && K.mo && K.mo->rightClicked && inrect(K.mo, x, r.y, w, r.h)) {
+    if ((r.st & KS_MODIFIED) && !(r.st & KS_DISABLED) && K.mo && K.mo->rightClicked && inrect(K.mo, x, r.y, w, r.h)) {
         if (custom) custom(p); else if (const void* d = factory_of(p, size)) memcpy(p, d, size);
         save_ui_config();
     }

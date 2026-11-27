@@ -40,7 +40,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
 
     // ===== THE WHOLE INTERFACE at once : Modern / FFXI (Mixed when the windows below differ) =====
     { ROW_BAND(52.0f)
-        const int allBits = NU_ALL; const bool allM = (c.nuHide & allBits) == allBits && c.plShow, allF = (c.nuHide & allBits) == 0 && !c.plShow;
+        const int allBits = NU_ALL & ~(NU_PARTY | NU_ALLY | NU_COST); /* those follow AioHUD's boxes : no row */ const bool allM = (c.nuHide & allBits) == allBits && c.plShow, allF = (c.nuHide & allBits) == 0 && !c.plShow;
         const char* lab = allM ? STY[1] : allF ? STY[0] : tr("Mixed", "Mixte");
         if (row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Game interface", "Interface du jeu"), lab)) {
             const bool toModern = !allM; c.nuHide = toModern ? (c.nuHide | allBits) : (c.nuHide & ~allBits); c.plShow = toModern ? 1 : 0; save_ui_config(); }
@@ -258,7 +258,7 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
     };
     ry += K.px(6.0f);
     {   // THE WHOLE INTERFACE at once : Modern / FFXI (Mixed when the windows below differ)
-        const int allBits = NU_ALL; const bool allM = (c.nuHide & allBits) == allBits && c.plShow, allF = (c.nuHide & allBits) == 0 && !c.plShow;
+        const int allBits = NU_ALL & ~(NU_PARTY | NU_ALLY | NU_COST); /* those follow AioHUD's boxes : no row */ const bool allM = (c.nuHide & allBits) == allBits && c.plShow, allF = (c.nuHide & allBits) == 0 && !c.plShow;
         const char* lab = allM ? STY[1] : allF ? STY[0] : tr("Mixed", "Mixte");
         if (cfg_select_row(K, ctrl_uid_i(base, 1), x, ry, w, tr("Game interface", "Interface du jeu"), lab, nullptr, nullptr, 0)) {
             const bool toModern = !allM; c.nuHide = toModern ? (c.nuHide | allBits) : (c.nuHide & ~allBits); c.plShow = toModern ? 1 : 0; save_ui_config(); }

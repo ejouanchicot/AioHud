@@ -292,8 +292,12 @@ void ConfigPage::draw_pet_v2(u32 dev, Font* fo, const MouseState* mo, bool click
         const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int k = 0; k < n && k < 7; ++k) lab[k + 1] = tr(men[k], mfr[k]);
         int v = on ? 1 + (mode < 0 || mode >= n ? 0 : mode) : 0;
         void* mark = (on != dOn) ? (void*)&on : (void*)&mode;   // the marker / right-click reset : the field that differs
+        const int prevOn = on;
         if (int d = cfg_select_row(K, uid, x, ry, w, tr(en, frl), lab[v], why, mark, 4)) {
             v = wrap(v + d, n + 1); on = v > 0 ? 1 : 0; if (v > 0) mode = v - 1; save_ui_config(); }
+        else if (on != prevOn) {   // a right-click reset (it restored "on") : the mode back to its factory value too
+            static const UiConfig DEFc{};
+            mode = *(const int*)((const char*)&DEFc + ((const char*)&mode - (const char*)&ui_config())); save_ui_config(); }
     };
     auto diff2 = [&](int on, int mode, int dOn, int dMode) { return (on != dOn) || (on && mode != dMode) ? 1 : 0; };
     auto cnt = [&](const OptDef* d, int n) { return cfg_count_modified(d, n, true); };

@@ -359,6 +359,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "lang=%d\n", c.lang);
     fprintf(f, "cfgadv=%d\n", c.cfgAdv);
     fprintf(f, "cfgui=%.3f,%d,%d,%d,%d\n", c.cfgScale, c.cfgBg, c.cfgReopen, c.cfgLastTab, c.cfgLastSec);
+    fprintf(f, "updseen=%s\n", c.updSeen);
     fprintf(f, "selftest=%d\n", c.selfTest);   // the watcher survives a reload : a harness you must re-arm is one you forget to arm
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
@@ -506,6 +507,7 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
     if (!strncmp(line, "cfgadv=", 7)) { c.cfgAdv = atoi(line + 7) ? 1 : 0; return true; }   // the config's depth (Simple / Advanced)
+    if (!strncmp(line, "updseen=", 8)) { lstrcpynA(c.updSeen, line + 8, (int)sizeof(c.updSeen)); for (char* q = c.updSeen; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0; return true; }
     if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
     if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
@@ -1187,8 +1189,10 @@ static bool load_profile_file(const char* path) {
     const UiConfig& live = ui_config();
     const int lang = live.lang, adv = live.cfgAdv, bg = live.cfgBg, reopen = live.cfgReopen, lt = live.cfgLastTab, ls = live.cfgLastSec;
     const float scale = live.cfgScale;
+    char seen[16]; lstrcpynA(seen, live.updSeen, sizeof(seen));
     if (!load_config_from(path)) return false;
     UiConfig& c = ui_config();
+    lstrcpynA(c.updSeen, seen, sizeof(c.updSeen));
     c.lang = lang; c.cfgAdv = adv; c.cfgScale = scale; c.cfgBg = bg; c.cfgReopen = reopen; c.cfgLastTab = lt; c.cfgLastSec = ls;
     return true;
 }

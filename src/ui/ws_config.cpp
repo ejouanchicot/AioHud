@@ -122,7 +122,7 @@ void ConfigPage::draw_ws_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         v2_rows(K, ctrl_uid_i(base, 4), WS_CONTENT, NOPT(WS_CONTENT), x, ry, w);
     if (adv) {
         unsigned* col[3] = { &c.wsNameCol, &c.wsDmgCol1, &c.wsDmgCol2 };   // the number flashes between A and B
-        const int nMod = cfg_count_modified_bytes(&c.wsFont, 4) + cfg_count_modified_bytes(col[0], 4) + cfg_count_modified_bytes(col[1], 4) + cfg_count_modified_bytes(col[2], 4);
+        const int nMod = cfg_count_modified_bytes(&c.wsFont, 4) + cfg_count_modified_bytes(col[(s_wsColPick < 0 || s_wsColPick > 2) ? 0 : s_wsColPick], 4);   // the colour the row shows (its bead)
         if (v2_section(K, ctrl_uid_i(base, 5), 7, "Text", "Texte", x, ry, w, nMod)) {
             const int nf = ui_font_count() < 1 ? 1 : ui_font_count();
             int fc = c.wsFont; if (fc < 0 || fc >= nf) fc = 0;

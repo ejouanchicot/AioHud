@@ -136,7 +136,7 @@ static const char* const AW_JB_EN[3] = { "None", "Job", "Initials" },           
 static const char* aw_list(const UiConfig& c)  { return c.awStyle == 0 ? nullptr : tr("inactive : table style", "inactif : style tableau"); }
 static const char* aw_orb(const UiConfig& c)   { if (const char* w = aw_list(c)) return w; return c.awLayout != 2 ? nullptr : tr("inactive : list only", "inactif : liste seule"); }
 static const char* aw_badge(const UiConfig& c) { if (const char* w = aw_list(c)) return w; return c.awJobs ? nullptr : tr("inactive : badges off", "inactif : badges coup\xC3\xA9s"); }
-static const char* aw_fx(const UiConfig& c)    { if (const char* w = aw_list(c)) return w; return c.awFx ? nullptr : tr("inactive : absorb animation off", "inactif : animation d'absorption coup\xC3\xA9""e"); }
+static const char* aw_fx(const UiConfig& c)    { if (const char* w = aw_orb(c)) return w; return c.awFx ? nullptr : tr("inactive : absorb animation off", "inactif : animation d'absorption coup\xC3\xA9""e"); }
 
 static const OptDef AW_DISPLAY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(awShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -150,7 +150,7 @@ static const OptDef AW_CONTENT_A[] = {   // the animated list's own rows (greyed
     { "Orb size", "Taille de l'orbe", OK_PCT, OL_ADV, F_(awOrb), 0.6f, 1.8f, nullptr, nullptr, 0, aw_orb, 0 },
     { "Badges", "Badges", OK_SELECT, OL_ADV, F_(awJobs), 0, 0, AW_JB_EN, AW_JB_FR, 3, aw_list, 0 },
     { "Badge size", "Taille des badges", OK_PCT, OL_ADV, F_(awBadge), 0.7f, 1.6f, nullptr, nullptr, 0, aw_badge, 0 },
-    { "Absorb animation", "Animation d'absorption", OK_TOGGLE, OL_ADV, F_(awFx), 0, 0, nullptr, nullptr, 0, aw_list, 0 },
+    { "Absorb animation", "Animation d'absorption", OK_TOGGLE, OL_ADV, F_(awFx), 0, 0, nullptr, nullptr, 0, aw_orb, 0 },   // the orb's : not in "List only"
     { "Scene distortion", "D\xC3\xA9""formation du d\xC3\xA9""cor", OK_TOGGLE, OL_ADV, F_(awDistort), 0, 0, nullptr, nullptr, 0, aw_fx, 0 },
     { "Colour the TP", "Couleur des TP", OK_TOGGLE, OL_SIMPLE, F_(awColors), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Time since", "Temps \xC3\xA9""coul\xC3\xA9", OK_TOGGLE, OL_SIMPLE, F_(awTimer), 0, 0, nullptr, nullptr, 0, nullptr, 0 },

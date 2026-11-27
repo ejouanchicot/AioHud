@@ -639,7 +639,7 @@ void test_config() {
         na.mmHitX = nb.mmHitX = 0.0f; na.mmHitY = nb.mmHitY = 0.0f;   // the minimap's live hit rect
         na.mmHitW = nb.mmHitW = 0.0f; na.mmHitH = nb.mmHitH = 0.0f;
         // the CONFIG WINDOW's own preferences : a profile load KEEPS the live ones (they are not a profile's -- 2026-11-27)
-        na.lang = nb.lang = 0; na.cfgAdv = nb.cfgAdv = 0;
+        na.lang = nb.lang = 0; na.cfgAdv = nb.cfgAdv = 0; memset(na.updSeen, 0, sizeof(na.updSeen)); memset(nb.updSeen, 0, sizeof(nb.updSeen));
         na.cfgScale = nb.cfgScale = 1.0f; na.cfgBg = nb.cfgBg = 0; na.cfgReopen = nb.cfgReopen = 1; na.cfgLastTab = nb.cfgLastTab = 0; na.cfgLastSec = nb.cfgLastSec = 0;
 
         const unsigned char* pa = (const unsigned char*)&na;

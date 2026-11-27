@@ -369,7 +369,7 @@ private:
     bool  nameFocus_   = false;   // the name field has keyboard focus (the slot-14 hook feeds it)
     bool  kbCommit_    = false;   // Enter was pressed -> save on the next draw
     bool  profDirty_   = true;    // rescan the profile folder on the next Profile-tab draw
-    char  activeProf_[32] = { 0 };// last saved/loaded profile -> highlighted in the list
+    char  activeProf_[64] = { 0 };// last saved/loaded profile -> highlighted in the list
     // A profile write that FAILED, surfaced in the page for a few seconds. profile_save() already returns false
     // and logs on a write failure -- the four call sites here dropped that return on the floor, cleared the name
     // field and set activeProf_, so an unwritable profiles\ folder (Program Files, disk full, AV lock) looked
@@ -387,9 +387,14 @@ private:
     float helpPlayerCx_ = 0.0f, helpPlayerCy_ = 0.0f, helpPlayerW_ = 0.0f, helpPlayerH_ = 0.0f;
     float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
-    bool  relOlder_    = false;   // Update tab (redesign) : the releases older than the six newest, folded away
+    bool  relOlder_    = false;
+    int   relOpenIdx_  = 0;       // Update (redesign) : the ONE release open (accordion, no per-release array : no cap at 500 releases)
+    int   relSeriesOpen_ = -1;    // Update : the archive series unfolded (index in first-appearance order), -1 none
+    int   relNewN_     = -1;
+    int   relKind_     = 0;       // Update : the kind filter -- 0 all, CK_NEW, CK_IMPROVED, CK_FIXED      // Update : how many releases are newer than the last one seen (frozen when the tab opens)   // Update tab (redesign) : the releases older than the six newest, folded away
     float updScroll_   = 0.0f;    // Update tab "What's new" changelog vertical scroll
-    float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
+    float updMaxScroll_= 0.0f;
+    float relDetScroll_ = 0.0f, relDetMax_ = 0.0f;   // Update : the notes pane's own scroll (the list keeps updScroll_)    // its extent, remembered for next frame's wheel clamp
     float dbgScroll_   = 0.0f;    // Debug tab vertical scroll
     float dbgMaxScroll_= 0.0f;
     bool  relOpen_[128] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. It clamped again silently at 48 (grown 48->128 at v1.0.62 era, RELEASES_N = 42) -- 128 = room for ~86 more releases. Not serialized (session-only UI state) and the render loop self-bounds via sizeof(relOpen_), so this size is free to raise -- but keep it >= RELEASES_N.

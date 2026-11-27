@@ -804,6 +804,7 @@ struct UiConfig {
     int   cfgBg = 0;           // the ground behind the config : 0 opaque, 1 dark (the game faintly behind), 2 see-through
     int   cfgReopen = 1;       // 1 : the config reopens on the page it was closed on (across a reload too) ; 0 : on the first
     int   cfgLastTab = 0, cfgLastSec = 0;   // that page (written as the config moves)
+    char  updSeen[16] = "";    // the newest version the Update tab has shown -> "New since your last visit" (2026-11-27)
     // The in-game safety harness (model/selftest.h). OFF by default and shipped that way: it costs a pass
     // over the registered checks every 30 s, which is nothing, but a watcher nobody armed writing files
     // into someone's plugins folder is not a default anyone asked for. `//aio selftest on` arms it, and it

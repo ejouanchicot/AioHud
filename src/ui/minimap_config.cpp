@@ -340,7 +340,7 @@ static const char* mw_bezel(const UiConfig& c) {   // the round's bezel switch :
     if (c.mmShape != 1) return mw_square(c);
     return mw_clock(c);
 }
-static const char* mw_card(const UiConfig& c) {    // the round's bezel width / cardinals
+static const char* mw_card(const UiConfig& c) { if (c.mmLayout == 2) return nullptr;   /* the Dial engraves its letters at this size, round or square */    // the round's bezel width / cardinals
     if (c.mmShape != 1) return mw_square(c);
     if (c.mmLayout == 2) return nullptr;
     if (!c.mmClock) return mw_clock(c);
@@ -475,8 +475,12 @@ void ConfigPage::draw_minimap_v2(u32 dev, Font* fo, const MouseState* mo, bool c
     auto choice = [&](int k, const char* en, const char* frl, int& on, int& mode, const char* const* men, const char* const* mfr, int n, int dOn) {
         const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int q = 0; q < n && q < 7; ++q) lab[q + 1] = tr(men[q], mfr[q]);
         const int v = on ? 1 + ((mode < 0 || mode >= n) ? 0 : mode) : 0;
+        const int prevOn = on;
         if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), lab[v], nullptr, markOf(on, mode, dOn), 4)) {
             const int nv = wrap(v + d, n + 1); on = nv > 0 ? 1 : 0; if (nv > 0) mode = nv - 1; save_ui_config(); }
+        else if (on != prevOn) {   // a right-click reset (it restored "on") : the mode back to its factory value too
+            static const UiConfig DEFc{};
+            mode = *(const int*)((const char*)&DEFc + ((const char*)&mode - (const char*)&ui_config())); save_ui_config(); }
     };
     const char* wClk = c.mmClock ? nullptr : tr("inactive : clock off", "inactif : horloge coup\xC3\xA9""e");
 

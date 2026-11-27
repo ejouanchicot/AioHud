@@ -340,7 +340,7 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
         }
     }
     {   // ---- Display (shown, size, its geometry) ----
-        const int nMod = cfg_count_modified(CH_DISPLAY, NOPT(CH_DISPLAY), adv) + cfg_count_modified_bytes(&c.chW[b], 4) + cfg_count_modified_bytes(&c.chH[b], 4) + cfg_count_modified_bytes(&c.chMaxLines[b], 4);
+        const int nMod = cfg_count_modified(CH_DISPLAY, NOPT(CH_DISPLAY), adv) + cfg_count_modified_bytes(&c.chW[b], 4) + cfg_count_modified_bytes(&c.chMaxLines[b], 4);   // (not chH : its factory 0 means "fill from the lines", the first draw fills it -- it would read modified forever)
         if (v2_section(K, ctrl_uid_i(base, 2), 6, "Display", "Affichage", x, ry, w, nMod)) {
             cfg_rows(K, ctrl_uid_i(base, 3), CH_DISPLAY, NOPT(CH_DISPLAY), x, ry, w, adv);
             {   // which edge stays put ; the box does not move (no reset : the factory -1 is the pre-conversion marker)
@@ -356,8 +356,12 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
             islider(ctrl_uid_i(base, 5), tr("Width", "Largeur"), &c.chW[b], c.chW[b], 200, 1600, 10, v, nullptr);
             const int hh = c.chH[b] > 0 ? c.chH[b] : 260;
             _snprintf(v, sizeof(v), "%d", hh); v[31] = 0;
-            islider(ctrl_uid_i(base, 6), tr("Height", "Hauteur"), &c.chH[b], hh, 80, 1000, 10, v,
-                    c.chMaxLines[b] == 0 ? nullptr : tr("inactive : Max lines sets the height", "inactif : Lignes max fixe la hauteur"));
+            {   // no bead / reset on the height (see the count above) ; 80..1400 = the clamp and Edit Layout's range
+                float h01 = ((float)hh - 80.0f) / (1400.0f - 80.0f); h01 = h01 < 0.0f ? 0.0f : (h01 > 1.0f ? 1.0f : h01);
+                if (cfg_slider_row(K, ctrl_uid_i(base, 6), x, ry, w, tr("Height", "Hauteur"), &h01, v,
+                                   c.chMaxLines[b] == 0 ? nullptr : tr("inactive : Max lines sets the height", "inactif : Lignes max fixe la hauteur"), nullptr, 0, false)) {
+                    int nv = (int)(80.0f + h01 * 1320.0f + 0.5f); nv = (nv / 10) * 10; c.chH[b] = nv < 80 ? 80 : (nv > 1400 ? 1400 : nv); }
+            }
             if (c.chMaxLines[b] > 0) _snprintf(v, sizeof(v), "%d", c.chMaxLines[b]); else lstrcpynA(v, tr("fixed height", "hauteur fixe"), sizeof(v));   // 0 = the fixed Height above
             v[31] = 0;
             islider(ctrl_uid_i(base, 7), tr("Max lines", "Lignes max"), &c.chMaxLines[b], c.chMaxLines[b], 0, 40, 1, v, nullptr);

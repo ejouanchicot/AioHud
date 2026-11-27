@@ -114,7 +114,7 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     // -> no min. rowW[i] = that stat's real width ; contentW = the widest (drives the vertical box + aligned bars).
     // Horizontal layout uses rowW[i] PER column, so a rate-less stat (Merits -- never has an X/h, and gains nothing
     // once merit-capped) doesn't inherit the progression stat's rate slot and stretch the box with a phantom column.
-    const float minW = (C.pwDisplay == 1) ? 0.0f : 150.0f * S * txScale;
+    const float minW = (C.pwDisplay == 1) ? 0.0f : 150.0f * S * (C.pwDisplay == 2 ? 1.0f : txScale);   // bar only : no text, so no text scale (audit 2026-11-27)
     const float rateSlotW = fRate->measure(helpSample ? "9.9k/h" : "999.9k/h", zRate);   // X/h slot : MAX rate reservation live/edit ; the Help sample hugs its compact value
     float rowW[2] = { minW, minW }; float contentW = minW;
     // fixed LABEL column : "XP"/"CP" (2 chars) vs "MLxx" (4) would otherwise shift the value/extra/rate columns and
@@ -122,7 +122,7 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     // the value column + box width stay put across XP/CP/ML ; other rows hug their own (constant) label.
     float labColW = fLabel->measure(pw_up(PW_LABEL, "ML50", lb, 12), zLabel);   // baseline row-0 reservation (>= "XP"/"CP")
     for (int i = 0; i < nrows; ++i) { const float aw = fLabel->measure(pw_up(PW_LABEL, rows[i].label, lb, 12), zLabel); if (aw > labColW) labColW = aw; }   // ONE shared label column = the widest row label ("Merits") -> every value/extra/rate aligns across BOTH rows AND all modes
-    for (int i = 0; i < nrows; ++i) {
+    if (C.pwDisplay != 2) for (int i = 0; i < nrows; ++i) {   // BAR ONLY draws no text : its width is the bar's, not the hidden text's
         // value + extra reserved at a fixed MAX template (row 0 = progression, row 1 = Merits) so the //aio edit
         // sample and the live box compute the SAME width, and changing digits never resize the box (>= actual).
         const char* vtmpl = helpSample ? rows[i].val : ((i == 0) ? "999.9k/999.9k EP" : "9.9k/10k");

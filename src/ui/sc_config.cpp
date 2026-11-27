@@ -382,8 +382,10 @@ void ConfigPage::draw_sc_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
         if (cnt) { nC += dI(mark); return; }
         const char* lab[8]; lab[0] = tr("Off", "D\xC3\xA9sactiv\xC3\xA9"); for (int k = 0; k < n && k < 7; ++k) lab[k + 1] = tr(men[k], mfr[k]);
         int v = *on ? 1 + ((*mode < 0 || *mode >= n) ? 0 : *mode) : 0;
+        const int prevOn = *on;
         if (int d = cfg_select_row(K, uid, x, ry, w, label, lab[v], nullptr, mark, 4)) {
             v = wrap(v + d, n + 1); *on = v > 0 ? 1 : 0; if (v > 0) *mode = v - 1; save_ui_config(); }
+        else if (*on != prevOn) { memcpy(mode, fac(mode), 4); save_ui_config(); }   // a right-click reset : the mode too
     };
     // a section : its body counted, then (open) drawn
     auto run = [&](int uid, int slot, const char* en, const char* frl, auto&& body) {

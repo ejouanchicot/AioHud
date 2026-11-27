@@ -1182,9 +1182,15 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
                 v2_rows(K, ctrl_uid_i(base, 3), G_PARTY_FRAME_X, 1, x, ry, w);
             }
         } else {        // the Alliance's : ONE "Same as Party" (its transparency AND theme), else the very rows the Party has
+            if (c.allyThemeCopy != (c.allyAlphaOwn ? 0 : 1)) {   // a MIXED state (an old config : own transparency, Party theme, or the other way) :
+                // made its own on both, starting from what it shows -- the renderer reads the two flags apart, the page has one switch
+                if (c.allyThemeCopy) { c.allyTheme = c.skinTheme; c.allyHue = c.skinHue; c.allyLum = c.skinLum; c.allyThemeCopy = 0; }
+                if (!c.allyAlphaOwn) { c.allyBoxAlpha = c.skinBoxAlpha; c.allyAlphaOwn = 1; }
+                save_ui_config();
+            }
             const bool follow = c.allyThemeCopy && !c.allyAlphaOwn;
             const FrameRefs fr = { nullptr, nullptr, &c.allyBoxAlpha, nullptr, nullptr, &c.allyTheme, &c.allyHue, &c.allyLum, &c.border[1] };
-            const int nMod = (follow ? 0 : cfg_frame_modified(fr) + 1) + (c.border[1] != UiConfig{}.border[1] ? 1 : 0);
+            const int nMod = follow ? (c.border[1] != UiConfig{}.border[1] ? 1 : 0) : cfg_frame_modified(fr);   // = the dotted rows
             if (v2_section(K, ctrl_uid_i(base, 13), 19, "Frame", "Cadre", x, ry, w, nMod)) {
                 if (cfg_toggle_row(K, ctrl_uid_i(base, 34), x, ry, w, tr("Same as Party", "Comme le Groupe"), follow, nullptr, nullptr, 0)) {
                     if (follow) {   // its own, starting from what it shows (the Party's)
@@ -1221,7 +1227,9 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
             v2_end(K, ry);
         }
         {   // TEXT : the element, then its style -- for the box the switch picks (the alliance has no Cost box)
-            if (v2_section(K, ctrl_uid_i(base, 21), 0, "Text", "Texte", x, ry, w, 0)) {
+            if (v2_section(K, ctrl_uid_i(base, 21), 0, "Text", "Texte", x, ry, w, [&]() { TextStyle* t2[TE_COUNT]; int n2 = 0;
+                    for (int k = 0; k < TE_COUNT; ++k) { if (k == TE_UI || (B == 1 && k == TE_COST)) continue; t2[n2++] = &c.text[B][k]; }
+                    return cfg_text_modified(t2, n2); }())) {
                 const char* lab[TE_COUNT]; TextStyle* ts[TE_COUNT]; int idx[TE_COUNT]; int n = 0, sel = 0;
                 for (int k = 0; k < TE_COUNT; ++k) {
                     if (k == TE_UI || (B == 1 && k == TE_COST)) continue;
