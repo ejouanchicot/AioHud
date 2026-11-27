@@ -4608,7 +4608,10 @@ void gen_poll(bool on, u32 mgr, int hide) {
             memcpy(G.help[G.n], help, sizeof(G.help[G.n])); G.m[G.n++] = m;
         }
         bool drawnNow = cls == 1 || cls == 5;
-        if (cls == 3 && (!G.list || focusObj == o) && gen_list_read(mgr, nm, focusObj, G)) drawnNow = true;
+        // a list a MODULE draws (the search results : Party / Unity / Search / Linkshell) is not ours twice (2026-11-27,
+        // the UI audit : the generic list drew an empty box over Party's member list while it loaded)
+        const bool modList = g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult");
+        if (cls == 3 && !modList && (!G.list || focusObj == o) && gen_list_read(mgr, nm, focusObj, G)) drawnNow = true;
         if (cls == 2 && gen_grid_family(nm) && (!G.grid || focusObj == o) && gen_grid_read(o, m, G) && cfg_values(nm, m, G)) {
             while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
             G.grid = true; G.gridFocused = focusObj == o; G.gm = m; drawnNow = true;

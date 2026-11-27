@@ -53,6 +53,24 @@
 
 namespace aio {
 
+// ---- THE UI AUDIT (dev, 2026-11-27 : "tu en as encore oublie -- ameliore tes outils") : every box this file draws is
+// recorded with the source line that drew it ; //aio uiaudit lists the boxes of DIFFERENT drawers that overlap (a menu
+// drawn twice, a panel over another) -- a menu walk calls it on every screen instead of a human eye on every capture
+struct AuditBox { int line; float x, y, w, h, a; };
+static int g_audCaller = 0;   // block_draw's CALLER (the macro after it) : the box is named by who asked for it
+static AuditBox g_aud[128], g_audP[128]; static int g_audN = 0, g_audPN = 0;
+static int g_audImg = 0, g_audImgP = 0;   // the client's letter IMAGES used this frame (another type than ours)
+static void audit_box(int line, float x, float y, float w, float h, float a) {
+    if (g_audCaller) { line = g_audCaller; g_audCaller = 0; }
+    if (g_audN < 128 && w > 2.0f && h > 2.0f && a > 0.05f) { AuditBox& b = g_aud[g_audN++]; b.line = line; b.x = x; b.y = y; b.w = w; b.h = h; b.a = a; }
+}
+static void audit_frame_end() { memcpy(g_audP, g_aud, sizeof(g_aud)); g_audPN = g_audN; g_audN = 0; g_audImgP = g_audImg; g_audImg = 0; }
+static inline void draw_themed_box_audited(int line, u32 dev, const WindowSkin* skin, float x, float y, float w, float h, const BoxStyle& bs, float base, float S) {
+    audit_box(line, x, y, w, h, base);
+    draw_themed_box(dev, skin, x, y, w, h, bs, base, S);
+}
+#define draw_themed_box(dev, skin, x, y, w, h, bs, base, S) draw_themed_box_audited(__LINE__, dev, skin, x, y, w, h, bs, base, S)
+
 // the GAME's menus speak the GAME's language (the client : 1 English, 3 French), not the config's -- an English client
 // with a French config showed its own menus in French (2026-11-27) -- unless Game UI > "Menu language" picks one.
 // 0 English, 1 French ; the config's language only when the client's is unread.
@@ -687,11 +705,145 @@ struct PearlTex { int item; u32 argb; u32 tex; unsigned char tries; unsigned nex
 PearlTex g_pearl[4];
 // ---- the menus' IMAGE labels : the client's sprite letters (model/map_dat : menu_label), one texture each, cached ----
 struct LabelTex { unsigned char sheet = 0; unsigned short id = 0; u32 tex = 0; int w = 0, h = 0, pw = 0, ph = 0, ox = 0, oy = 0; unsigned char tries = 0; unsigned nextMs = 0; };
+int g_lblSeen[512]; int g_lblSeenN = 0;   // every (sheet << 16 | id) drawn this session (dev audit)
 LabelTex g_lbl[96]; unsigned g_lblClock = 0; int g_lblOx = 0, g_lblOy = 0;   // the last label's letters origin (a frame : where its texts sit)
+// THE CLIENT'S LABEL IMAGES IN OUR TYPE (2026-11-27, the uniform pass) : every label image met in the menus, read once
+// (//aio lbldump, transcribed) -- a word (x < 0 : the whole image), or a frame's captions at their place in its sprite
+struct ImgText { unsigned char sheet; unsigned short id; short x, y, w, h; const char* en; const char* fr; };
+static const ImgText IMG_TEXT[] = {
+    { 1, 105, -1, -1, 0, 0, "ON", "OUI" },
+    { 1, 106, -1, -1, 0, 0, "OFF", "NON" },
+    { 1, 377, -1, -1, 0, 0, "Show", "Afficher" },
+    { 1, 378, -1, -1, 0, 0, "Hide", "Masquer" },
+    { 1, 379, -1, -1, 0, 0, "Log", "Journal" },
+    { 1, 408, -1, -1, 0, 0, "Both", "Les deux" },
+    { 1, 409, -1, -1, 0, 0, "Screen", "\xC3\x89""cran" },
+    { 1, 432, -1, -1, 0, 0, "For Others", "Des autres" },
+    { 1, 486, -1, -1, 0, 0, "Full", "Complet" },
+    { 1, 487, -1, -1, 0, 0, "Compact", "Compact" },
+    { 1, 500, -1, -1, 0, 0, "Movement", "D\xC3\xA9placement" },
+    { 1, 501, -1, -1, 0, 0, "Commands", "Commandes" },
+    { 1, 502, -1, -1, 0, 0, "Default", "D\xC3\xA9""faut" },
+    { 1, 528, -1, -1, 0, 0, "High", "Haute" },
+    { 1, 529, -1, -1, 0, 0, "Normal", "Normale" },
+    { 1, 530, -1, -1, 0, 0, "Off", "Non" },
+    { 1, 531, -1, -1, 0, 0, "Normal", "Normal" },
+    { 1, 532, -1, -1, 0, 0, "Inverted", "Invers\xC3\xA9" },
+    { 1, 533, -1, -1, 0, 0, "Chase Cam", "Cam\xC3\xA9ra suiveuse" },
+    { 1, 534, -1, -1, 0, 0, "Type 1", "Type 1" },
+    { 1, 535, -1, -1, 0, 0, "Type 2", "Type 2" },
+    { 1, 630, -1, -1, 0, 0, "Full", "Complet" },
+    { 1, 631, -1, -1, 0, 0, "Compact 1", "Compact 1" },
+    { 1, 632, -1, -1, 0, 0, "Compact 2", "Compact 2" },
+    { 1, 633, -1, -1, 0, 0, "Dynamic", "Dynamique" },
+    { 1, 634, -1, -1, 0, 0, "Static", "Fixe" },
+    { 1, 655, -1, -1, 0, 0, "Normal", "Normal" },
+    { 1, 794, -1, -1, 0, 0, "Off", "Non" },
+    { 1, 795, -1, -1, 0, 0, "Full", "Complet" },
+    { 1, 796, -1, -1, 0, 0, "Compact", "Compact" },
+    { 1, 830, -1, -1, 0, 0, "On", "Oui" },
+    { 1, 831, -1, -1, 0, 0, "Display Name Only", "Nom seulement" },
+    { 2, 2, -1, -1, 0, 0, "Markers", "Marqueurs" },
+    { 2, 3, -1, -1, 0, 0, "Wide Scan", "Wide Scan" },
+    { 2, 82, -1, -1, 0, 0, "To List", "Vers la liste" },
+    { 2, 83, -1, -1, 0, 0, "Messages", "Messages" },
+    { 2, 85, -1, -1, 0, 0, "Online Stat.", "Statut en ligne" },
+    { 2, 272, -1, -1, 0, 0, "Chat", "Chat" },
+    { 2, 273, -1, -1, 0, 0, "For Self", "Les miens" },
+    { 2, 277, -1, -1, 0, 0, "System", "Syst\xC3\xA8me" },
+    { 2, 278, -1, -1, 0, 0, "Default", "D\xC3\xA9""faut" },
+    { 2, 345, -1, -1, 0, 0, "10", "10" },
+    { 2, 346, -1, -1, 0, 0, "20", "20" },
+    { 2, 347, -1, -1, 0, 0, "30", "30" },
+    { 2, 348, -1, -1, 0, 0, "40", "40" },
+    { 2, 349, -1, -1, 0, 0, "50", "50" },
+    { 2, 350, -1, -1, 0, 0, "60", "60" },
+    { 2, 351, -1, -1, 0, 0, "OFF", "NON" },
+    { 2, 494, -1, -1, 0, 0, "Change Map", "Changer de carte" },
+    { 1, 380, 0, 0, 46, 11, "Global", "Global" },
+    { 1, 380, 25, 27, 112, 13, "Language Filter", "Filtre de langue" },
+    { 1, 380, 40, 43, 146, 13, "Chat Language Filter", "Filtre de langue du chat" },
+    { 1, 380, 24, 91, 127, 11, "Auto-Disconnect", "D\xC3\xA9""connexion auto" },
+    { 1, 380, 41, 107, 266, 11, "Idle time (min.) until auto-disconnect", "Inactivit\xC3\xA9 (min) avant d\xC3\xA9""connexion" },
+    { 1, 464, 0, 0, 36, 11, "Misc.", "Divers" },
+    { 1, 464, 26, 27, 112, 14, "Damage Display", "Affichage des d\xC3\xA9g\xC3\xA2ts" },
+    { 1, 464, 42, 43, 198, 14, "On-screen damage display", "D\xC3\xA9g\xC3\xA2ts \xC3\xA0 l'\xC3\xA9""cran" },
+    { 1, 464, 25, 75, 36, 11, "Misc.", "Divers" },
+    { 1, 464, 41, 89, 160, 11, "Character Information", "Infos des personnages" },
+    { 1, 464, 26, 123, 60, 11, "Shadows", "Ombres" },
+    { 1, 464, 25, 156, 117, 11, "Weather Effects", "Effets m\xC3\xA9t\xC3\xA9o" },
+    { 1, 464, 25, 187, 206, 14, "Character Models Displayed", "Personnages affich\xC3\xA9s" },
+    { 1, 464, 47, 203, 22, 11, "Min", "Min" },
+    { 1, 464, 285, 203, 26, 11, "Max", "Max" },
+    { 1, 464, 26, 219, 66, 14, "Icon Type", "Type d'ic\xC3\xB4ne" },
+    { 1, 464, 26, 251, 124, 14, "PC Armor Display", "Armures des joueurs" },
+    { 1, 465, 0, 0, 101, 13, "Game Settings", "R\xC3\xA9glages du jeu" },
+    { 1, 465, 24, 19, 262, 13, "Controls : Auto-target during battle", "Contr\xC3\xB4les : cible auto en combat" },
+    { 1, 465, 25, 52, 44, 11, "Sound", "Son" },
+    { 1, 465, 73, 60, 158, 11, "Sound Effects Volume", "Volume des effets" },
+    { 1, 465, 46, 77, 22, 11, "Min", "Min" },
+    { 1, 465, 284, 77, 26, 11, "Max", "Max" },
+    { 1, 465, 72, 92, 96, 11, "Music Volume", "Volume de la musique" },
+    { 1, 465, 46, 109, 22, 11, "Min", "Min" },
+    { 1, 465, 284, 109, 26, 11, "Max", "Max" },
+    { 1, 465, 24, 128, 128, 12, "Gamma Adjustment", "R\xC3\xA9glage gamma" },
+    { 1, 465, 61, 145, 9, 11, "R", "R" },
+    { 1, 465, 60, 162, 9, 11, "G", "V" },
+    { 1, 465, 61, 181, 8, 11, "B", "B" },
+    { 1, 465, 26, 204, 71, 14, "Inventory", "Inventaire" },
+    { 1, 465, 73, 220, 30, 11, "Sort", "Tri" },
+    { 1, 465, 72, 252, 34, 14, "Type", "Type" },
+    { 1, 469, 0, 0, 48, 11, "Misc. 2", "Divers 2" },
+    { 1, 469, 25, 27, 107, 13, "Clipping Plane", "Distance d'affichage" },
+    { 1, 469, 47, 43, 22, 11, "Min", "Min" },
+    { 1, 469, 285, 43, 26, 11, "Max", "Max" },
+    { 1, 469, 27, 59, 126, 13, "Footstep Effects", "Effets de pas" },
+    { 1, 469, 25, 91, 155, 11, "Animation Frame Rate", "Fluidit\xC3\xA9 des animations" },
+    { 1, 469, 47, 107, 22, 11, "Min", "Min" },
+    { 1, 469, 285, 107, 26, 11, "Max", "Max" },
+    { 1, 469, 26, 135, 103, 14, "Keyboard Size", "Taille du clavier" },
+    { 1, 469, 26, 171, 185, 13, "Background Aspect Ratio", "Format de l'arri\xC3\xA8re-plan" },
+    { 1, 469, 47, 187, 22, 11, "Min", "Min" },
+    { 1, 469, 285, 187, 26, 11, "Max", "Max" },
+    { 1, 469, 26, 203, 113, 14, "Key Assignment", "Assignation des touches" },
+    { 1, 469, 25, 235, 130, 12, "Macro Palette Size", "Taille de la palette de macros" },
+    { 1, 469, 25, 267, 158, 11, "Macro Palette Position", "Position de la palette de macros" },
+    { 1, 536, 0, 0, 103, 11, "Mouse/Camera", "Souris/Cam\xC3\xA9ra" },
+    { 1, 536, 25, 29, 100, 11, "Mouse Control", "Contr\xC3\xB4le \xC3\xA0 la souris" },
+    { 1, 536, 26, 61, 148, 13, "Screen Edge Panning", "D\xC3\xA9""filement aux bords" },
+    { 1, 536, 25, 93, 86, 11, "Camera View", "Vue de la cam\xC3\xA9ra" },
+    { 1, 536, 25, 125, 152, 11, "Third-Person Camera", "Cam\xC3\xA9ra 3e personne" },
+    { 1, 536, 25, 142, 42, 11, "Y Axis", "Axe Y" },
+    { 1, 536, 26, 162, 40, 11, "X Axis", "Axe X" },
+    { 1, 536, 27, 185, 147, 11, "First-Person Camera", "Cam\xC3\xA9ra 1re personne" },
+    { 1, 536, 25, 202, 42, 11, "Y Axis", "Axe Y" },
+    { 1, 536, 26, 222, 40, 11, "X Axis", "Axe X" },
+    { 1, 751, 0, 0, 47, 11, "Misc. 3", "Divers 3" },
+    { 1, 751, 25, 26, 103, 13, "Weapon Effect", "Effet des armes" },
+    { 1, 751, 26, 59, 74, 14, "Style Lock", "Style Lock" },
+    { 1, 751, 25, 92, 91, 14, "Area Display", "Affichage de la zone" },
+    { 1, 751, 25, 125, 134, 13, "Target Expressions", "Expressions de cible" },
+    { 1, 751, 26, 157, 83, 11, "Status Icons", "Ic\xC3\xB4nes d'\xC3\xA9tat" },
+    { 1, 751, 42, 172, 129, 14, "Party Icon Display", "Ic\xC3\xB4nes du groupe" },
+    { 1, 751, 42, 204, 95, 14, "Timer Display", "Affichage des dur\xC3\xA9""es" },
+    { 1, 751, 27, 238, 182, 11, "Furniture Camera Collision", "Collision cam\xC3\xA9ra / meubles" },
+    { 1, 793, 0, 0, 48, 11, "Misc. 4", "Divers 4" },
+    { 1, 793, 26, 25, 137, 14, "Software Keyboard", "Clavier logiciel" },
+    { 1, 793, 25, 58, 74, 11, "Term Filter", "Filtre de termes" },
+};
+static const ImgText* img_word(int sheet, unsigned short id) {
+    for (const ImgText& t : IMG_TEXT) if (t.sheet == sheet && t.id == id && t.x < 0) return &t;
+    return nullptr;
+}
+static bool img_has_captions(int sheet, unsigned short id) {
+    for (const ImgText& t : IMG_TEXT) if (t.sheet == sheet && t.id == id && t.x >= 0) return true;
+    return false;
+}
 // fills r.ltex... from the entry's sprite (sheet 1 windowps, 2 keytops3 ; id + 1) ; false = keep the text label
 bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
     if (!dev || !sheet || !sprPlus1) return false;
     const unsigned short id = (unsigned short)(sprPlus1 - 1);
+    if (const ImgText* t = img_word(sheet, id)) { r.label = gtr(t->en, t->fr); r.ltex = 0; return false; }   // a word we know : OUR type
     int slot = -1; for (int i = 0; i < 96; ++i) if (g_lbl[i].sheet == sheet && g_lbl[i].id == id && (g_lbl[i].tex || g_lbl[i].tries)) { slot = i; break; }
     if (slot < 0) { for (int i = 0; i < 96 && slot < 0; ++i) if (!g_lbl[i].sheet) slot = i;
         if (slot < 0) { slot = (int)(g_lblClock++ % 96); if (g_lbl[slot].tex) release_texture(g_lbl[slot].tex); }
@@ -708,6 +860,10 @@ bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
         }
     }
     if (!L.tex) return false;
+    ++g_audImg;                                                       // the audit counts them
+    {   // ... and remembers WHICH (dev : //aio lbldump writes them out, to be read and written in our type)
+        bool known = false; for (int q = 0; q < g_lblSeenN; ++q) if (g_lblSeen[q] == (sheet << 16 | id)) known = true;
+        if (!known && g_lblSeenN < 512) g_lblSeen[g_lblSeenN++] = sheet << 16 | id; }
     r.ltex = L.tex; r.lw = (float)L.w; r.lh = (float)L.h; r.lu1 = (float)L.w / (float)L.pw; r.lv1 = (float)L.h / (float)L.ph;
     g_lblOx = L.ox; g_lblOy = L.oy;
     return true;
@@ -816,7 +972,8 @@ void menu_cut(int key, int kind, float x, float y, float w, float h, float r) {
     if (g_mcN < 96) { MenuCut& c = g_mc[g_mcN++]; c.key = key; c.kind = kind; c.x = x; c.y = y; c.w = w; c.h = h; c.r = r; }
 }
 inline float ovl(float a0, float a1, float b0, float b1) { return (a1 < b1 ? a1 : b1) - (a0 > b0 ? a0 : b0); }   // > 0 : overlap length, < 0 : gap
-void menu_frame_end() {                                  // once a frame (actmenu_hits_clear) : the joins of the rects placed, then a fresh list
+void menu_frame_end() {
+    audit_frame_end();                                  // once a frame (actmenu_hits_clear) : the joins of the rects placed, then a fresh list
     const float bi = box_inset(ui_config().muBox);
     g_mjN = 0;
     // the mask (gfx/window.h g_frameJoin) : bits 0-3 the glued sides (1 L 2 T 4 R 8 B) ; then PER SIDE s (0 L 1 T 2 R 3 B)
@@ -1084,6 +1241,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     const int row = (int)(ry / step);
     return (row < n && ry - (float)row * step < k.capH) ? row + 1 : 0;
 }
+#define block_draw(...) (g_audCaller = __LINE__, block_draw(__VA_ARGS__))   // the UI audit names the caller
 
 } // namespace
 
@@ -6700,7 +6858,18 @@ void gen_grid_draw(const Frame& f) {
     draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     // the frame's static texts : its sprite's letters at their place (sprite origin = the window's)
     unsigned fspr = 0;
-    if (menu_window_frame(M.name, fspr)) { RowSpec fr; if (label_img(dev, 1, (unsigned short)(fspr + 1), fr)) {
+    if (menu_window_frame(M.name, fspr) && img_has_captions(1, (unsigned short)fspr)) {   // its captions, in OUR type, at their places
+        const MenuLabel* ML = menu_label("menu    windowps", (unsigned short)fspr);
+        const int ox = ML ? ML->ox : 0, oy = ML ? ML->oy : 0;
+        fo->begin(dev);
+        bool first = true;
+        for (const ImgText& t : IMG_TEXT) if (t.sheet == 1 && t.id == fspr && t.x >= 0) {
+            const float tx = snap(bx + (float)(ox + t.x) * sx), ty = snap(by + ((float)(oy + t.y) + (float)t.h * 0.5f) * sy);
+            fo->draw_lc(dev, tx, ty, gtr(t.en, t.fr), k.tz, with_alpha(first ? 0xFFE8D9B0u : 0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+            first = false;
+        }
+        cs(dev);
+    } else if (menu_window_frame(M.name, fspr)) { RowSpec fr; if (label_img(dev, 1, (unsigned short)(fspr + 1), fr)) {
         const float x = snap(bx + (float)g_lblOx * sx), y = snap(by + (float)g_lblOy * sy), w = snap(fr.lw * sx), h = snap(fr.lh * sy);
         dTexQuadState(dev, fr.ltex);
         tquad(dev, x + 1.0f * S, y + 1.0f * S, w, h, 0.0f, fr.lu1, 0.0f, fr.lv1, with_alpha(0xC8000000u, A), with_alpha(0xC8000000u, A));
@@ -6720,14 +6889,18 @@ void gen_grid_draw(const Frame& f) {
             if (fw > 1.0f) rrect(dev, x + 2.0f * S, y + 2.0f * S, fw, h - 4.0f * S, (h - 4.0f * S) * 0.5f, with_alpha(on ? 0xE0FFDA8Au : 0xB0C8A860u, a), with_alpha(on ? 0xC0E8B860u : 0x90A88848u, a));
             rrect_stroke(dev, x, y, w, h, r, with_alpha(on ? 0xE0FFDA8Au : 0x38C8D6EAu, a), on ? 1.5f * S : 1.0f);
             char t[16]; if (last.gvalText[i][0]) lstrcpynA(t, last.gvalText[i], sizeof(t)); else sprintf(t, "%d", last.gval[i]);
-            fo->begin(dev); fo->draw_lc(dev, snap(x + w + 6.0f * S), snap(y + h * 0.5f), t, k.tz * 0.85f, with_alpha(on ? 0xFFFFFFFFu : 0xFFC9D3E0u, a), with_alpha(0xC8000000u, a), k.ow);
+            // the value INSIDE the track, at its right (after it, it ran into the client's "Max" caption -- 2026-11-27)
+            fo->begin(dev); fo->draw_lc(dev, snap(x + w - 6.0f * S - fo->measure(t, k.tz * 0.85f)), snap(y + h * 0.5f), t, k.tz * 0.85f, with_alpha(on ? 0xFFFFFFFFu : 0xFFE4EAF2u, a), with_alpha(0xE0000000u, a), k.ow);
             if (ms && ms->focused && ms->x >= x && ms->x < x + w && ms->y >= y && ms->y < y + h) ment = M.entry[i];
             continue;
         }
         rrect(dev, x, y, w, h, r, with_alpha(on ? 0x50FFDA8Au : chosen ? 0x40C8A860u : 0x5A1C2638u, a), with_alpha(on ? 0x38FFDA8Au : chosen ? 0x30A88848u : 0x5A0A0F18u, a));
         rrect_stroke(dev, x, y, w, h, r, with_alpha(on ? 0xE0FFDA8Au : chosen ? 0xB0FFDA8Au : 0x38C8D6EAu, a), on || chosen ? 1.5f * S : 1.0f);
-        RowSpec rs; rs.ltex = 0;
-        if (M.sheet[i] && label_img(dev, M.sheet[i], M.spr[i][0], rs)) {
+        RowSpec rs; rs.ltex = 0; rs.label = nullptr;
+        if (M.sheet[i] && !label_img(dev, M.sheet[i], M.spr[i][0], rs) && rs.label) {   // a known word : OUR type, centred
+            const u32 lc = on ? 0xFFFFFFFFu : chosen ? 0xFFFFE9B0u : other ? 0xFF8A96A8u : 0xFFC9D3E0u;
+            fo->begin(dev); fo->draw_c(dev, snap(x + w * 0.5f), snap(y + h * 0.5f), rs.label, k.tz * 0.92f, with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow); cs(dev);
+        } else if (rs.ltex) {
             const float ih = h * 0.72f, iw = rs.lh > 0.0f ? rs.lw * ih / rs.lh : 0.0f, ix = snap(x + (w - iw) * 0.5f), iy = snap(y + (h - ih) * 0.5f);
             const u32 lc = on ? 0xFFFFFFFFu : chosen ? 0xFFFFE9B0u : other ? 0xFF8A96A8u : 0xFFC9D3E0u;   // the option in force bright, the others dim
             dTexQuadState(dev, rs.ltex);
@@ -6859,6 +7032,8 @@ void gen_panel_draw(const Frame& f) {
         const NativeGenMenus::Panel& P = last[s];
         if (!strcmp(P.name, "miss00") && (native_missions().ok || native_missions().detailOk)) open = false;   // Missions read as data : missions_draw draws it
         if (!strcmp(P.name, "quest01") && native_journal().ok) open = false;
+        // quest00 is ALSO Unity's Info / Ranking window (under ut_menu) : its module draws it -- not twice (2026-11-27)
+        if (!strncmp(P.name, "quest0", 6) && (native_unity_info().open || native_unity_rank().open)) open = false;   // quest00 AND its list quest01 (Ranking Results)
         if (!strcmp(P.name, "evitem01") && native_key_items().ok) open = false;   // Key Items' question : key_items_draw asks it, in its own box   // the journal read as data : journal_draw draws it
         const bool shown = open && (P.focused || !anyFocused);              // the panel it opened on top (Quests -> a list) replaces it
         if (!block_ease(g_gpB[s], shown, now, dt) || P.uiW <= 0) { if (!open && g_gpB[s].vis <= 0.0f) g_gpName[s][0] = 0; continue; }
@@ -10150,4 +10325,37 @@ void map_screen_hud(const Frame& f) {
     }
 }
 
+
+// //aio uiaudit : last frame's boxes and every pair of DIFFERENT drawers overlapping by a third of the smaller one
+void ui_audit_dump() {
+    windower::debug::log("UIAUDIT %d box(es)", g_audPN);
+    for (int i = 0; i < g_audPN; ++i) windower::debug::log("UIAUDIT box line %d at %d,%d %dx%d", g_audP[i].line, (int)g_audP[i].x, (int)g_audP[i].y, (int)g_audP[i].w, (int)g_audP[i].h);
+    int bad = 0;
+    for (int i = 0; i < g_audPN; ++i) for (int j = i + 1; j < g_audPN; ++j) {
+        const AuditBox &a = g_audP[i], &b = g_audP[j];
+        if (a.line == b.line) continue;
+        const float ox = fminf(a.x + a.w, b.x + b.w) - fmaxf(a.x, b.x), oy = fminf(a.y + a.h, b.y + b.h) - fmaxf(a.y, b.y);
+        if (ox <= 6.0f || oy <= 6.0f) continue;                       // glued borders touch : not an overlap
+        const float area = ox * oy, smallA = fminf(a.w * a.h, b.w * b.h);
+        if (area >= smallA * 0.33f) { ++bad; windower::debug::log("UIAUDIT OVERLAP line %d and line %d : %d pct of the smaller", a.line, b.line, (int)(100.0f * area / smallA)); }
+    }
+    windower::debug::log("UIAUDIT images %d", g_audImgP);
+    windower::debug::log("UIAUDIT done : %d overlap(s)", bad);
+}
+
+// //aio lbldump : every label image drawn this session, written as <data>\lbldump\<sheet>_<id>.raw (u16 w, u16 h, BGRA)
+void ui_label_dump() {
+    char dir[MAX_PATH]; plugin_path(dir, sizeof(dir), "data\\lbldump"); CreateDirectoryA(dir, nullptr);
+    int n = 0;
+    for (int q = 0; q < g_lblSeenN; ++q) {
+        const int sheet = g_lblSeen[q] >> 16, id = g_lblSeen[q] & 0xFFFF;
+        const MenuLabel* M = menu_label(sheet == 1 ? "menu    windowps" : "menu    keytops3", (unsigned short)id);
+        if (!M || M->w <= 0 || M->h <= 0) continue;
+        char p[MAX_PATH]; _snprintf(p, sizeof(p), "%s\\%d_%d.raw", dir, sheet, id); p[MAX_PATH - 1] = 0;
+        FILE* fp = fopen(p, "wb"); if (!fp) continue;
+        const unsigned short w = (unsigned short)M->w, h = (unsigned short)M->h;
+        fwrite(&w, 2, 1, fp); fwrite(&h, 2, 1, fp); fwrite(M->px, 4, (size_t)w * h, fp); fclose(fp); ++n;
+    }
+    windower::debug::log("LBLDUMP %d image(s) written to %s", n, dir);
+}
 } // namespace aio

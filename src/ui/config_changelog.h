@@ -687,6 +687,10 @@ static const ChangeLine CL_88[] = {
 };
 
 static const ChangeLine CL_112[] = {
+    { "*Config, in our type everywhere* : its option names, captions and buttons (ON / OFF, Full / Compact...) are written in the menus' font, no longer the client's pictures ; a slider's value sits inside its bar.",
+      "*Config, dans notre police partout* : noms des options, lÃ©gendes et boutons (ON / OFF, Full / Compact...) sont Ã©""crits dans la police des menus, plus les images du client ; la valeur d'une rÃ©glette est dans sa barre.", CK_IMPROVED, "Game UI", "Interface du jeu" },
+    { "*Unity Information / Ranking and Party's member list* are no longer drawn twice.",
+      "*Unity (Informations / Classements) et la liste des membres du groupe* ne sont plus dessinÃ©""es en double.", CK_FIXED, "Game UI", "Interface du jeu" },
     { "*The Equipment screen, redrawn as one sheet* (Game UI > Menus and screens > Equipment screen : Sheet, the default ; Classic keeps the previous layout). Your name, jobs, item level and Su, HP / MP / TP gauges, your attributes and your gil on the left ; the 16 slots with Attack, Defense and the resists ; the piece worn described at the right.",
       "*L'\xC3\xA9""cran \xC3\x89quipement, redessin\xC3\xA9 en une seule fiche* (Interface du jeu > Menus et \xC3\xA9""crans > \xC3\x89""cran \xC3\x89quipement : Fiche, par d\xC3\xA9""faut ; Classique garde l'ancienne disposition). Ton nom, tes jobs, ton iLv et Su, les jauges HP / MP / TP, tes attributs et tes gils \xC3\xA0 gauche ; les 16 emplacements avec Attaque, D\xC3\xA9""fense et r\xC3\xA9sistances ; la pi\xC3\xA8""ce port\xC3\xA9""e d\xC3\xA9""crite \xC3\xA0 droite.", CK_NEW, "Game UI", "Interface du jeu" },
     { "*Compare before you change a piece.* In a slot, the piece worn and the one under the cursor are shown side by side under the sheet, each with its stats, effects and augments.",
