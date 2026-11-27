@@ -49,7 +49,7 @@ inline void config_defaults(UiConfig& c, bool keepZones) {
                                    // no in-class initialiser, so a plain `UiConfig d;` would copy garbage)
     const int lang = c.lang;
     const int cfgAdv = c.cfgAdv;
-    char updSeen[16]; memcpy(updSeen, c.updSeen, sizeof(updSeen));
+    char updSeen[16]; memcpy(updSeen, c.updSeen, sizeof(updSeen)); const int edLock = c.edLock;
     const float cfgScale = c.cfgScale; const int cfgBg = c.cfgBg, cfgReopen = c.cfgReopen, cfgLastTab = c.cfgLastTab, cfgLastSec = c.cfgLastSec;
     const int selfTest = c.selfTest;
     const int favN = (c.favColorN < 0) ? 0 : (c.favColorN > UiConfig::FAV_COLOR_MAX ? UiConfig::FAV_COLOR_MAX : c.favColorN);
@@ -64,7 +64,7 @@ inline void config_defaults(UiConfig& c, bool keepZones) {
 
     c.lang = lang;
     c.cfgAdv = cfgAdv;
-    memcpy(c.updSeen, updSeen, sizeof(updSeen));
+    memcpy(c.updSeen, updSeen, sizeof(updSeen)); c.edLock = edLock;
     c.cfgScale = cfgScale; c.cfgBg = cfgBg; c.cfgReopen = cfgReopen; c.cfgLastTab = cfgLastTab; c.cfgLastSec = cfgLastSec;   // the config window's own
     c.selfTest = selfTest;
     c.favColorN = favN;

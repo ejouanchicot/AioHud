@@ -30,12 +30,21 @@ bool edit_z_topmost(int boxId) { return g_zTopPrev < 0 || boxId == g_zTopPrev; }
 
 // UI BLOCKER (the edit toolbar). Published each frame it's visible ; boxes check it (with their own f.t) so a
 // stale rect (edit off, or the toolbar hidden during a drag) is inert past a short window.
-static float g_blkX = 0, g_blkY = 0, g_blkW = 0, g_blkH = 0, g_blkT = -1e9f;
-void edit_set_ui_blocker(float x, float y, float w, float h, float t) { g_blkX = x; g_blkY = y; g_blkW = w; g_blkH = h; g_blkT = t; }
+// the editor's own panels own the clicks over them (the toolbar, the modules drawer, the inspector) : one slot each
+struct Blk { float x, y, w, h, t; };
+static Blk g_blk[4] = { { 0, 0, 0, 0, -1e9f }, { 0, 0, 0, 0, -1e9f }, { 0, 0, 0, 0, -1e9f }, { 0, 0, 0, 0, -1e9f } };
+void edit_set_ui_blocker(float x, float y, float w, float h, float t) { edit_add_ui_blocker(0, x, y, w, h, t); }
+void edit_add_ui_blocker(int slot, float x, float y, float w, float h, float t) { if (slot >= 0 && slot < 4) g_blk[slot] = { x, y, w, h, t }; }
 bool edit_over_ui_blocker(float mx, float my, float t) {
-    if (t - g_blkT > 0.25f) return false;                   // not published recently -> inert
-    return mx >= g_blkX && mx < g_blkX + g_blkW && my >= g_blkY && my < g_blkY + g_blkH;
+    for (int i = 0; i < 4; ++i) {
+        const Blk& b = g_blk[i];
+        if (t - b.t > 0.25f || t < b.t) continue;            // not published recently -> inert
+        if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) return true;
+    }
+    return false;
 }
+bool edit_box_locked(int id) { return id >= 0 && id < 31 && (ui_config().edLock & (1 << id)) != 0; }
+void edit_box_set_locked(int id, bool on) { if (id < 0 || id >= 31) return; if (on) ui_config().edLock |= (1 << id); else ui_config().edLock &= ~(1 << id); save_ui_config(); }
 
 // Box-vs-box occupancy : every standalone box publishes its rect here each edit frame ; a dragged box is
 // then shoved out of the OTHERS so two boxes can't overlap (same minimal-translation resolve as the zone
@@ -79,10 +88,10 @@ void edit_box_push_out(int id, float curT, float& ex, float& ey, float ew, float
 const char* edit_box_name(int id, bool fr) {
     static const char* EN[EDITBOX_COUNT] = { "Target", "Player", "Minimap", "Party", "Alliance 1", "Alliance 2", "Arcade WS", "Skillchains",
         "Treasure Pool", "Hate List", "PointWatch", "Grimoire", "Zone Tracker", "Timers", "Recasts", "Equipment", "EmpyPop", "Debuffs",
-        "Absorb-TP", "Pet", "Chat", "Battle log" };
+        "Absorb-TP", "Pet", "Chat : Talk", "Chat : Battle" };
     static const char* FR[EDITBOX_COUNT] = { "Cible", "Joueur", "Minicarte", "Groupe", "Alliance 1", "Alliance 2", "Arcade WS", "Skillchains",
         "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire", "Zone Tracker", "Timers", "Recasts", "\xC3\x89quipement", "EmpyPop", "Debuffs",
-        "Absorb-TP", "Pet", "Chat", "Combat" };
+        "Absorb-TP", "Pet", "Chat : Discussion", "Chat : Combat" };
     return (id >= 0 && id < EDITBOX_COUNT) ? (fr ? FR[id] : EN[id]) : "";
 }
 struct Bind { float* fx; float* fy; bool* posSet; int* cH; int* cV; float* scale; float t; };
@@ -118,6 +127,8 @@ void edit_box_redo() { if (!g_redoN) return; const Undo u = g_redo[--g_redoN]; i
 // the KEYS (from the key hook, aio_plugin_key) : accumulated, applied by the selected box's own edit_box_drag call
 static volatile int g_nudgeX = 0, g_nudgeY = 0, g_resetReq = 0;
 static float g_lastNudgeT = -10.0f, g_lastWheelT = -10.0f;
+static float g_scrW = 0.0f, g_scrH = 0.0f;   // the screen, for the grid (set by the drags)
+static const int GRID_C = 48, GRID_R = 27;
 static void snap_to_boxes(int id, float t, float& ex, float& ey, float W, float H, bool lockX, bool lockY);
 static int g_setId = -1; static float g_setX = 0.0f, g_setY = 0.0f;
 void edit_box_set_pos(int id, float x, float y) { g_setId = id; g_setX = x; g_setY = y; }
@@ -126,12 +137,12 @@ void edit_box_bind(int id, float* fx, float* fy, bool* posSet, float* scale, flo
     if (!in_cfg(fx) || !in_cfg(fy)) return;
     Bind& b = g_bind[id]; b.fx = fx; b.fy = fy; b.posSet = in_cfg(posSet) ? posSet : nullptr; b.cH = nullptr; b.cV = nullptr; b.scale = in_cfg(scale) ? scale : nullptr; b.t = t;
 }
-void edit_box_snap(int id, float t, float& ex, float& ey, float W, float H) { snap_to_boxes(id, t, ex, ey, W, H, false, false); }
+void edit_box_snap(int id, float t, float& ex, float& ey, float W, float H, float sw, float sh) { g_scrW = sw; g_scrH = sh; snap_to_boxes(id, t, ex, ey, W, H, false, false); }
 void edit_box_grabbed(int id) { undo_record(id); g_sel = id; }
 void edit_box_wheeled(int id, float t) { if (t - g_lastWheelT > 0.8f || t < g_lastWheelT) undo_record(id); g_lastWheelT = t; g_sel = id; }
 bool edit_box_take(int id, float t, int& dx, int& dy, bool& set, float& sx, float& sy, bool& reset) {
     dx = dy = 0; set = reset = false; sx = sy = 0.0f;
-    if (id != g_sel || !bound(id)) return false;
+    if (id != g_sel || !bound(id) || edit_box_locked(id)) return false;
     if (g_nudgeX || g_nudgeY) {
         dx = g_nudgeX; dy = g_nudgeY; g_nudgeX = 0; g_nudgeY = 0;
         if (t - g_lastNudgeT > 0.8f || t < g_lastNudgeT) undo_record(id);
@@ -157,7 +168,7 @@ bool edit_box_key(int dik, bool shift, bool ctrl) {
 }
 
 // the GUIDES a drag snapped to this frame (drawn by the overlay)
-static EditGuide g_guide[4]; static int g_guideN = 0; static float g_guideT = -1.0f;
+static EditGuide g_guide[8]; static int g_guideN = 0; static float g_guideT = -1.0f;
 int edit_box_guides(EditGuide* out, int max, float t) {
     if (t - g_guideT > 0.05f || t < g_guideT) return 0;
     int n = g_guideN < max ? g_guideN : max; for (int i = 0; i < n; ++i) out[i] = g_guide[i]; return n;
@@ -171,34 +182,76 @@ int edit_box_hovered() { return g_zTopBox; }   // this frame's topmost box under
 
 // SNAP to the other boxes : the dragged box's left / centre / right against theirs (and abutting edge to edge), the
 // same vertically ; within a few px it locks and the line that caught it is recorded for the overlay
+// THE SNAP (2026-11-27), per axis, the closest within reach wins, in this order of kind :
+//   1. ALIGN with another box : edge to edge, centre to centre (a guide along the shared line)
+//   2. CENTRE BETWEEN two boxes : the gap split in two equal halves (two guides measure the two equal gaps)
+//   3. the GRID (48 x 27, the one drawn while dragging) : an edge or the centre on a line -- only when 1 and 2 found nothing
 static void snap_to_boxes(int id, float t, float& ex, float& ey, float W, float H, bool lockX, bool lockY) {
     const float TH = snap(7.0f);
-    float bestDX = TH + 1.0f, bestDY = TH + 1.0f, gx = 0, gy = 0; int bx = -1, by = -1;
+    struct Cand { float d; int kind; float pos; int a, b; };   // kind 0 align, 1 between ; a/b : the boxes
+    Cand bx = { TH + 1.0f, -1, 0.0f, -1, -1 }, by = bx;
     const float me[3] = { ex, ex + W * 0.5f, ex + W }, mey[3] = { ey, ey + H * 0.5f, ey + H };
+    int live[EDITBOX_COUNT]; int nl2 = 0;
     for (int i = 0; i < EDITBOX_COUNT; ++i) {
         if (i == id || !g_boxReg[i].used) continue;
         float dt = t - g_boxReg[i].t; if (dt < 0.0f) dt = -dt; if (dt > 0.20f) continue;
-        const BoxSlot& b = g_boxReg[i];
+        live[nl2++] = i;
+    }
+    for (int q = 0; q < nl2; ++q) {   // 1. align
+        const BoxSlot& b = g_boxReg[live[q]];
         const float tx[3] = { b.x, b.x + b.w * 0.5f, b.x + b.w }, ty[3] = { b.y, b.y + b.h * 0.5f, b.y + b.h };
         for (int a = 0; a < 3; ++a) for (int c = 0; c < 3; ++c) {
             if ((a == 1) != (c == 1)) continue;                                   // centre to centre ; edge to edge
-            if (!lockX) { const float d = tx[c] - me[a]; if (fabsf(d) < fabsf(bestDX)) { bestDX = d; gx = tx[c]; bx = i; } }
-            if (!lockY) { const float d = ty[c] - mey[a]; if (fabsf(d) < fabsf(bestDY)) { bestDY = d; gy = ty[c]; by = i; } }
+            if (!lockX) { const float d = tx[c] - me[a]; if (fabsf(d) < fabsf(bx.d)) { bx = { d, 0, tx[c], live[q], -1 }; } }
+            if (!lockY) { const float d = ty[c] - mey[a]; if (fabsf(d) < fabsf(by.d)) { by = { d, 0, ty[c], live[q], -1 }; } }
+        }
+    }
+    for (int p = 0; p < nl2; ++p) for (int q = 0; q < nl2; ++q) {   // 2. centred between two boxes (A before B on that axis)
+        if (p == q) continue;
+        const BoxSlot& A = g_boxReg[live[p]]; const BoxSlot& B = g_boxReg[live[q]];
+        if (!lockX && A.x + A.w <= B.x) {
+            const float gap = B.x - (A.x + A.w);
+            if (gap > W) { const float mid = (A.x + A.w + B.x) * 0.5f, d = mid - me[1]; if (fabsf(d) < fabsf(bx.d)) bx = { d, 1, mid, live[p], live[q] }; }
+        }
+        if (!lockY && A.y + A.h <= B.y) {
+            const float gap = B.y - (A.y + A.h);
+            if (gap > H) { const float mid = (A.y + A.h + B.y) * 0.5f, d = mid - mey[1]; if (fabsf(d) < fabsf(by.d)) by = { d, 1, mid, live[p], live[q] }; }
         }
     }
     g_guideN = 0; g_guideT = t;
-    if (bx >= 0 && fabsf(bestDX) <= TH) {
-        ex += bestDX; const BoxSlot& b = g_boxReg[bx];
-        const float a0 = (ey < b.y ? ey : b.y), a1 = ((ey + H) > (b.y + b.h) ? (ey + H) : (b.y + b.h));
-        EditGuide g = { true, gx, a0, a1 }; g_guide[g_guideN++] = g;
+    auto guide = [&](bool v, float pos, float a0, float a1) { if (g_guideN < 8) { EditGuide g = { v, pos, a0, a1 }; g_guide[g_guideN++] = g; } };
+    // 3. the grid, for an axis nothing else claimed
+    if (g_scrW > 1.0f && g_scrH > 1.0f) {
+        if (!lockX && fabsf(bx.d) > TH) for (int c = 1; c < GRID_C; ++c) {
+            const float gx = snap(g_scrW * (float)c / GRID_C);
+            for (int a = 0; a < 3; ++a) { const float d = gx - me[a]; if (fabsf(d) < fabsf(bx.d)) bx = { d, 2, gx, -1, -1 }; }
+        }
+        if (!lockY && fabsf(by.d) > TH) for (int r = 1; r < GRID_R; ++r) {
+            const float gy = snap(g_scrH * (float)r / GRID_R);
+            for (int a = 0; a < 3; ++a) { const float d = gy - mey[a]; if (fabsf(d) < fabsf(by.d)) by = { d, 2, gy, -1, -1 }; }
+        }
     }
-    if (by >= 0 && fabsf(bestDY) <= TH) {
-        ey += bestDY; const BoxSlot& b = g_boxReg[by];
-        const float a0 = (ex < b.x ? ex : b.x), a1 = ((ex + W) > (b.x + b.w) ? (ex + W) : (b.x + b.w));
-        EditGuide g = { false, gy, a0, a1 }; g_guide[g_guideN++] = g;
+    if (bx.kind >= 0 && fabsf(bx.d) <= TH) {
+        ex += bx.d;
+        if (bx.kind == 0) { const BoxSlot& b = g_boxReg[bx.a]; guide(true, bx.pos, ey < b.y ? ey : b.y, (ey + H) > (b.y + b.h) ? (ey + H) : (b.y + b.h)); }
+        else if (bx.kind == 1) {   // the two equal gaps, measured at the box's middle height
+            const BoxSlot& A = g_boxReg[bx.a]; const BoxSlot& B = g_boxReg[bx.b]; const float cy = ey + H * 0.5f;
+            guide(false, cy, A.x + A.w, ex); guide(false, cy, ex + W, B.x);
+        }
+        else guide(true, bx.pos, 0.0f, g_scrH);
+    }
+    if (by.kind >= 0 && fabsf(by.d) <= TH) {
+        ey += by.d;
+        if (by.kind == 0) { const BoxSlot& b = g_boxReg[by.a]; guide(false, by.pos, ex < b.x ? ex : b.x, (ex + W) > (b.x + b.w) ? (ex + W) : (b.x + b.w)); }
+        else if (by.kind == 1) {
+            const BoxSlot& A = g_boxReg[by.a]; const BoxSlot& B = g_boxReg[by.b]; const float cx = ex + W * 0.5f;
+            guide(true, cx, A.y + A.h, ey); guide(true, cx, ey + H, B.y);
+        }
+        else guide(false, by.pos, 0.0f, g_scrW);
     }
 }
 bool edit_box_bound(int id) { return bound(id); }
+float* edit_box_scale_ptr(int id) { return bound(id) ? g_bind[id].scale : nullptr; }
 void edit_box_frame_end() { if (!bound(g_sel)) { g_nudgeX = 0; g_nudgeY = 0; g_resetReq = 0; } }
 
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -243,6 +296,7 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
         Bind& bd = g_bind[boxId]; bd.fx = &fx; bd.fy = &fy; bd.posSet = in_cfg(&posSet) ? &posSet : nullptr;
         bd.cH = in_cfg(&centerH) ? &centerH : nullptr; bd.cV = in_cfg(&centerV) ? &centerV : nullptr; bd.scale = in_cfg(&scale) ? &scale : nullptr; bd.t = f.t; }
     // the KEYS, on the selected box : arrows nudge (1 / 10 px), Delete puts it back at its default place and size
+    if (boxId == g_sel && !st.dragging && edit_box_locked(boxId)) { g_nudgeX = 0; g_nudgeY = 0; g_resetReq = 0; if (g_setId == boxId) g_setId = -1; }   // a locked box : the keys do nothing
     if (boxId == g_sel && !st.dragging) {
         const int nx = g_nudgeX, ny = g_nudgeY;
         if (nx || ny) {
@@ -275,7 +329,7 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
     edit_z_track(boxId, over, f.t);                         // feed the shared z-order arbiter (see edit_box.h)
     // Topmost under the cursor AND not under the toolbar (which owns its own clicks). A box already being dragged
     // keeps priority regardless (the toolbar is hidden mid-drag anyway).
-    const bool topmost = (edit_z_topmost(boxId) && !edit_over_ui_blocker(m->x, m->y, f.t)) || st.dragging;
+    const bool topmost = (edit_z_topmost(boxId) && !edit_over_ui_blocker(m->x, m->y, f.t) && !edit_box_locked(boxId)) || st.dragging;   // a locked box is not grabbed
     // Grab only on a FRESH press (clicked), over the box, when it is the TOPMOST under the cursor and no OTHER box
     // already owns the drag. `clicked` (not held `down`) means sweeping over a box mid-drag can't grab it.
     if (m->clicked && !st.dragging && over && topmost && edit_drag_grab(&st)) {
@@ -306,6 +360,7 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
             }
             if (ex > f.screenW - W) ex = f.screenW - W; if (ex < 0.0f) ex = 0.0f;
             if (ey > f.screenH - H) ey = f.screenH - H; if (ey < 0.0f) ey = 0.0f;
+            g_scrW = f.screenW; g_scrH = f.screenH;
             if (!freePlace) snap_to_boxes(boxId, f.t, ex, ey, W, H, ctrl, shift);   // the other boxes' edges and centres (guides drawn by the overlay)
             else g_guideN = 0;
             // SNAP to the screen centre (engages the centre-lock so it stays centred through a resize). Not in free mode.
@@ -313,10 +368,9 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
             bool snapH = !freePlace && !ctrl  && fabsf(ex - ecx) < SNAP;
             bool snapV = !freePlace && !shift && fabsf(ey - ecy) < SNAP;
             if (snapH) ex = ecx; if (snapV) ey = ecy;
-            if (!freePlace) {   // free placement overrides ALL restrictions -> drop it anywhere, over any box or keep-out zone
-                guide_push_out(zperm, f.screenW, f.screenH, ex, ey, W, H);   // repelled by any forbidding zone
-                edit_box_push_out(boxId, f.t, ex, ey, W, H);                      // repelled by every OTHER box (no overlap)
-            }
+            // (no repulsion any more -- 2026-11-27 : a box may sit over another, e.g. Pet over the Alliance a pet player never
+            //  has ; the keep-out zones could no longer be seen or edited. The magnetic guides above still align it.)
+            (void)zperm;
             if (ex > f.screenW - W) ex = f.screenW - W; if (ex < 0.0f) ex = 0.0f;
             if (ey > f.screenH - H) ey = f.screenH - H; if (ey < 0.0f) ey = 0.0f;
             if (fabsf(ex - ecx) > 0.5f) snapH = false;                   // a zone pushed it off centre -> lock didn't hold
@@ -346,7 +400,7 @@ void edit_box_grid(u32 dev, const Frame& f, const EditBox& st, float px, float p
     const float sw = f.screenW, sh = f.screenH;
     // two-tier grid : fine MINOR lines + brighter MAJOR lines every few cells (pro alignment feel).
     const u32 minor = 0x0CFFFFFFu, major = 0x1EFFFFFFu;
-    const int NC = 48, NR = 27;
+    const int NC = GRID_C, NR = GRID_R;   // the grid the boxes snap to
     for (int i = 1; i < NC; ++i) { const float gx = snap(sw * (float)i / NC); const u32 c = (i % 6 == 0) ? major : minor; grad_quad(dev, gx, 0.0f, 1.0f, sh, c, c, c, c); }
     for (int i = 1; i < NR; ++i) { const float gy = snap(sh * (float)i / NR); const u32 c = (i % 3 == 0) ? major : minor; grad_quad(dev, 0.0f, gy, sw, 1.0f, c, c, c, c); }
     edit_vline(dev, snap(sw * 0.5f), sh, centerH);                      // centre guides on top

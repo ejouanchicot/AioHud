@@ -100,7 +100,7 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
                   bool measureOnly = false, float* outW = 0, float* outH = 0, bool sampleData = false) {
     const UiConfig& C = ui_config();
     const bool editing = C.editLayout && !preview;   // //aio edit -> place the box even with epShow off
-    if (!C.epShow && !preview && !editing) return;
+    if (!C.epShow && !preview) return;   // hidden = not drawn, in Edit Layout too (its drawer has the eye, 2026-11-27)
     u32 dev = f.dev;
     if (!f.font && !f.fonts) return;
 

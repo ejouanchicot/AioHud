@@ -36,7 +36,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
                   u32 buffAtlas, bool measureOnly = false, float* outW = 0, float* outH = 0) {
     const UiConfig& C = ui_config();
     const bool editing = C.editLayout && !preview;
-    if ((!C.dbShow || !C.tgtDebuffs) && !preview && !editing) return;   // detached only when Debuffs are ON + Standalone mode
+    if ((!C.dbShow || !C.tgtDebuffs) && !preview) return;   // only in Standalone mode -- Edit Layout too (2026-11-27)   // detached only when Debuffs are ON + Standalone mode
     u32 dev = f.dev;
     if (!f.font && !f.fonts) return;
 

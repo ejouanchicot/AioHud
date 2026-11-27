@@ -86,11 +86,15 @@ void  edit_box_set_pos(int id, float x, float y);
 // through the same guides, says when it is grabbed or wheeled (an undo step, the selection), and takes the pending
 // keys / typed position / reset meant for it (dx, dy px ; or an absolute top-left ; or reset). No centre lock.
 void  edit_box_bind(int id, float* fx, float* fy, bool* posSet, float* scale, float t);
-void  edit_box_snap(int id, float t, float& ex, float& ey, float W, float H);
+void  edit_box_snap(int id, float t, float& ex, float& ey, float W, float H, float sw, float sh);
 void  edit_box_grabbed(int id);
 void  edit_box_wheeled(int id, float t);
 bool  edit_box_take(int id, float t, int& dx, int& dy, bool& set, float& sx, float& sy, bool& reset);                  // move a bound box to (x, y) px (the toolbar's typed numbers)                                        // drops keys a non-movable selection could not take
 void edit_set_ui_blocker(float x, float y, float w, float h, float t);
+void edit_add_ui_blocker(int slot, float x, float y, float w, float h, float t);   // slot 0 = the toolbar, 1 the drawer, 2 the inspector
+bool  edit_box_locked(int id);                    // Edit Layout : a locked box is not moved (drag, steppers, typed position)
+void  edit_box_set_locked(int id, bool on);
+float* edit_box_scale_ptr(int id);                // the selected box's size field (nullptr when the box is not bound)
 bool edit_over_ui_blocker(float mx, float my, float t);
 
 } // namespace aio

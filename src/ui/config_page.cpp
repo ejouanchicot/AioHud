@@ -1357,11 +1357,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // section started scaling it, the bar flickered on every open and close. Restore before the call:
         // a shared global has to be left clean by the code that borrowed it, and this is the borrow point.
         g_fade = e;
-        if (s_ck) { const float pr = ix + iw - snap(26.0f) - snap(10.0f), pw = snap(104.0f + 28.0f + 258.0f + 28.0f + 22.0f + 150.0f + 14.0f);   // set into the beam, at its RIGHT end
-                    const float tabsEnd = ix + snap(11.0f) + (NTABS - 1) * snap(176.0f) + (NTABS - 2) * snap(6.0f) + snap(20.0f);
-                    const float px0 = (pr - pw) > tabsEnd ? (pr - pw) : tabsEnd;   // never over the tabs : the name window gives way
-                    draw_profile_bar(dev, fo, mo, click, px0, pr - px0, bodyY, pulse); }
-        else draw_profile_bar(dev, fo, mo, click, coX, coW, bodyY, pulse);
+        if (!s_ck) draw_profile_bar(dev, fo, mo, click, coX, coW, bodyY, pulse);   // (the redesign draws it below, on every tab)
         if (s_ck) { }   // (no page title in the redesign)
         else {
         fo->begin(dev); fo->draw_lc(dev, coX, coY, module_label(section_), snap(20.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
@@ -1387,6 +1383,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         draw_debug_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot);
     } else {
         draw_help_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse);
+    }
+    // THE PROFILE BAR, in the beam at its right end, on EVERY tab but Edit Layout (2026-11-27 : the active profile and its
+    // Save always at hand, not on Configuration only)
+    if (s_ck && tab_ != 2) {
+        g_fade = e;
+        const float pr = ix + iw - snap(26.0f) - snap(10.0f), pw = snap(104.0f + 28.0f + 258.0f + 28.0f + 22.0f + 150.0f + 14.0f);
+        const float tabsEnd = ix + snap(11.0f) + (NTABS - 1) * snap(176.0f) + (NTABS - 2) * snap(6.0f) + snap(20.0f);
+        const float px0 = (pr - pw) > tabsEnd ? (pr - pw) : tabsEnd;   // never over the tabs : the name window gives way
+        draw_profile_bar(dev, fo, mo, click, px0, pr - px0, bodyY, pulse);
     }
 
     // The container's edging, drawn AFTER every tab's content -- which is the whole point. It used to be drawn
@@ -1517,6 +1522,83 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
 // ======== the EDIT LAYOUT overlay (the redesign, 2026-11-27) : drawn over every box. Each box's outline (so boxes that
 // overlap read apart) ; the hovered one framed in brass with its NAME ; the selected one with corner handles, its name in
 // a brass tag and its position / size ; the snap guides of a drag. A click on a box selects it, on empty space clears. ====
+// THE WORKSHOP (Edit Layout, 2026-11-27) : the modules drawer's catalogue -- every box, its group, what shows it
+struct EdEntry { int id; int group; };
+static const EdEntry ED_LIST[] = {
+    { EDITBOX_PARTY, 0 }, { EDITBOX_ALLY1, 0 }, { EDITBOX_ALLY2, 0 }, { EDITBOX_TARGET, 0 }, { EDITBOX_DEBUFFS, 0 }, { EDITBOX_PLAYER, 0 }, { EDITBOX_EQUIP, 0 }, { EDITBOX_PET, 0 },
+    { EDITBOX_TIMERS, 1 }, { EDITBOX_TIMERS_R, 1 }, { EDITBOX_SKILLCHAIN, 1 }, { EDITBOX_HATE, 1 }, { EDITBOX_ABSORB, 1 }, { EDITBOX_GRIMOIRE, 1 }, { EDITBOX_WS, 1 },
+    { EDITBOX_MINIMAP, 2 }, { EDITBOX_ZONETRACKER, 2 }, { EDITBOX_TREASURE, 2 }, { EDITBOX_POINTWATCH, 2 }, { EDITBOX_EMPYPOP, 2 },
+    { EDITBOX_CHAT, 3 }, { EDITBOX_BATTLE, 3 },
+};
+static int* ed_show(int id) {   // the field that shows the box ; nullptr = it follows another box (no eye of its own)
+    UiConfig& c = ui_config();
+    switch (id) {
+    case EDITBOX_TARGET: return &c.tgtShow;      case EDITBOX_PLAYER: return &c.plrShow;     case EDITBOX_MINIMAP: return &c.mmShow;
+    case EDITBOX_PARTY: return &c.partyShow;     case EDITBOX_ALLY1: case EDITBOX_ALLY2: return &c.allyShow;
+    case EDITBOX_WS: return &c.wsShow;           case EDITBOX_SKILLCHAIN: return &c.scShow;  case EDITBOX_TREASURE: return &c.tpShow;
+    case EDITBOX_HATE: return &c.hlShow;         case EDITBOX_POINTWATCH: return &c.pwShow;  case EDITBOX_GRIMOIRE: return &c.grimShow;
+    case EDITBOX_ZONETRACKER: return &c.ztShow;  case EDITBOX_TIMERS: return &c.tmShow;      case EDITBOX_EMPYPOP: return &c.epShow;
+    case EDITBOX_ABSORB: return &c.awShow;       case EDITBOX_PET: return &c.petShow;        case EDITBOX_CHAT: return &c.chShow[0];
+    case EDITBOX_BATTLE: return &c.chShow[1];
+    default: return nullptr;   // Recasts (Timers), Equipment (Player), Debuffs (Target)
+    }
+}
+static bool ed_shown(int id) {   // the box is on screen (its own flag, or the box it follows)
+    const UiConfig& c = ui_config();
+    if (id == EDITBOX_TIMERS_R) return c.tmShow != 0;
+    if (id == EDITBOX_EQUIP) return c.plrShow && c.plrEquip && c.plrEquipDetach;
+    if (id == EDITBOX_DEBUFFS) return c.tgtShow && c.tgtDebuffs && c.dbShow;
+    const int* p = ed_show(id); return p && *p != 0;
+}
+static int ed_section(int id) {   // the box -> its Configuration page (MODULES order)
+    switch (id) {
+    case EDITBOX_PARTY: case EDITBOX_ALLY1: case EDITBOX_ALLY2: return 0;   case EDITBOX_TARGET: case EDITBOX_DEBUFFS: return 1;
+    case EDITBOX_PLAYER: case EDITBOX_EQUIP: return 2;                       case EDITBOX_MINIMAP: return 3;   case EDITBOX_WS: return 4;
+    case EDITBOX_SKILLCHAIN: return 5;  case EDITBOX_TREASURE: return 6;    case EDITBOX_HATE: return 7;      case EDITBOX_POINTWATCH: return 8;
+    case EDITBOX_GRIMOIRE: return 9;    case EDITBOX_ZONETRACKER: return 10; case EDITBOX_TIMERS: case EDITBOX_TIMERS_R: return 11;
+    case EDITBOX_EMPYPOP: return 12;    case EDITBOX_ABSORB: return 13;      case EDITBOX_PET: return 14;      case EDITBOX_CHAT: case EDITBOX_BATTLE: return 16;
+    default: return -1;
+    }
+}
+// THE ICONS of the modules drawer (2026-11-27 : "the best of web design") -- line icons in the Feather / Figma manner :
+// one even stroke, round joins, anti-aliased (seg_soft), nothing filled but the pupil. On = brass, off = quiet steel.
+static void ed_arc(u32 dev, float cx, float cy, float rx, float ry, float a0, float a1, int n, float wd, u32 c) {
+    float px2 = cx + rx * cosf(a0), py2 = cy + ry * sinf(a0);
+    for (int i = 1; i <= n; ++i) { const float a = a0 + (a1 - a0) * (float)i / (float)n, x = cx + rx * cosf(a), y = cy + ry * sinf(a);
+        seg_soft(dev, px2, py2, x, y, wd, c); px2 = x; py2 = y; }
+}
+static void ed_eye(u32 dev, float cx, float cy, float r, bool on) {
+    cs(dev);
+    const u32 c = fa(on ? 0xFFE2C482u : 0xFF6E7680u); const float wd = r * 0.19f;
+    // the almond : two arcs of one large circle each, meeting at the corners
+    const float k = r * 1.35f, off = k - r * 0.62f;
+    const float ha = asinf(r / k);
+    ed_arc(dev, cx, cy + off, k, k, -1.5708f - ha, -1.5708f + ha, 14, wd, c);   // the upper lid
+    ed_arc(dev, cx, cy - off, k, k,  1.5708f - ha,  1.5708f + ha, 14, wd, c);   // the lower lid
+    // the iris : a ring ; open, a pupil in it
+    ed_arc(dev, cx, cy, r * 0.36f, r * 0.36f, 0.0f, 6.2832f, 16, wd, c);
+    if (on) disc(dev, cx, cy, r * 0.14f, c);
+    else {   // masked : a clean diagonal across, cut out of the eye by a gap of the drawer's ground first
+        seg_soft(dev, cx - r * 0.95f, cy - r * 0.95f, cx + r * 0.95f, cy + r * 0.95f, wd * 2.6f, fa(0xFF2B3038u));
+        seg_soft(dev, cx - r * 0.95f, cy - r * 0.95f, cx + r * 0.95f, cy + r * 0.95f, wd, c);
+    }
+}
+static void ed_lock(u32 dev, float cx, float cy, float r, bool on) {
+    cs(dev);
+    const u32 c = fa(on ? 0xFFE2C482u : 0xFF6E7680u); const float wd = r * 0.19f;
+    // the body : a rounded rectangle, outlined
+    const float bw = r * 1.5f, bh = r * 1.05f, bx = cx - bw * 0.5f, by = cy - r * 0.05f, rr = r * 0.22f;
+    seg_soft(dev, bx + rr, by, bx + bw - rr, by, wd, c);           seg_soft(dev, bx + rr, by + bh, bx + bw - rr, by + bh, wd, c);
+    seg_soft(dev, bx, by + rr, bx, by + bh - rr, wd, c);           seg_soft(dev, bx + bw, by + rr, bx + bw, by + bh - rr, wd, c);
+    ed_arc(dev, bx + rr, by + rr, rr, rr, 3.1416f, 4.7124f, 4, wd, c);          ed_arc(dev, bx + bw - rr, by + rr, rr, rr, 4.7124f, 6.2832f, 4, wd, c);
+    ed_arc(dev, bx + rr, by + bh - rr, rr, rr, 1.5708f, 3.1416f, 4, wd, c);     ed_arc(dev, bx + bw - rr, by + bh - rr, rr, rr, 0.0f, 1.5708f, 4, wd, c);
+    if (on) disc(dev, cx, by + bh * 0.5f, r * 0.12f, c);         // the keyhole
+    // the shackle : a half ring over the body ; open, it is lifted and swung clear on its right leg
+    const float sr = r * 0.48f, lift = on ? 0.0f : r * 0.42f, sx = on ? cx : cx - r * 0.42f;
+    ed_arc(dev, sx, by - r * 0.30f - lift, sr, sr, 3.1416f, 6.2832f, 12, wd, c);
+    seg_soft(dev, sx - sr, by - r * 0.30f - lift, sx - sr, by, wd, c);                     // the left leg, down into the body
+    seg_soft(dev, sx + sr, by - r * 0.30f - lift, sx + sr, on ? by : by - r * 0.30f - lift + r * 0.25f, wd, c);   // the right leg : in the body, or free
+}
 static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* mo, bool click) {
     Kit K;
     if (!kit_begin(K, f, sh, 1.0f)) return;
@@ -1534,7 +1616,7 @@ static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* m
         rrect_stroke(dev, snap(x) - 0.5f, snap(y) - 0.5f, snap(w) + 1.0f, snap(h) + 1.0f, snap(4.0f), (0x48u << 24) | (ST & 0x00FFFFFFu), 1.0f);
     }
     // the guides of the drag : a brass line from one box to the other, with a soft light along it
-    EditGuide g[4]; const int ng = edit_box_guides(g, 4, f.t);
+    EditGuide g[8]; const int ng = edit_box_guides(g, 8, f.t);
     for (int i = 0; i < ng; ++i) {
         if (g[i].vert) { grad_quad(dev, snap(g[i].pos) - 3.0f, g[i].a - 8.0f, 6.0f, (g[i].b - g[i].a) + 16.0f, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u);
                          grad_quad(dev, snap(g[i].pos) - 0.5f, g[i].a - 8.0f, 1.0f, (g[i].b - g[i].a) + 16.0f, BRL, BRL, BRL, BRL); }
@@ -1567,11 +1649,39 @@ static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* m
                 rrect(dev, snap(cx4[k] - hs * 0.5f), snap(cy4[k] - hs * 0.5f), hs, hs, 1.5f, BRL, BR);
             }
             name_tag(sel, x, y, true);
-            char rd[64]; _snprintf(rd, sizeof(rd), "x %d   y %d   \xC2\xB7   %d \xC3\x97 %d", (int)(x + 0.5f), (int)(y + 0.5f), (int)(w + 0.5f), (int)(h + 0.5f)); rd[63] = 0;
-            float ry2 = y + h + K.px(18.0f); if (ry2 > sh - K.px(16.0f)) ry2 = y - K.px(40.0f);
-            chrome_tag_steel(K, snap(x), ry2, rd);
-            if (!edit_box_bound(sel)) {   // Party / Alliance : they move with the mouse, the keys do not drive them yet
-                chrome_label(K, snap(x) + K.fs->measure(rd, K.px(13.5f)) + K.px(30.0f), ry2, fr ? "souris seulement" : "mouse only", K.px(13.5f), 1);
+            // (its position and size : the inspector beside it -- 2026-11-27)
+        }
+    }
+    // DIMENSIONS while a box is dragged (2026-11-27, the way Figma measures) : to the nearest box on each side (or the
+    // screen's edge), a hairline and a brass tag with the distance in pixels ; two equal gaps light up together
+    if (sel >= 0 && edit_drag_busy()) {
+        float x, y, w, h;
+        if (edit_box_rect(sel, f.t, x, y, w, h)) {
+            float gap[4] = { x, sw - (x + w), y, sh - (y + h) };   // left, right, up, down : the screen edges first
+            for (int id = 0; id < EDITBOX_COUNT; ++id) {
+                if (id == sel) continue;
+                float bx, by, bw, bh; if (!edit_box_rect(id, f.t, bx, by, bw, bh)) continue;
+                const bool ovV = by < y + h && by + bh > y, ovH = bx < x + w && bx + bw > x;
+                if (ovV && bx + bw <= x && x - (bx + bw) < gap[0]) gap[0] = x - (bx + bw);
+                if (ovV && bx >= x + w && bx - (x + w) < gap[1]) gap[1] = bx - (x + w);
+                if (ovH && by + bh <= y && y - (by + bh) < gap[2]) gap[2] = y - (by + bh);
+                if (ovH && by >= y + h && by - (y + h) < gap[3]) gap[3] = by - (y + h);
+            }
+            const bool eqH = fabsf(gap[0] - gap[1]) < 1.5f, eqV = fabsf(gap[2] - gap[3]) < 1.5f;
+            const float mx2 = x + w * 0.5f, my2 = y + h * 0.5f;
+            for (int k = 0; k < 4; ++k) {
+                if (gap[k] < 2.0f) continue;
+                const bool eq = k < 2 ? eqH : eqV; const u32 lc = eq ? 0xFFE2C482u : 0xB0B7BEC8u;
+                float x0, y0, x1, y1;
+                if (k == 0) { x0 = x - gap[0]; x1 = x; y0 = y1 = my2; } else if (k == 1) { x0 = x + w; x1 = x + w + gap[1]; y0 = y1 = my2; }
+                else if (k == 2) { y0 = y - gap[2]; y1 = y; x0 = x1 = mx2; } else { y0 = y + h; y1 = y + h + gap[3]; x0 = x1 = mx2; }
+                cs(dev);
+                if (k < 2) { grad_quad(dev, x0, snap(y0) - 0.5f, x1 - x0, 1.0f, lc, lc, lc, lc); grad_quad(dev, x0, y0 - 4.0f, 1.0f, 8.0f, lc, lc, lc, lc); grad_quad(dev, x1 - 1.0f, y0 - 4.0f, 1.0f, 8.0f, lc, lc, lc, lc); }
+                else       { grad_quad(dev, snap(x0) - 0.5f, y0, 1.0f, y1 - y0, lc, lc, lc, lc); grad_quad(dev, x0 - 4.0f, y0, 8.0f, 1.0f, lc, lc, lc, lc); grad_quad(dev, x0 - 4.0f, y1 - 1.0f, 8.0f, 1.0f, lc, lc, lc, lc); }
+                char nb[12]; _snprintf(nb, sizeof(nb), "%d", (int)(gap[k] + 0.5f)); nb[11] = 0;
+                const float tw = K.fs->measure(nb, K.px(12.5f)) + K.px(16.0f);
+                const float tx = (x0 + x1) * 0.5f, ty = (y0 + y1) * 0.5f;
+                if (eq) chrome_tag(K, snap(tx - tw * 0.5f), ty, nb); else chrome_tag_steel(K, snap(tx - tw * 0.5f), ty, nb);
             }
         }
     }
@@ -1585,7 +1695,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         // ZONES : while Rules is OFF (placing boxes) draw each zone FAINTLY so you see the keep-out / allowed
         // areas -- a box is pushed out of any zone that forbids it (see guide_push_out). Rules ON draws them
         // interactively further below.
-        if (!editShowLines_) {
+        if (!editShowLines_ && !v2_) {   // (the redesign : no zones -- they no longer push any box, 2026-11-27)
             static const u32 ZC[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };
             float zx[GUIDE_GROUPS_MAX], zy[GUIDE_GROUPS_MAX], zw[GUIDE_GROUPS_MAX], zh[GUIDE_GROUPS_MAX]; int zg[GUIDE_GROUPS_MAX];
             const int nz = guide_zones(sw, sh, zx, zy, zw, zh, zg, GUIDE_GROUPS_MAX);
@@ -1923,7 +2033,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         // ===== THE TOOLBAR (the redesign, 2026-11-27) : one forged plate. ÉDITION ; the selected box (its name, x and y in
         // steppers -- 1 px a click, 10 with Shift, a click on the number to type it -- and its size) ; Undo / Redo ;
         // Rules (held down while on) / Clear lines / Default (ruby : it resets every box) / Done ; the shortcuts below. =====
-        if (v2_ && !edit_drag_busy()) {
+        if (v2_ && !edit_drag_busy()) {   // THE WORKSHOP (2026-11-27) : a slim toolbar, the modules drawer, the inspector
             Kit K;
             if (kit_begin(K, f, sh, 1.0f)) {
                 K.mo = mo; K.click = click && editConfirm_ == 0;
@@ -1931,86 +2041,157 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                 const bool frl = ui_config().lang == 1;
                 const int sel = edit_box_selected();
                 const float rowH = K.px(36.0f), gap = K.px(10.0f), pad = K.px(16.0f);
-                // the widths, left to right
+                // ===== THE TOOLBAR : ÉDITION · Modules · Undo · Redo · Default · Done ; the shortcuts under a groove =====
                 const float wLab = K.fs->measure(tr("EDIT LAYOUT", "\xC3\x89""DITION"), K.px(13.5f)) + K.px(8.0f);
-                const float wSel = K.px(560.0f);
-                const float wKey = K.px(112.0f), wDone = K.px(124.0f);
-                const float bw = pad + wLab + gap * 2.0f + wSel + gap * 2.0f + wKey * 2.0f + gap + gap * 2.0f + wKey + gap * 2.0f + wDone + pad;
+                const float wKey = K.px(112.0f), wMod = K.px(132.0f), wDone = K.px(124.0f);
+                const char* lg = tr("Drag : move   \xC2\xB7   Wheel : size   \xC2\xB7   Shift / Ctrl : one axis   \xC2\xB7   Alt : no snapping   \xC2\xB7   Ctrl+Z / Ctrl+Y",
+                                    "Glisser : d\xC3\xA9placer   \xC2\xB7   Molette : taille   \xC2\xB7   Maj / Ctrl : un seul axe   \xC2\xB7   Alt : sans aimant   \xC2\xB7   Ctrl+Z / Ctrl+Y");
+                const float lgW = K.fr->measure(lg, K.px(13.0f));
+                const float keysW = pad + wLab + gap * 2.0f + wMod + gap * 2.0f + wKey * 2.0f + gap + gap * 2.0f + wKey + gap * 2.0f + wDone + pad;
+                const float bw = keysW > lgW + 2.0f * pad + K.px(20.0f) ? keysW : lgW + 2.0f * pad + K.px(20.0f);   // as wide as its shortcuts line
                 const float bh = K.px(92.0f), bx = snap((sw - bw) * 0.5f), by = snap(K.px(14.0f));
-                edit_set_ui_blocker(bx - K.px(4.0f), by - K.px(2.0f), bw + K.px(8.0f), bh + K.px(8.0f), f.t);   // it owns every click over it
+                edit_add_ui_blocker(0, bx - K.px(4.0f), by - K.px(2.0f), bw + K.px(8.0f), bh + K.px(8.0f), f.t);
                 chrome_casting(K, bx, by, bw, bh, 0.0f, 0.0f);
                 const float cy = by + K.px(30.0f), ky = cy - rowH * 0.5f;
-                float x = bx + pad;
+                float x = bx + (bw - keysW) * 0.5f + pad;   // the keys centred in the plate
                 chrome_label(K, x, cy, tr("EDIT LAYOUT", "\xC3\x89""DITION"), K.px(13.5f), 4);
                 x += wLab + gap * 2.0f;
-                // ---- the selected box ----
-                chrome_slot(K, x - K.px(6.0f), ky - K.px(4.0f), wSel + K.px(12.0f), rowH + K.px(8.0f));
-                float bx2, by2, bw2, bh2;
-                if (sel >= 0 && edit_box_rect(sel, f.t, bx2, by2, bw2, bh2)) {
-                    const float tagR = chrome_tag(K, x + K.px(4.0f), cy, edit_box_name(sel, frl));
-                    float sx = tagR + K.px(14.0f);
-                    const bool movable = edit_box_bound(sel);
-                    const float stW = K.px(150.0f), stH = rowH - K.px(4.0f), kw = stH;
-                    for (int axis = 0; axis < 2; ++axis) {   // x, then y
-                        chrome_label(K, sx, cy, axis == 0 ? "x" : "y", K.px(15.0f), 0);
-                        sx += K.px(14.0f);
-                        char vb[16];
-                        if (editNumField_ == axis + 1 && nameFocus_) _snprintf(vb, sizeof(vb), "%s_", nameBuf_);
-                        else _snprintf(vb, sizeof(vb), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f));
-                        vb[15] = 0;
-                        const int d = chrome_stepper(K, ctrl_uid_i(CTRL_ID, axis), sx, cy - stH * 0.5f, stW, stH, kw, vb, !movable, true);
-                        if (movable && d) {   // a click : 1 px (10 with Shift), as the arrows would
-                            const int n = edit_shift() ? 10 : 1;
-                            for (int i = 0; i < n; ++i) edit_box_key(axis == 0 ? (d < 0 ? 0xCB : 0xCD) : (d < 0 ? 0xC8 : 0xD0), false, false);
-                        }
-                        // a click on the number : type it
-                        const float wx = sx + kw + K.px(6.0f), ww = stW - 2.0f * (kw + K.px(6.0f));
-                        if (movable && tbClick && inrect(mo, wx, cy - stH * 0.5f, ww, stH)) {
-                            editNumField_ = axis + 1; nameFocus_ = true;
-                            _snprintf(nameBuf_, sizeof(nameBuf_), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f)); nameBuf_[sizeof(nameBuf_) - 1] = 0;
-                            nameLen_ = (int)strlen(nameBuf_); nameCur_ = nameLen_;
-                        }
-                        sx += stW + K.px(14.0f);
-                    }
-                    char sz[32]; _snprintf(sz, sizeof(sz), "%d \xC3\x97 %d", (int)(bw2 + 0.5f), (int)(bh2 + 0.5f)); sz[31] = 0;
-                    chrome_label(K, sx, cy, sz, K.px(14.0f), movable ? 0 : 1);
-                    if (!movable) chrome_label(K, sx + K.fs->measure(sz, K.px(14.0f)) + K.px(12.0f), cy, frl ? "(souris)" : "(mouse)", K.px(13.5f), 1);
-                } else {
-                    chrome_label(K, x + K.px(8.0f), cy, tr("Click a box to select it", "Clique une bo\xC3\xAEte pour la s\xC3\xA9lectionner"), K.px(14.5f), 1);
-                    if (editNumField_) { editNumField_ = 0; nameFocus_ = false; }
-                }
-                // a typed number : applied on Enter or when the field loses the keyboard
-                if (editNumField_ && (kbCommit_ || !nameFocus_)) {
-                    kbCommit_ = false;
-                    if (sel >= 0 && edit_box_bound(sel) && nameLen_ > 0) {
-                        float cx2, cy2, cw2, ch2;
-                        if (edit_box_rect(sel, f.t, cx2, cy2, cw2, ch2)) {
-                            const int v = atoi(nameBuf_);
-                            if (editNumField_ == 1) edit_box_set_pos(sel, (float)v, cy2); else edit_box_set_pos(sel, cx2, (float)v);
-                        }
-                    }
-                    editNumField_ = 0; nameFocus_ = false; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0;
-                }
-                x += wSel + gap * 2.0f;
-                // ---- undo / redo ----
+                if (chrome_keybtn(K, CTRL_ID, x, ky, wMod, rowH, tr("Modules", "Modules"), editDrawer_ ? 3 : 0, true) && tbClick) editDrawer_ = !editDrawer_;
+                x += wMod + gap * 2.0f;
                 if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Undo", "Annuler"), 0, edit_box_can_undo()) && tbClick) edit_box_undo();
                 x += wKey + gap;
                 if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Redo", "R\xC3\xA9tablir"), 0, edit_box_can_redo()) && tbClick) edit_box_redo();
                 x += wKey + gap * 2.0f;
-                // ---- default / done (2026-11-27 : no Rules / Clear lines -- the reference lines covered the game's party window,
-                //      which now hides whenever ours shows) ----
                 editShowLines_ = false;
                 if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Default", "D\xC3\xA9""faut"), 2, true) && tbClick) editConfirm_ = 2;
                 x += wKey + gap * 2.0f;
                 if (chrome_keybtn(K, CTRL_ID, x, ky, wDone, rowH, tr("Done", "Termin\xC3\xA9"), 1, true) && tbClick) {
                     ui_config().editLayout = false; editShowLines_ = false; editZoneName_ = -1; nameFocus_ = false; groupSel_ = -1; editNumField_ = 0; save_ui_config(); }
-                // ---- the shortcuts, engraved under a groove ----
-                const float gy = by + K.px(56.0f);
-                cs(dev); flat(dev, bx + pad, gy, bw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, bx + pad, gy + 1.0f, bw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
-                const char* lg = tr("Wheel : size   \xC2\xB7   Shift : horizontal only   \xC2\xB7   Ctrl : vertical only   \xC2\xB7   Alt : free (no snapping)   \xC2\xB7   Delete : back to default   \xC2\xB7   Ctrl+Z / Ctrl+Y : undo / redo   \xC2\xB7   Escape : deselect",
-                                    "Molette : taille   \xC2\xB7   Maj : horizontal seul   \xC2\xB7   Ctrl : vertical seul   \xC2\xB7   Alt : libre (sans aimant)   \xC2\xB7   Suppr : par d\xC3\xA9""faut   \xC2\xB7   Ctrl+Z / Ctrl+Y : annuler / r\xC3\xA9tablir   \xC2\xB7   \xC3\x89""chap : d\xC3\xA9s\xC3\xA9lectionner");
-                const float lw = K.fr->measure(lg, K.px(13.0f));
-                chrome_label(K, bx + (bw - lw) * 0.5f, by + K.px(74.0f), lg, K.px(13.0f), 1);
+                {   const float gy = by + K.px(56.0f);
+                    cs(dev); flat(dev, bx + pad, gy, bw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, bx + pad, gy + 1.0f, bw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
+                    chrome_label(K, bx + (bw - lgW) * 0.5f, by + K.px(74.0f), lg, K.px(13.0f), 1); }
+
+                // ===== THE MODULES DRAWER (left) : every box -- its eye (shown / hidden), its name (a click selects it), its padlock =====
+                if (editDrawer_) {
+                    const float dw = K.px(300.0f), rH = K.px(30.0f), gH = K.px(28.0f);
+                    const int nE = (int)(sizeof(ED_LIST) / sizeof(ED_LIST[0]));
+                    const float dh = K.px(82.0f) + nE * rH + 4.0f * gH + K.px(14.0f);
+                    const float dx = K.px(16.0f), dy = by + bh + K.px(18.0f);
+                    edit_add_ui_blocker(1, dx - K.px(4.0f), dy - K.px(4.0f), dw + K.px(8.0f), dh + K.px(8.0f), f.t);
+                    chrome_casting(K, dx, dy, dw, dh, 0.0f, 0.0f);
+                    chrome_label(K, dx + pad, dy + K.px(24.0f), tr("MODULES", "MODULES"), K.px(13.5f), 4);
+                    // the two controls side by side at the RIGHT (2026-11-27 : "voir with figer, more logical") ; the name at the left
+                    const float colLock = dx + dw - pad - K.px(8.0f), colEye = colLock - K.px(40.0f);
+                    {   // the column heads, each over ITS column
+                        const float hy = dy + K.px(50.0f), eyeX = colEye, lockX = colLock;
+                        const char* hS = tr("show", "voir"); const char* hL = tr("lock", "figer");
+                        chrome_label(K, eyeX - K.fr->measure(hS, K.px(11.5f)) * 0.5f, hy, hS, K.px(11.5f), 1);
+                        chrome_label(K, lockX - K.fr->measure(hL, K.px(11.5f)) * 0.5f, hy, hL, K.px(11.5f), 1);
+                        cs(dev); flat(dev, dx + pad, hy + K.px(12.0f), dw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, dx + pad, hy + K.px(13.0f), dw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
+                    }
+                    float ry = dy + K.px(70.0f); int grp = -1;
+                    static const char* GEN[4] = { "PARTY", "COMBAT", "WORLD", "CHAT" }; static const char* GFR[4] = { "GROUPE", "COMBAT", "MONDE", "CHAT" };
+                    for (int q = 0; q < nE; ++q) {
+                        const int id = ED_LIST[q].id;
+                        if (ED_LIST[q].group != grp) { grp = ED_LIST[q].group; chrome_label(K, dx + pad, ry + gH * 0.55f, frl ? GFR[grp] : GEN[grp], K.px(11.5f), 4); ry += gH; }
+                        const bool shown = ed_shown(id), selR = id == sel, locked = edit_box_locked(id);
+                        const bool hovR = inrect(mo, dx + K.px(6.0f), ry, dw - K.px(12.0f), rH);
+                        if (selR || hovR) { cs(dev); rrect(dev, dx + K.px(6.0f), ry + 1.0f, dw - K.px(12.0f), rH - 2.0f, K.px(4.0f), fa(selR ? 0x2CE2C482u : 0x14FFFFFFu), fa(selR ? 0x18E2C482u : 0x0AFFFFFFu)); }
+                        const float rcy = ry + rH * 0.5f;
+                        // the eye : shown / hidden (a box that follows another has none)
+                        int* sp = ed_show(id);
+                        const float ex2 = colEye;
+                        if (sp) { ed_eye(dev, ex2, rcy, K.px(8.0f), *sp != 0);
+                                  if (tbClick && inrect(mo, ex2 - K.px(14.0f), ry, K.px(28.0f), rH)) { *sp = *sp ? 0 : 1; save_ui_config(); } }
+                        else { cs(dev); flat(dev, ex2 - K.px(5.0f), rcy, K.px(10.0f), 1.0f, fa(0xFF4A5058u)); }
+                        // the name ; a disabled module : greyed, "Off"
+                        const float nx2 = dx + pad + K.px(4.0f);
+                        chrome_label(K, nx2, rcy, edit_box_name(id, frl), K.px(14.0f), shown ? (selR ? 2 : 0) : 1);
+                        if (!shown) chrome_label(K, nx2 + K.fr->measure(edit_box_name(id, frl), K.px(14.0f)) + K.px(10.0f), rcy, tr("off", "d\xC3\xA9sactiv\xC3\xA9"), K.px(11.5f), 1);
+                        if (tbClick && hovR && mo->x < colEye - K.px(16.0f)) edit_box_select(id);   // the name's part of the row selects
+                        // the padlock
+                        const float lx2 = colLock;
+                        ed_lock(dev, lx2, rcy + K.px(2.0f), K.px(8.0f), locked);
+                        if (tbClick && inrect(mo, lx2 - K.px(14.0f), ry, K.px(28.0f), rH)) edit_box_set_locked(id, !locked);
+                        ry += rH;
+                    }
+                }
+
+                // ===== THE INSPECTOR : a card beside the selected box -- x / y, size, centre, lock, its settings =====
+                float bx2, by2, bw2, bh2;
+                if (sel >= 0 && edit_box_rect(sel, f.t, bx2, by2, bw2, bh2)) {
+                    const float cw = K.px(320.0f), ch = K.px(262.0f), m2 = K.px(18.0f);
+                    float cx0 = bx2 + bw2 + m2; if (cx0 + cw > sw - K.px(8.0f)) cx0 = bx2 - m2 - cw; if (cx0 < K.px(8.0f)) cx0 = K.px(8.0f);
+                    float cy0 = by2; const float topMin = by + bh + K.px(14.0f);
+                    if (cy0 < topMin) cy0 = topMin; if (cy0 + ch > sh - K.px(8.0f)) cy0 = sh - K.px(8.0f) - ch;
+                    if (editDrawer_ && cx0 < K.px(16.0f) + K.px(300.0f) + K.px(8.0f) && bx2 > K.px(330.0f)) cx0 = bx2 - m2 - cw;   // not under the drawer
+                    {   // HELD STILL while the pointer is on it (2026-11-27 : the size slider grew the box, the card moved with it and the
+                        // slider ran away under the cursor) -- it settles beside the box again once the pointer leaves it
+                        static float hx = 0.0f, hy = 0.0f; static int hSel = -1; static bool hHeld = false;
+                        const bool onCard = hSel == sel && mo && inrect(mo, hx - K.px(6.0f), hy - K.px(6.0f), cw + K.px(12.0f), ch + K.px(12.0f));
+                        if ((onCard || (hHeld && mo && mo->down)) && hSel == sel) { cx0 = hx; cy0 = hy; hHeld = true; }
+                        else { hHeld = false; hx = cx0; hy = cy0; hSel = sel; }
+                    }
+                    edit_add_ui_blocker(2, cx0 - K.px(4.0f), cy0 - K.px(4.0f), cw + K.px(8.0f), ch + K.px(8.0f), f.t);
+                    chrome_casting(K, cx0, cy0, cw, ch, 0.0f, 0.0f);
+                    const bool movable = edit_box_bound(sel) && !edit_box_locked(sel);
+                    float iy = cy0 + K.px(26.0f);
+                    const float tagR = chrome_tag(K, cx0 + pad, iy, edit_box_name(sel, frl));
+                    {   // the padlock, beside the name
+                        const bool lk = edit_box_locked(sel);
+                        ed_lock(dev, tagR + K.px(18.0f), iy + K.px(2.0f), K.px(8.0f), lk);
+                        if (tbClick && inrect(mo, tagR + K.px(4.0f), iy - K.px(14.0f), K.px(28.0f), K.px(28.0f))) edit_box_set_locked(sel, !lk);
+                        if (lk) chrome_label(K, tagR + K.px(34.0f), iy, tr("locked", "fig\xC3\xA9"), K.px(12.5f), 1);
+                    }
+                    iy += K.px(34.0f);
+                    // x / y : steppers (1 px, 10 with Shift) ; a click on the number types it
+                    const float stW = cw - 2.0f * pad - K.px(26.0f), stH = K.px(32.0f), kw = stH;
+                    for (int axis = 0; axis < 2; ++axis) {
+                        chrome_label(K, cx0 + pad, iy, axis == 0 ? "x" : "y", K.px(15.0f), 0);
+                        char vb[16];
+                        if (editNumField_ == axis + 1 && nameFocus_) _snprintf(vb, sizeof(vb), "%s_", nameBuf_);
+                        else _snprintf(vb, sizeof(vb), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f));
+                        vb[15] = 0;
+                        const float sx = cx0 + pad + K.px(26.0f);
+                        const int d = chrome_stepper(K, ctrl_uid_i(CTRL_ID, axis), sx, iy - stH * 0.5f, stW, stH, kw, vb, !movable, true);
+                        if (movable && d) { const int n = edit_shift() ? 10 : 1; for (int k2 = 0; k2 < n; ++k2) edit_box_key(axis == 0 ? (d < 0 ? 0xCB : 0xCD) : (d < 0 ? 0xC8 : 0xD0), false, false); }
+                        const float wx = sx + kw + K.px(6.0f), ww = stW - 2.0f * (kw + K.px(6.0f));
+                        if (movable && tbClick && inrect(mo, wx, iy - stH * 0.5f, ww, stH)) {
+                            editNumField_ = axis + 1; nameFocus_ = true;
+                            _snprintf(nameBuf_, sizeof(nameBuf_), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f)); nameBuf_[sizeof(nameBuf_) - 1] = 0;
+                            nameLen_ = (int)strlen(nameBuf_); nameCur_ = nameLen_; }
+                        iy += stH + K.px(8.0f);
+                    }
+                    // the size
+                    if (float* scp = edit_box_scale_ptr(sel)) {
+                        float v01 = (*scp - 0.5f) / 1.5f; v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+                        char pb[16]; _snprintf(pb, sizeof(pb), "%d %%", (int)(*scp * 100.0f + 0.5f)); pb[15] = 0;
+                        chrome_label(K, cx0 + pad, iy, tr("Size", "Taille"), K.px(14.0f), 0);
+                        const float slW = cw - 2.0f * pad - K.px(70.0f);
+                        if (kit_slider(K, CTRL_ID, cx0 + pad + K.px(70.0f), iy - K.px(14.0f), slW, &v01, pb, movable ? 0 : KS_DISABLED) && movable) {
+                            *scp = floorf((0.5f + v01 * 1.5f) * 20.0f + 0.5f) / 20.0f; save_ui_config(); }
+                    }
+                    iy += K.px(38.0f);
+                    // centre on the screen, horizontally / vertically
+                    const float hk = (cw - 2.0f * pad - K.px(8.0f)) * 0.5f, kh = K.px(32.0f);
+                    if (chrome_keybtn(K, CTRL_ID, cx0 + pad, iy - kh * 0.5f, hk, kh, tr("Centre  \xE2\x86\x94", "Centrer  \xE2\x86\x94"), 0, movable, false) && tbClick && movable) edit_box_set_pos(sel, snap((sw - bw2) * 0.5f), by2);
+                    if (chrome_keybtn(K, CTRL_ID, cx0 + pad + hk + K.px(8.0f), iy - kh * 0.5f, hk, kh, tr("Centre  \xE2\x86\x95", "Centrer  \xE2\x86\x95"), 0, movable, false) && tbClick && movable) edit_box_set_pos(sel, bx2, snap((sh - bh2) * 0.5f));
+                    iy += kh + K.px(8.0f);
+                    // its settings : straight to its Configuration page
+                    const int sec = ed_section(sel);
+                    if (sec >= 0 && chrome_keybtn(K, CTRL_ID, cx0 + pad, iy - kh * 0.5f, cw - 2.0f * pad, kh, tr("Open its settings", "Ouvrir ses r\xC3\xA9glages"), 0, true, false) && tbClick) {
+                        ui_config().editLayout = false; editShowLines_ = false; nameFocus_ = false; editNumField_ = 0; save_ui_config();
+                        tab_ = 0; section_ = sec; v2Hot_ = -1; }
+                } else if (editNumField_) { editNumField_ = 0; nameFocus_ = false; }
+                // a typed number : applied on Enter or when the field loses the keyboard
+                if (editNumField_ && (kbCommit_ || !nameFocus_)) {
+                    kbCommit_ = false;
+                    if (sel >= 0 && edit_box_bound(sel) && !edit_box_locked(sel) && nameLen_ > 0) {
+                        float cx2, cy2, cw2, ch2;
+                        if (edit_box_rect(sel, f.t, cx2, cy2, cw2, ch2)) { const int v = atoi(nameBuf_); if (editNumField_ == 1) edit_box_set_pos(sel, (float)v, cy2); else edit_box_set_pos(sel, cx2, (float)v); }
+                    }
+                    editNumField_ = 0; nameFocus_ = false; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0;
+                }
             }
         }
         // The toolbar HIDES while a box is being dragged (it sits at the top and would otherwise mask boxes
@@ -2697,29 +2878,77 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 int cn = nameCur_ < 0 ? 0 : (nameCur_ > nameLen_ ? nameLen_ : nameCur_); char pre[48]; memcpy(pre, nameBuf_, cn); pre[cn] = 0;
                 cs(dev); flat(dev, hx + snap(16.0f) + (cn ? chrome_label_w(K, pre, tsz) : 0.0f) + snap(1.0f), fy + snap(11.0f), snap(2.0f), fH - snap(22.0f), fa(0xFFE2C482u)); }
             top = fy + fH + snap(10.0f);
-            if (nameLen_ > 0) {   // THE RESULTS : a plate per match -- its page, the line it is in ; a click opens it there
-                const float rowH = snap(52.0f); float ry = top + snap(6.0f); int shown = 0;
-                for (int m = 0; m < HELP_MODULE_N && ry + rowH <= bot; ++m) {
+            if (nameLen_ > 0) {   // THE RESULTS, grouped BY PAGE (2026-11-27 : a wall of plates with snippets running out of them
+                // was "degueulasse") : the page's name and how many ; then up to three matches -- the section they are in,
+                // a line cut to the width with the searched word in brass ; "+ N more" opens the page.
+                const float sz1 = K.px(14.5f), sz2 = K.px(13.5f), entH = snap(50.0f), wMax = hw - snap(40.0f);
+                float ry = top + snap(10.0f); int total = 0;
+                for (int m = 0; m < HELP_MODULE_N && ry + entH <= bot; ++m) {
                     const HelpModule& hm = HELP_MODULES[m];
-                    for (int k = 0; k < hm.count && ry + rowH <= bot; ++k) {
-                        const HelpItem& it = hm.items[k];
-                        if (it.kind > 2) continue;
-                        const char* tx = (ui_config().lang == 1) ? it.fr : it.en;
-                        const int at = help_find(tx, nameBuf_); if (at < 0) continue;
-                        const bool hov = inrect(mo, hx, ry, hw, rowH);
-                        chrome_rowplate(K, hx, ry, hw, rowH, false, ease(ctrl_uid_i(CTRL_ID, shown), hov ? 1.0f : 0.0f) * 0.6f);
-                        chrome_label(K, hx + snap(18.0f), ry + snap(16.0f), tr(hm.en, hm.fr), K.px(13.0f), 2);
-                        char snip[160]; int st = at > 40 ? at - 40 : 0; while (st > 0 && ((unsigned char)tx[st] & 0xC0) == 0x80) --st;
-                        int o = 0; if (st > 0) { snip[o++] = '.'; snip[o++] = '.'; snip[o++] = '.'; }
-                        for (int q = st; tx[q] && o < 150; ++q) if (tx[q] != '*') snip[o++] = tx[q];
-                        while (o > 0 && ((unsigned char)snip[o - 1] & 0xC0) == 0xC0) --o;   // never cut a UTF-8 letter in two
-                        snip[o] = 0;
-                        chrome_label(K, hx + snap(18.0f), ry + snap(36.0f), snip, K.px(13.5f), hov ? 0 : 1);
-                        if (hov && click) { helpSel_ = m; helpScroll_ = 0.0f; helpJump_ = k; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
-                        ry += rowH + snap(4.0f); ++shown;
+                    int hits[64]; int nh = 0;
+                    for (int k = 0; k < hm.count && nh < 64; ++k) {
+                        const HelpItem& it = hm.items[k]; if (it.kind > 2) continue;
+                        if (help_find((ui_config().lang == 1) ? it.fr : it.en, nameBuf_) >= 0) hits[nh++] = k;
                     }
+                    if (!nh) continue;
+                    total += nh;
+                    {   char hb[96]; _snprintf(hb, sizeof(hb), "%s", tr(hm.en, hm.fr)); hb[95] = 0;
+                        chrome_label(K, hx, ry + snap(14.0f), hb, K.px(17.0f), 2);
+                        char nb[24]; _snprintf(nb, sizeof(nb), nh > 1 ? tr("%d results", "%d r\xC3\xA9sultats") : tr("%d result", "%d r\xC3\xA9sultat"), nh); nb[23] = 0;
+                        chrome_label(K, hx + chrome_label_w(K, hb, K.px(17.0f)) + snap(14.0f), ry + snap(15.0f), nb, K.px(13.0f), 1);
+                        cs(dev); flat(dev, hx, ry + snap(30.0f), hw, 1.0f, fa(0xFF07090Cu)); flat(dev, hx, ry + snap(31.0f), hw, 1.0f, (((u32)(0x30 * g_fade)) << 24) | 0x00FFFFFFu);
+                        ry += snap(38.0f); }
+                    for (int q = 0; q < nh && q < 3 && ry + entH <= bot; ++q) {
+                        const int k = hits[q];
+                        const HelpItem& it = hm.items[k];
+                        const char* tx = (ui_config().lang == 1) ? it.fr : it.en;
+                        // the section it is in : the nearest heading above it (itself when it IS a heading)
+                        const char* sect = 0; for (int h = k; h >= 0; --h) if (hm.items[h].kind == 0) { sect = (ui_config().lang == 1) ? hm.items[h].fr : hm.items[h].en; break; }
+                        // the text without its *emphasis*, then a window round the match, cut to the width
+                        char plain[600]; int pn = 0; for (int c2 = 0; tx[c2] && pn < 599; ++c2) if (tx[c2] != '*') plain[pn++] = tx[c2]; plain[pn] = 0;
+                        int at = help_find(plain, nameBuf_); if (at < 0) at = 0;
+                        int st = at > 36 ? at - 36 : 0; while (st > 0 && ((unsigned char)plain[st] & 0xC0) == 0x80) --st;
+                        while (st > 0 && plain[st - 1] != ' ' && at - st < 60) --st;   // start on a word
+                        const int mlen = nameLen_;
+                        char pre[200], mid[64], post[400]; int a = 0;
+                        if (st > 0) { pre[a++] = '.'; pre[a++] = '.'; pre[a++] = '.'; pre[a++] = ' '; }
+                        for (int c2 = st; c2 < at && a < 199; ++c2) pre[a++] = plain[c2]; pre[a] = 0;
+                        int b2 = 0; for (int c2 = at; c2 < at + mlen && plain[c2] && b2 < 63; ++c2) mid[b2++] = plain[c2]; mid[b2] = 0;
+                        int c3 = 0; for (int c2 = at + mlen; plain[c2] && c3 < 399; ++c2) post[c3++] = plain[c2]; post[c3] = 0;
+                        Font* sf = K.fr;   // ONE font for the three pieces, measured with itself (two fonts made the word sink and overlap)
+                        const float wPre = sf->measure(pre, sz2), wMid = sf->measure(mid, sz2);
+                        float room = wMax - snap(16.0f) - wPre - wMid;   // cut the tail to the width, on a letter boundary, with an ellipsis
+                        if (sf->measure(post, sz2) > room) {
+                            while (c3 > 0 && sf->measure(post, sz2) + sf->measure("...", sz2) > room) { --c3; while (c3 > 0 && ((unsigned char)post[c3] & 0xC0) == 0x80) --c3; post[c3] = 0; }
+                            if (c3 + 3 < 399) { post[c3++] = '.'; post[c3++] = '.'; post[c3++] = '.'; post[c3] = 0; }
+                        }
+                        const bool hov = inrect(mo, hx, ry, hw, entH - snap(4.0f));
+                        if (hov) { cs(dev); rrect(dev, hx - snap(6.0f), ry, hw + snap(12.0f), entH - snap(4.0f), snap(4.0f), fa(0x18FFFFFFu), fa(0x10FFFFFFu)); }
+                        chrome_label(K, hx + snap(10.0f), ry + snap(14.0f), sect ? sect : tr(hm.en, hm.fr), sz1, 0);
+                        const float ly = ry + snap(34.0f);
+                        sf->begin(dev);
+                        const float lx2 = snap(hx + snap(10.0f));
+                        // ONE vertical reference for the whole line (the ink of all three pieces together) : draw_lc per piece
+                        // centred each on its own letters, and "buff" (no descender) sat lower than its neighbours
+                        char whole[680]; _snprintf(whole, sizeof(whole), "%s%s%s", pre, mid, post); whole[679] = 0;
+                        float inkT = 0.0f, inkB = 0.0f; sf->ink_v(whole, sz2, inkT, inkB);
+                        const float yTop = snap(ly - (inkT + inkB) * 0.5f);
+                        sf->draw(dev, lx2, yTop, pre, sz2, fa(0xFF8E96A1u));
+                        sf->draw(dev, lx2 + wPre, yTop, mid, sz2, fa(0xFFE8C77Eu));   // the searched word : only its colour changes
+                        sf->draw(dev, lx2 + wPre + wMid, yTop, post, sz2, fa(0xFF8E96A1u));
+                        if (hov && click) { helpSel_ = m; helpScroll_ = 0.0f; helpJump_ = k; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
+                        ry += entH;
+                    }
+                    if (nh > 3 && ry + snap(26.0f) <= bot) {   // the rest of this page : open it
+                        char mb[64]; _snprintf(mb, sizeof(mb), tr("+ %d more on this page", "+ %d autres sur cette page"), nh - 3); mb[63] = 0;
+                        const bool hov = inrect(mo, hx + snap(10.0f), ry, chrome_label_w(K, mb, sz2) + snap(10.0f), snap(24.0f));
+                        chrome_label(K, hx + snap(10.0f), ry + snap(10.0f), mb, sz2, hov ? 2 : 1);
+                        if (hov && click) { helpSel_ = m; helpScroll_ = 0.0f; helpJump_ = hits[3]; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
+                        ry += snap(28.0f);
+                    }
+                    ry += snap(14.0f);
                 }
-                if (!shown) chrome_label(K, hx + snap(6.0f), top + snap(30.0f), tr("Nothing found.", "Rien trouv\xC3\xA9."), K.px(15.0f), 1);
+                if (!total) chrome_label(K, hx + snap(6.0f), top + snap(30.0f), tr("Nothing found.", "Rien trouv\xC3\xA9."), K.px(15.0f), 1);
                 ui_config().wheel = 0;
                 return;
             }

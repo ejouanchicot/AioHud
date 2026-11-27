@@ -415,6 +415,7 @@ private:
     // edit-layout : "Rules" toggle + the destructive-action confirmation modal
     bool  editShowLines_ = false;   // draw reference lines AND hide the HUD boxes (only rules + toolbar show)
     int   editNumField_  = 0;
+    bool  editDrawer_    = true;    // Edit Layout : the modules drawer open (the toolbar's Modules key)
     float prefSavedT_ = -100.0f;   // Interface > Config window : when one of its (instantly saved) settings last changed -> "Saved" tag       // the redesign's edit toolbar : 1 / 2 = the selected box's x / y being typed
     int   editConfirm_   = 0;       // 0 = none, 1 = Clear-lines pending, 2 = Default pending -> confirm dialog
     bool  profResetConfirm_ = false;   // Profile tab : "Reset all settings" pending -> confirm dialog

@@ -703,14 +703,16 @@ void Party::draw(const Frame& f) {
     }
     // the strip's SIDE (2026-11-27) : Auto = where there is room (a box against the right edge has its buffs on the left,
     // against the left edge on the right), with a margin so it does not flip back and forth ; Left / Right = that side,
-    // unless it truly does not fit there and does on the other. Frozen while the box is dragged (the box must not jump).
-    if (tier_ == 0 && g_dragTier != 0) {
+    // unless it truly does not fit there and does on the other. LIVE while the box is dragged (2026-11-27 : "the icons
+    // only change side when I let go") -- the grab point shifts with the strip so the BOX stays under the cursor.
+    if (tier_ == 0) {
         const float roomL = px, roomR = f.screenW - (px + w);
         bool right = buffRight_;
         if (g_previewBuffLeft > 0.0f)       right = ui_config().buffSide == 2;    // the config preview : the chosen side (Auto shows left)
         else if (ui_config().buffSide == 1) right = roomL < buffW && roomR >= buffW;
         else if (ui_config().buffSide == 2) right = !(roomR < buffW && roomL >= buffW);
         else { const float hyst = snap(40.0f * S); if (right ? roomL > roomR + hyst : roomR > roomL + hyst) right = !right; }
+        if (right != buffRight_ && g_dragTier == 0) g_grabDX += right ? -buffW : buffW;   // the cluster's left edge moves by the strip : the box does not
         buffRight_ = right;
     }
     const bool bR = tier_ == 0 && buffRight_;
@@ -744,7 +746,7 @@ void Party::draw(const Frame& f) {
         }
         edit_z_track(EDITBOX_PARTY + tier_, over, f.t);                            // shared z-order arbiter (see edit_box.h) -> a party box under another only reacts when it's on TOP
         const bool topmost = (edit_z_topmost(EDITBOX_PARTY + tier_) && !edit_over_ui_blocker(m->x, m->y, f.t)) || (g_dragTier == tier_);   // also yield to the toolbar
-        if (m->clicked && g_dragTier < 0 && over && topmost && edit_drag_grab(&g_dragTier)) {   // FRESH click + TOP box + shared lock (can't grab while any other box drags)
+        if (m->clicked && g_dragTier < 0 && over && topmost && !edit_box_locked(eid) && edit_drag_grab(&g_dragTier)) {   // a locked box is not grabbed   // FRESH click + TOP box + shared lock (can't grab while any other box drags)
             g_dragTier = tier_; g_grabDX = m->x - clX; g_grabDY = m->y - clY;
             edit_box_grabbed(eid);   // selected, and an undo step
         }
@@ -753,25 +755,18 @@ void Party::draw(const Frame& f) {
                 float ex = m->x - g_grabDX, ey = m->y - g_grabDY;    // new cluster top-left (px)
                 const float ew = clW, eh = clH;
                 const bool altFree = (edit_shift() && edit_ctrl()) || edit_alt();   // Ctrl+Shift (or Alt) = FREE placement : no magnetic snap, no zone/box repulsion
-                if (!altFree) edit_box_snap(eid, f.t, ex, ey, ew, eh);   // the shared guides : every box's edges and centres (2026-11-27)
+                if (!altFree) edit_box_snap(eid, f.t, ex, ey, ew, eh, f.screenW, f.screenH);   // the shared guides : every box's edges and centres (2026-11-27)
                 // keep the WHOLE cluster on screen
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                // P3 : push out of any guide ZONE that forbids this box (party -> ZPERM_PARTY, alliance -> ZPERM_ALLIANCE), then re-clamp on screen. Alt = free placement -> skip both repulsions (screen clamp above still applies).
-                if (!altFree) {
-                    guide_push_out(tier_ == 0 ? ZPERM_PARTY : ZPERM_ALLIANCE, f.screenW, f.screenH, ex, ey, ew, eh);
-                    if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
-                    if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                    edit_box_push_out(EDITBOX_PARTY + tier_, f.t, ex, ey, ew, eh);   // GLOBAL no-overlap : repelled by the standalone boxes + the other clusters (magnetic snap above already keeps them adjacent, so this only fires on a real overlap)
-                    if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
-                    if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                }
+                // (no zone / box repulsion any more -- 2026-11-27 : a box may sit over another ; the guides above still align it)
                 // cluster top-left -> stored PLACED top : the box px = ex + buffW (undo the left strip) ; undo costH + maskOff
                 float nx = (ex + stripL + 2.0f * fiB) / f.screenW, ny = (ey + costH + maskOff + 2.0f * fiB) / f.screenH;   // stored without the border (see posSet)
                 nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that
                 ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny);   // would make the box un-grabbable next time
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
                 px = snap(ex + stripL);                                // immediate horizontal feedback (box px = cluster left + a left strip)
+                { static EditBox gridSt; edit_box_grid(f.dev, f, gridSt, ex, ey, ew, eh, false, false); }   // the grid it snaps to, as every box shows while dragged
             } else { g_dragTier = -1; edit_drag_release(&g_dragTier); save_ui_config(); }  // released -> free the shared lock, persist once
         }
         if (over && topmost && !edit_drag_busy())                      // hovering a grabbable box (only the TOP one glows) -> same neon cue as the standalone boxes
