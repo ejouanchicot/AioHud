@@ -1030,7 +1030,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float cxT = tx + tabW * 0.5f, cyT = tabY + tabH * 0.5f;
         const bool active = (i == tab_);
         const bool hover  = inrect(mo, tx, tabY, tabW, tabH);
-        if (hover && click) { if (i == 2) { ui_config().editLayout = true; } else { tab_ = i; if (i == 1) profDirty_ = true; nameFocus_ = false; } }   // Edit Layout tab = a launch button into the full-screen drag mode (tab_ stays on the page you came from)
+        if (hover && click) { if (i == 2) { ui_config().editLayout = true; } else { if (tab_ != i) { nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; } tab_ = i; if (i == 1) profDirty_ = true; nameFocus_ = false; } }   // Edit Layout tab = a launch button into the full-screen drag mode (tab_ stays on the page you came from)
         hov_[i] += (((hover ? 1.0f : 0.0f) - hov_[i]) * clampf(dt * 14.0f, 0.0f, 1.0f));   // eased hover
         if (active) activeX = tx;
         if (s_ck) {   // the redesign : steel tabs, the chosen one cast in brass, its label in ink
@@ -2597,6 +2597,28 @@ void ConfigPage::v2_simple_note(Kit& K, float x, float& ry) {
 }
 
 // ---- Help tab (tab_ == 2 branch), lifted verbatim from draw() (byte-identical). ----
+// the Help page -> its Configuration page (MODULES order) ; -1 = no settings page (General, Update)
+static int help_to_section(int h) {
+    if (h == HELP_PA_I) return 0;       if (h == HELP_TARGET_I) return 1;  if (h == HELP_PLAYER_I) return 2;  if (h == HELP_MINIMAP_I) return 3;
+    if (h == HELP_ARCADE_I) return 4;   if (h == HELP_SC_I) return 5;      if (h == HELP_TREASURE_I) return 6; if (h == HELP_HATE_I) return 7;
+    if (h == HELP_PW_I) return 8;       if (h == HELP_GRIM_I) return 9;    if (h == HELP_ZT_I) return 10;     if (h == HELP_TIMERS_I) return 11;
+    if (h == HELP_EP_I) return 12;      if (h == HELP_ABSORB_I) return 13; if (h == HELP_PET_I) return 14;    if (h == HELP_NUI_I) return 15;
+    if (h == HELP_CHAT_I) return 16;    if (h == HELP_INTERFACE_I) return 17;
+    return -1;
+}
+static int help_find(const char* hay, const char* needle) {   // ASCII case-blind ; the *emphasis* stars ignored ; -1 = absent
+    if (!hay || !needle || !needle[0]) return -1;
+    for (int i = 0; hay[i]; ++i) {
+        int a = i, b = 0;
+        while (hay[a] && needle[b]) {
+            if (hay[a] == '*') { ++a; continue; }
+            char x = hay[a], y = needle[b]; if (x >= 'A' && x <= 'Z') x += 32; if (y >= 'A' && y <= 'Z') y += 32;
+            if (x != y) break; ++a; ++b;
+        }
+        if (!needle[b]) return i;
+    }
+    return -1;
+}
 void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse) {
         // ===== HELP tab : a left menu of MODULES + the selected module's reference (scrollable) =====
@@ -2648,21 +2670,80 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         // had room to the right. Keep both widths : hw for text, hwWide for sample grids.
         const float hwWide = hw;
         const float hwMax = snap(1180.0f); if (hw > hwMax) hw = hwMax;   // cap line length for readability
-        const float top = bodyY + snap(8.0f), bot = pageBot - snap(4.0f);
+        float top = bodyY + snap(8.0f); const float bot = pageBot - snap(4.0f);
+        if (s_ck) {   // SEARCH the whole Help (2026-11-27) : a field over the page ; typing lists the matches instead of the page
+            Kit& K = *s_ck;
+            const float fH = snap(44.0f), fy = top + snap(14.0f);
+            const bool fHov = inrect(mo, hx, fy, hw, fH);
+            if (click) { const bool was = nameFocus_; nameFocus_ = fHov; if (fHov && !was) nameCur_ = nameLen_; }
+            chrome_field(K, hx, fy, hw, fH, ease(CTRL_ID, nameFocus_ ? 1.0f : 0.0f));
+            const float tsz = K.px(15.0f);
+            if (nameLen_ > 0) chrome_label(K, hx + snap(16.0f), fy + fH * 0.5f, nameBuf_, tsz, 0);
+            else chrome_label(K, hx + snap(16.0f), fy + fH * 0.5f, tr("Search the Help...", "Rechercher dans l'aide..."), tsz, 1);
+            if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) {
+                int cn = nameCur_ < 0 ? 0 : (nameCur_ > nameLen_ ? nameLen_ : nameCur_); char pre[48]; memcpy(pre, nameBuf_, cn); pre[cn] = 0;
+                cs(dev); flat(dev, hx + snap(16.0f) + (cn ? chrome_label_w(K, pre, tsz) : 0.0f) + snap(1.0f), fy + snap(11.0f), snap(2.0f), fH - snap(22.0f), fa(0xFFE2C482u)); }
+            top = fy + fH + snap(10.0f);
+            if (nameLen_ > 0) {   // THE RESULTS : a plate per match -- its page, the line it is in ; a click opens it there
+                const float rowH = snap(52.0f); float ry = top + snap(6.0f); int shown = 0;
+                for (int m = 0; m < HELP_MODULE_N && ry + rowH <= bot; ++m) {
+                    const HelpModule& hm = HELP_MODULES[m];
+                    for (int k = 0; k < hm.count && ry + rowH <= bot; ++k) {
+                        const HelpItem& it = hm.items[k];
+                        if (it.kind > 2) continue;
+                        const char* tx = (ui_config().lang == 1) ? it.fr : it.en;
+                        const int at = help_find(tx, nameBuf_); if (at < 0) continue;
+                        const bool hov = inrect(mo, hx, ry, hw, rowH);
+                        chrome_rowplate(K, hx, ry, hw, rowH, false, ease(ctrl_uid_i(CTRL_ID, shown), hov ? 1.0f : 0.0f) * 0.6f);
+                        chrome_label(K, hx + snap(18.0f), ry + snap(16.0f), tr(hm.en, hm.fr), K.px(13.0f), 2);
+                        char snip[160]; int st = at > 40 ? at - 40 : 0; while (st > 0 && ((unsigned char)tx[st] & 0xC0) == 0x80) --st;
+                        int o = 0; if (st > 0) { snip[o++] = '.'; snip[o++] = '.'; snip[o++] = '.'; }
+                        for (int q = st; tx[q] && o < 150; ++q) if (tx[q] != '*') snip[o++] = tx[q];
+                        while (o > 0 && ((unsigned char)snip[o - 1] & 0xC0) == 0xC0) --o;   // never cut a UTF-8 letter in two
+                        snip[o] = 0;
+                        chrome_label(K, hx + snap(18.0f), ry + snap(36.0f), snip, K.px(13.5f), hov ? 0 : 1);
+                        if (hov && click) { helpSel_ = m; helpScroll_ = 0.0f; helpJump_ = k; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
+                        ry += rowH + snap(4.0f); ++shown;
+                    }
+                }
+                if (!shown) chrome_label(K, hx + snap(6.0f), top + snap(30.0f), tr("Nothing found.", "Rien trouv\xC3\xA9."), K.px(15.0f), 1);
+                ui_config().wheel = 0;
+                return;
+            }
+        }
         if (ui_config().wheel != 0) {   // clamp against LAST frame's limit immediately -> no overscroll bounce at the bottom
             helpScroll_ -= (float)ui_config().wheel * snap(40.0f); ui_config().wheel = 0;
             if (helpScroll_ < 0.0f) helpScroll_ = 0.0f; if (helpScroll_ > helpMaxScroll_) helpScroll_ = helpMaxScroll_;
         }
         const float natTop = top + snap(16.0f), lh = snap(22.0f), bsz = snap(14.0f), hsz = snap(18.0f);
         float y = natTop - helpScroll_;
+        float headY[40]; int headI[40]; int nHead = 0; float jumpY = -1e9f;   // this frame's headings (the contents) ; a jump's target
         for (int i = 0; i < mod.count; ++i) {
             const HelpItem& it = mod.items[i];
             const char* txt = (ui_config().lang == 1) ? it.fr : it.en;   // active-language text for this item
+            if (helpJump_ == i) jumpY = y;
+            if (it.kind == 0 && i == 0 && s_ck) {     // THE PAGE TITLE : large, and a key to this module's settings
+                y += snap(10.0f);
+                const float th = snap(40.0f);
+                if (y >= top && y + th <= bot) {
+                    chrome_label(*s_ck, hx, y + th * 0.5f, txt, hsz * 1.55f, 0);
+                    const int sec = help_to_section(helpSel_);
+                    if (sec >= 0) {
+                        const float kw = snap(230.0f), kh = snap(40.0f);
+                        if (chrome_keybtn(*s_ck, CTRL_ID, hx + hw - kw, y + (th - kh) * 0.5f, kw, kh, tr("Open its settings", "Ouvrir ses r\xC3\xA9glages"), 0, true, false) && click) {
+                            tab_ = 0; section_ = sec; v2Hot_ = -1; }
+                    }
+                    cs(dev); flat(dev, hx, y + th + snap(6.0f), hw, 1.0f, fa(0xFF07090Cu)); flat(dev, hx, y + th + snap(7.0f), hw, 1.0f, (((u32)(0x30 * g_fade)) << 24) | 0x00FFFFFFu);
+                }
+                y += th + snap(16.0f);
+                continue;
+            }
             if (it.kind == 0) {                       // heading + accent underline
                 y += snap(16.0f);
+                if (nHead < 40) { headY[nHead] = y + helpScroll_; headI[nHead] = i; ++nHead; }
                 if (y >= top && y + lh + snap(3.0f) <= bot) {   // STRICT clip (incl. the underline) -> never spills onto the tabs / footer
                     if (s_ck) {   // the redesign : the heading engraved, a groove cut across the column under it (no gold bar)
-                        chrome_label(*s_ck, hx, y + lh * 0.5f, txt, hsz * 1.05f, 0);
+                        chrome_label(*s_ck, hx, y + lh * 0.5f, txt, hsz * 1.05f, 2);   // brass : the page's landmarks
                         cs(dev); flat(dev, hx, y + lh + snap(3.0f), hw, 1.0f, fa(0xFF07090Cu)); flat(dev, hx, y + lh + snap(4.0f), hw, 1.0f, (((u32)(0x30 * g_fade)) << 24) | 0x00FFFFFFu);
                     } else {
                     fo->begin(dev); fo->draw_lc(dev, hx, y + lh * 0.5f, txt, hsz, fa(C_GOLD), fa(C_STROKE), 1.3f);
@@ -2930,6 +3011,27 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             } else {                                  // paragraph
                 y = draw_wrapped(dev, fo, hx, y, hw, top, bot, txt, bsz, C_DIM, lh);
                 y += snap(10.0f);
+            }
+        }
+        if (helpJump_ >= 0) { if (jumpY > -1e8f) helpScroll_ += (jumpY - natTop) - snap(8.0f); helpJump_ = -1; }
+        // ON THIS PAGE : the headings, in the space right of the column ; the one you are reading lit ; a click goes there
+        if (s_ck && nHead > 1) {
+            Kit& K = *s_ck;
+            const float tx0 = hx + hw + snap(56.0f), tw0 = (hx + hwWide) - tx0;
+            if (tw0 >= snap(240.0f)) {
+                float ty = natTop + snap(70.0f);
+                chrome_label(K, tx0, ty, tr("ON THIS PAGE", "SUR CETTE PAGE"), K.px(12.5f), 4);
+                ty += snap(26.0f);
+                int cur = 0; for (int k = 0; k < nHead; ++k) if (headY[k] - natTop <= helpScroll_ + snap(60.0f)) cur = k;
+                for (int k = 0; k < nHead && ty + snap(28.0f) <= bot; ++k) {
+                    const HelpItem& hi = mod.items[headI[k]];
+                    const char* ht = (ui_config().lang == 1) ? hi.fr : hi.en;
+                    const bool hov = inrect(mo, tx0, ty - snap(13.0f), tw0, snap(28.0f));
+                    if (k == cur) { cs(dev); disc(dev, tx0 + snap(4.0f), ty, snap(3.2f), fa(0xFFD4B574u)); }
+                    chrome_label(K, tx0 + snap(16.0f), ty, ht, K.px(13.5f), (k == cur || hov) ? 0 : 1);
+                    if (hov && click) helpScroll_ = headY[k] - natTop - snap(8.0f);
+                    ty += snap(30.0f);
+                }
             }
         }
         // scroll clamp (next frame) + a thin scrollbar on the right

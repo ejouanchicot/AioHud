@@ -399,7 +399,8 @@ private:
     float relFull_[128] = { 0.0f };   // Update  : one per release   (same size rule as relOpen_)
     float dbgFull_[8]   = { 0.0f };   // Debug   : one per section   (same size rule as dbgOpen_)
     bool  dbgOpen_[8] = { true, false };   // Debug tab : per-section collapse state (Planned open, Fixed closed ; no To fix listed now). Size must be >= DEBUG_SECTIONS_N.
-    float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
+    float helpMaxScroll_ = 0.0f;
+    int   helpJump_ = -1;         // Help : an item to scroll to on the next frame (a search result / a contents entry)  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
     float pvRightX_    = 0.0f, pvBottomY_ = 0.0f;
