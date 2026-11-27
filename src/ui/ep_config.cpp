@@ -177,19 +177,34 @@ void ConfigPage::draw_ep_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
     }
     const int nMod = cfg_count_modified(EP_CONTENT, NOPT(EP_CONTENT), adv);
     if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, nMod)) {
-        // the tracked NM : a grid of keys, three across (the names are long) -- the tracked one held DOWN in brass, the
-        // others raised steel ; a click stores the KEY (not an index) and turns the box on, like //aio ept
-        cfg_note(K, x, ry, tr("The NM to track :", "Le NM \xC3\xA0 suivre :"));
+        // the tracked NM : a HUNT BOARD (2026-11-27 : "comme un tableau de chasse", the wide keys were too big for a name) --
+        // two ledgers side by side, a row per NM : its lamp (lit green on the tracked one), the name, how many pops, the
+        // collectable's target. A click stores the KEY (not an index) and turns the box on, like //aio ept.
         int sel = -1; for (int i = 0; i < NMS_N; ++i) if (lstrcmpiA(c.epTrack, NMS[i].key) == 0) { sel = i; break; }
-        const int perRow = 3; const float gap = K.px(8.0f), x0 = x + K.px(18.0f), gw = w - K.px(36.0f);
-        const float kw = (gw - (perRow - 1) * gap) / perRow, kh = K.px(36.0f);
-        for (int gi = 0; gi < NMS_N; ++gi) {
-            const float kx = x0 + (gi % perRow) * (kw + gap), ky = ry + (gi / perRow) * (kh + gap);
-            if (ky + kh < K.clipTop || ky > K.clipBot) continue;
-            if (chrome_keybtn(K, ctrl_uid_i(base, 100 + gi), kx, ky, kw, kh, NMS[gi].en, gi == sel ? 3 : 0, gi != sel) && K.click && gi != sel) {
-                lstrcpynA(c.epTrack, NMS[gi].key, (int)sizeof(c.epTrack)); c.epShow = 1; save_ui_config(); }
+        const int perCol = (NMS_N + 1) / 2;
+        const float x0 = x + K.px(14.0f), gw = w - K.px(28.0f), gap = K.px(14.0f);
+        const float lw = (gw - gap) * 0.5f, rh = K.px(28.0f), rg = K.px(4.0f), hh = K.px(28.0f), pad = 0.0f, hg = K.px(6.0f);
+        const float bh = pad + hh + hg + perCol * (rh + rg) - rg + pad;
+        const char* heads[3] = { tr("Notorious Monster", "Monstre notoire"), tr("Pops", "Pops"), tr("Collect.", "Collect.") };
+        const int al[3] = { 0, 2, 2 };
+        for (int col = 0; col < 2; ++col) {
+            const float bx = x0 + col * (lw + gap);
+            if (ry + bh < K.clipTop || ry > K.clipBot) continue;
+            const float cxs[3] = { bx + pad + K.px(30.0f), bx + lw - pad - K.px(100.0f), bx + lw - pad - K.px(14.0f) };
+            chrome_ledger_head(K, bx + pad, ry + pad, lw - 2.0f * pad, hh, heads, cxs, al, 3);
+            for (int r = 0; r < perCol; ++r) {
+                const int gi = col * perCol + r; if (gi >= NMS_N) break;
+                const float yy = ry + pad + hh + hg + r * (rh + rg);
+                char pops[8], coll[8];
+                _snprintf(pops, sizeof(pops), "%u", (unsigned)NMS[gi].popCount); pops[7] = 0;
+                if (NMS[gi].collectableTarget) _snprintf(coll, sizeof(coll), "%u", (unsigned)NMS[gi].collectableTarget); else lstrcpynA(coll, "-", sizeof(coll));
+                coll[7] = 0;
+                const char* cells[3] = { NMS[gi].en, pops, coll };
+                if (chrome_ledger_row(K, ctrl_uid_i(base, 100 + gi), bx + pad, yy, lw - 2.0f * pad, rh, cells, cxs, al, 3, gi == sel, (r & 1) != 0) && gi != sel) {
+                    lstrcpynA(c.epTrack, NMS[gi].key, (int)sizeof(c.epTrack)); c.epShow = 1; save_ui_config(); }
+            }
         }
-        ry += ((NMS_N + perRow - 1) / perRow) * (kh + gap) + K.px(10.0f);
+        ry += bh + K.px(12.0f);
         v2_rows(K, ctrl_uid_i(base, 7), EP_CONTENT, NOPT(EP_CONTENT), x, ry, w);
     }
     if (adv) {

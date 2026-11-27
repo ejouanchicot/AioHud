@@ -18,6 +18,7 @@
 #ifdef AIOHUD_PROBES
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
+#include "ui/edit_box.h"   // edit_box_key : the edit layout keys
 #include "ui/hud.h"
 #include "plugin/aio_verbs.h"
 #include "model/minidump.h"   // //aio doctor : which module a crash dump says the game died in   // the //aio command words : one table, matched exactly on the first word
@@ -956,7 +957,7 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
             debug::log("KEY window closed (%s)", g_keyLogLeft <= 0 ? "event budget spent" : "time window over");
         } else {
             --g_keyLogLeft;
-            const bool typing = g_hud.config().wants_keys();   // only a config text field : never the chat line
+            const bool typing = g_hud.config().wants_keys() || aio::ui_config().editLayout;   // a config text field, or Edit Layout (no text typed there) : never the chat line
             debug::log("KEY key=%08X b=%08X c=%08X dik=%02X vk=%02X pr=%d nc=%d ch=U+%04X ch1=U+%04X sh=%d ct=%d al=%d want=%d",
                        // Outside a field every value that names the key is blanked : key, dik, vk, c's scan-code byte (bits
                        // 16-23 -- the first cut kept c whole, and 001C/0039/0135... spelled the chat line) and b above its low
@@ -990,6 +991,18 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
     if (dik == 0x1C) {
         if (pressed && g_hud.config().wants_keys()) s_ateReturn = true;
         else if (!pressed && s_ateReturn)         { s_ateReturn = false; return 1u; }
+    }
+    // EDIT LAYOUT : the arrows nudge the selected box, Delete resets it, Ctrl+Z / Ctrl+Y undo / redo, Escape deselects
+    // (the redesign, 2026-11-27). Both the press and its release are consumed, so the game never walks or opens a menu.
+    if (aio::ui_config().editLayout && !g_hud.config().wants_keys()) {
+        // NOT the arrows : the game reads their STATE straight off the keyboard (measured 2026-11-27, //aio keylog : one
+        // event per press, consumed, and the camera still turned) -- a plugin cannot keep them from it. The selected box
+        // is nudged with the toolbar's steppers instead. Delete / Ctrl+Z / Ctrl+Y / Escape stay here.
+        const int ek = (nc == 0 && dik == 0x53) ? 0xD3 : dik;
+        if (ek == 0xCB || ek == 0xCD || ek == 0xC8 || ek == 0xD0) return 0u;
+        static bool s_ateEdit[256] = { false };
+        if (pressed) { if (aio::edit_box_key(ek, mShift, mCtrl)) { s_ateEdit[dik & 0xFF] = true; return 1u; } }
+        else if (s_ateEdit[dik & 0xFF]) { s_ateEdit[dik & 0xFF] = false; return 1u; }
     }
     if (!g_hud.config().wants_keys())                       // not typing -> never block the game (but Currencies' search)
     {   const unsigned ch = (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u;   // Currencies' search ; the trade's gil typed
@@ -2107,6 +2120,14 @@ static void aio_command_dispatch(const char* cmd)
         return;
     } break;
     case verbs::V_EDIT: {                            // toggle layout edit mode (drag/resize boxes on the live game)
+        if (const char* sp = strstr(buf, "sel")) {      // //aio edit sel N : select box N (the keys then drive it) ; -1 = none
+            aio::edit_box_select(atoi(sp + 3)); return; }
+        if (strstr(buf, "undo")) { aio::edit_box_undo(); return; }
+        if (strstr(buf, "redo")) { aio::edit_box_redo(); return; }
+        if (const char* np = strstr(buf, "nudge")) { int dx = 0, dy = 0; sscanf(np + 5, "%d %d", &dx, &dy);   // //aio edit nudge dx dy : as the arrows
+            for (int i = 0; i < (dx < 0 ? -dx : dx); ++i) aio::edit_box_key(dx < 0 ? 0xCB : 0xCD, false, false);
+            for (int i = 0; i < (dy < 0 ? -dy : dy); ++i) aio::edit_box_key(dy < 0 ? 0xC8 : 0xD0, false, false);
+            return; }
         bool e = !aio::ui_config().editLayout;
         aio::ui_config().editLayout = e;
         g_hud.config().set_open(e);                       // keep config "open" so the mouse is captured + toolbar shows

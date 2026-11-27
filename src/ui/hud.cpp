@@ -301,7 +301,7 @@ void Hud::render(u32 dev) {
     fonts_.ensure_all(dev);
     if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
     party().set_pet_move_delay_ms(ui_config().scReadyDelay * 100);           // the Skillchains model's pet move Wait (//aio scdelay)
-    if (ui_config().box[0].scale < 1.0f) ui_config().box[0].scale = 1.0f;   // PARTY floor = 100% : below that its footprint can't cover the native party block (it may still grow)
+    // (2026-11-27 : the party's 100 % floor is gone -- it existed to cover the game's party window, which now hides whenever ours shows)
     {   // Re-anchor any box whose FOOTPRINT changed -- scale, bar height/width, job-badge mode, casts on/off,
         // anything. measure() captures every dimension setting (right = x+w, bottom = y+h ; exact for the
         // bottom-anchored party too). A HAND-PLACED box stores its TOP-LEFT, so we shift it by the size delta
@@ -1158,13 +1158,18 @@ void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, flo
                      float& scale, float& cfgX, float& cfgY, int anchorX) {
     float tfx = px / f.screenW, tfy = py / f.screenH; bool ps = true; int ch = 0, cv = 0; const bool wasDrag = eb.dragging;
     const float scale0 = scale;   // edit_box_drag WRITES scale on a wheel-resize -> now it reaches the config field
+    edit_box_bind(editId, &cfgX, &cfgY, nullptr, &scale, f.t);   // the undo keeps the REAL fields (the locals below die with this call)
+    const float px0 = px, py0 = py;
     if (edit_box_drag(eb, editId, f, px, py, boxW, boxH, ZPERM_HUB, ps, tfx, tfy, ch, cv, scale))
         edit_box_grid(f.dev, f, eb, px, py, boxW, boxH, ch != 0, cv != 0);
-    cfgX = (px + (anchorX == 1 ? boxW * 0.5f : anchorX == 2 ? boxW : 0.0f)) / f.screenW;   // 0 left / 1 centre / 2 right
-    cfgY = py / f.screenH;
+    // write back ONLY what moved : rewriting it every frame from the pixel-snapped px drifted a box by a pixel each
+    // time the config was saved for anything else (Absorb-TP, 2026-11-27)
+    if (px != px0) cfgX = (px + (anchorX == 1 ? boxW * 0.5f : anchorX == 2 ? boxW : 0.0f)) / f.screenW;   // 0 left / 1 centre / 2 right
+    if (py != py0) cfgY = py / f.screenH;
     // persist on a drag-drop OR a wheel-resize (the latter has no drag, so the old drop-only save missed it ->
     // box_edit boxes appeared not to resize at all : the scale was written to a by-VALUE copy and discarded).
     if ((wasDrag && !eb.dragging) || scale != scale0) save_ui_config();
+    else if (!eb.dragging && (px != px0 || py != py0)) save_ui_config();   // a step / typed position from the toolbar : written back above, saved now
 }
 
 // Keep a module box ON SCREEN. Only where it is DRAWN moves, never the stored position : a box that grew past an edge

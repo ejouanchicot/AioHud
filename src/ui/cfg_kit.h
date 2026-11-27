@@ -84,7 +84,11 @@ void  chrome_slot(Kit& K, float x, float y, float w, float h);                  
 float chrome_tabkey(Kit& K, int id, float x, float y, float w, float h, bool active);     // returns the hover ease
 void  chrome_transom(Kit& K, float x, float y, float w, float h);                          // the horizontal bar between two openings
 void  chrome_weld(Kit& K, float ax, float ay, float bx, float by);                         // a weld seam along a joint
-void  chrome_floor(Kit& K, float x, float y, float w, float h);                            // an opening's floor (no edge)                    // sunken bed (the settings)                    // a recessed zone (no outline)
+void  chrome_floor(Kit& K, float x, float y, float w, float h);
+u32   kit_ground_alpha();   // the config ground's alpha (Interface : Background)
+// the LEDGER (a hunt board) : its column heads (a band), a row (lamp + engraved-glass cells ; colAlign 0 left / 2 right)
+void  chrome_ledger_head(Kit& K, float x, float y, float w, float h, const char* const* cols, const float* colX, const int* colAlign, int n);
+bool  chrome_ledger_row(Kit& K, int id, float x, float y, float w, float h, const char* const* cells, const float* colX, const int* colAlign, int n, bool sel, bool odd);                            // an opening's floor (no edge)                    // sunken bed (the settings)                    // a recessed zone (no outline)
 
 // the component SHEET (//aio config kit) : every part in every state, live where it can be ; true = its Close was clicked
 bool kit_sheet_draw(const Frame& f, float sw, float sh);

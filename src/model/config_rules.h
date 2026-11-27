@@ -48,6 +48,7 @@ inline void config_defaults(UiConfig& c, bool keepZones) {
                                    // no in-class initialiser, so a plain `UiConfig d;` would copy garbage)
     const int lang = c.lang;
     const int cfgAdv = c.cfgAdv;
+    const float cfgScale = c.cfgScale; const int cfgBg = c.cfgBg, cfgReopen = c.cfgReopen, cfgLastTab = c.cfgLastTab, cfgLastSec = c.cfgLastSec;
     const int selfTest = c.selfTest;
     const int favN = (c.favColorN < 0) ? 0 : (c.favColorN > UiConfig::FAV_COLOR_MAX ? UiConfig::FAV_COLOR_MAX : c.favColorN);
     unsigned fav[UiConfig::FAV_COLOR_MAX];
@@ -61,6 +62,7 @@ inline void config_defaults(UiConfig& c, bool keepZones) {
 
     c.lang = lang;
     c.cfgAdv = cfgAdv;
+    c.cfgScale = cfgScale; c.cfgBg = cfgBg; c.cfgReopen = cfgReopen; c.cfgLastTab = cfgLastTab; c.cfgLastSec = cfgLastSec;   // the config window's own
     c.selfTest = selfTest;
     c.favColorN = favN;
     for (int i = 0; i < favN; ++i) c.favColors[i] = fav[i];
@@ -123,6 +125,10 @@ inline void config_sanitise(UiConfig& c) {
     LUM(skinLum); ALPHA(skinBoxAlpha); LUM(allyLum); ALPHA(allyBoxAlpha);
     c.buffMax  = cfg_int(c.buffMax, 0, 32);   // 0 = no party/alliance buffs at all : a state the UI offers
     c.buffRows = cfg_int(c.buffRows, 1, 2);
+    c.buffSide = cfg_int(c.buffSide, 0, 2);
+    c.cfgScale = cfg_num(c.cfgScale, 0.8f, 1.4f, 1.0f);
+    c.cfgBg = cfg_int(c.cfgBg, 0, 2); c.cfgReopen = cfg_int(c.cfgReopen, 0, 1);
+    c.cfgLastTab = cfg_int(c.cfgLastTab, 0, 4); c.cfgLastSec = cfg_int(c.cfgLastSec, 0, 63);
     c.uiStyle  = cfg_int(c.uiStyle, 0, 15);
     c.uiColor  = cfg_int(c.uiColor, 0, 35);   // 12 hues x 3 lightness rows
     for (int k = 0; k < 3; ++k) {

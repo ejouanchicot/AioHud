@@ -343,6 +343,8 @@ void Party::measure(float& w, float& h) const {
 // 0 = live HUD (no cap, every buff drawn). Set by the Hud around the party-preview draw, reset right after.
 static float g_previewBuffLeft = 0.0f;
 void set_party_preview_buff_left(float x) { g_previewBuffLeft = x > 0.0f ? x : 0.0f; }
+static float g_previewBuffRight = 0.0f;   // the same cap for a strip drawn on the RIGHT (the stage's right edge)
+void set_party_preview_buff_right(float x) { g_previewBuffRight = x > 0.0f ? x : 0.0f; }
 static float g_lastBuffIconPx = 0.0f;   // what draw_member_buffs last used -> the config band matches the game exactly
 float party_last_buff_icon_px() { return g_lastBuffIconPx; }
 
@@ -398,7 +400,7 @@ Party::RowAnim* Party::anim_for(unsigned id) {
 // A static helper (it iterates the file-local Row) -> keeps draw() focused. buffTex 0 = no-op.
 static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
                               float px, float oy, float pad, float rowpit, float rowh, float S, float curBand, float iconH,
-                              Font* font) {
+                              Font* font, bool right, float boxW, float screenW) {
     if (!buffTex) return;
     setup_tex_state(dev, buffTex, false);               // MIPFILTER NONE : pixel-exact buff atlas (kept crisp)
     const float bgap = snap(1.0f * S);                  // gap between icons
@@ -422,8 +424,9 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
                                                         // so the overflow chip needs its OWN margin or it reads glued to the last icon.
     // CONFIG-PREVIEW ONLY : cap the LEFTWARD strip at the stage's left edge so it can't spill the rect ; the
     // clipped buffs collapse into a "+N" marker at the leftmost fitting cell. lim <= 0 (live HUD) = no cap.
-    const float lim  = g_previewBuffLeft;
+    const float lim  = right ? g_previewBuffRight : g_previewBuffLeft;   // RIGHT strip : capped at the stage's right edge
     const bool  cap  = lim > 0.0f;
+    const float xl   = px + boxW + snap(6.0f * S);   // RIGHT strip : its left edge, just right of the box (no cursor on that side)
     struct Mark { float x, y; int nn; };
     Mark marks[12]; int nmark = 0;                       // <= 6 members x 2 rows
     // ---- strip ORDER : the user lists the buff GROUPS (buff_groups.h) in the order they want them drawn, and
@@ -479,14 +482,15 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             int drawN = cnt;                            // icons to draw as real icons
             bool clip = false;                          // clipped -> reserve the leftmost cell for "+N"
             if (cap) {
-                int fit = (int)((xr - bs - (lim + bmgn)) / (bs + bgap)) + 1;   // cells with left edge >= lim (+ reserve the "+N" margin)
+                int fit = right ? (int)(((lim - bmgn) - xl - bs) / (bs + bgap)) + 1      // cells with right edge <= lim
+                                : (int)((xr - bs - (lim + bmgn)) / (bs + bgap)) + 1;     // cells with left edge >= lim (+ reserve the "+N" margin)
                 if (fit < 0) fit = 0; if (fit > cnt) fit = cnt;
                 if (fit < cnt) { clip = true; drawN = fit - 1; if (drawN < 0) drawN = 0; }   // last fitting cell -> "+N"
                 else drawN = cnt;
             }
             for (int j = 0; j < drawN; ++j) {
-                const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
-                if (!cap && x < 1.0f) break;            // live : ran off the left of the screen -> stop
+                const float x = right ? snap(xl + (float)j * (bs + bgap)) : snap(xr - (float)(j + 1) * bs - (float)j * bgap);
+                if (!cap && (right ? x + bs > screenW - 1.0f : x < 1.0f)) break;   // live : ran off the screen -> stop
                 const int id = ord[start + j];
                 if (id < 0 || id >= BUFF_COLS * BUFF_ATLAS_ROWS) continue;   // id outside the atlas -> skip
                 const float u0 = (float)(id % BUFF_COLS) * au;
@@ -495,7 +499,8 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             }
             if (clip && drawN >= 0 && nmark < 12) {     // "+N" (hidden count) in the leftmost fitting cell
                 const int cellIdx = drawN;              // the cell just left of the last drawn icon
-                marks[nmark].x  = snap(xr - (float)(cellIdx + 1) * bs - (float)cellIdx * bgap - bmgn);   // pushed left by the margin -> not glued to the last buff
+                marks[nmark].x  = right ? snap(xl + (float)cellIdx * (bs + bgap) + bmgn)
+                                        : snap(xr - (float)(cellIdx + 1) * bs - (float)cellIdx * bgap - bmgn);   // pushed away by the margin -> not glued to the last buff
                 marks[nmark].y  = y;
                 marks[nmark].nn = cnt - drawN;          // buffs not shown as icons
                 ++nmark;
@@ -617,22 +622,8 @@ void Party::draw(const Frame& f) {
         }
     }
 
-    // MARKER-DRIVEN ALLIANCE PLACEMENT : when the four native alliance markers are set, drop our alliance
-    // boxes onto the native layout (BOTTOM-anchored, keeping our readable row height). The LOWER slot (the
-    // one nearest the party) has its bottom clamped to the party's LIVE top -> as the main party grows it
-    // covers the bottom and the alliance rides UP ; the UPPER slot stacks flush on the lower one. So our
-    // alliances move with the main party's member count, exactly like the native. (px / right-align kept.)
-    if (tier_ > 0 && f.screenH > 0.0f) {
-        float az[4]; const float* ar = guide_alliance_refs(az) ? az : ui_config().allyRefY;   // alliance ZONES override the old markers
-        if (ar[0] >= 0.0f && ar[1] >= 0.0f && ar[2] >= 0.0f && ar[3] >= 0.0f) {
-            const bool aLower = (ar[1] >= ar[3]);                          // which marker pair sits lower (near party)
-            const float loB = (aLower ? ar[1] : ar[3]) * f.screenH;       // lower slot bottom
-            const float hiB = (aLower ? ar[3] : ar[1]) * f.screenH;       // upper slot bottom
-            float bottom = (tier_ == 1) ? loB : ((g_boxRect[1].valid) ? g_boxRect[1].y : hiB);
-            if (g_partyTopReady && bottom > g_partyStackTop) bottom = g_partyStackTop;   // sit on the Cost MP/Next box top, not the party rows
-            oy = snap(bottom - H);
-        }
-    }
+    // (2026-11-27 : the marker-driven alliance placement is gone -- it laid our alliances on the game's own windows, which
+    //  now hide whenever ours show. The alliances stack on the party, or sit where they were dragged.)
 
     // EDIT LAYOUT safety : an alliance must never end up off-screen (a stale party rect, a bad stored
     // position, or stacking above a high party could push it out) -> always keep it visible + grabbable.
@@ -658,24 +649,8 @@ void Party::draw(const Frame& f) {
     // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
     const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 20.0f * S) + fiB : 0.0f;   // == draw_action_box bh2 max : 2 lines + padding + the 10px topPad (keep in sync)
 
-    // LINE 0 (partyBottomY) is just a VISUAL reference for the native party's bottom edge -- it does NOT
-    // move our box (you place the party freely at the screen bottom). It only documents, together with the
-    // top lines, exactly where the native party spans for each member count.
-
-    // GROW UP to the REFERENCE LINE per count : the box top reaches that line, so the game's native
-    // party window is covered whatever the member count or row sizes -- no guessing. Set the lines in edit
-    // layout (drag each onto the native party's top edge for that size). Unset -> no grow up.
-    if (tier_ == 0 && f.screenH > 0.0f) {
-        const int cnt = (n <= 1) ? 1 : (n >= 6 ? 6 : n);        // member count clamped to 1..6
-        float lineY = guide_party_top(cnt, f.screenH);          // the "Party Np" ZONE top drives the grow-up
-        if (lineY < 0.0f) { const float frac = ui_config().partyRef[cnt - 1]; if (frac >= 0.0f) lineY = frac * f.screenH; }   // fallback : old reference line
-        if (lineY >= 0.0f) {
-            lineY = snap(lineY);
-            float maskBand = oy - lineY;   // grow up to the line (0 if already at/above it)
-            if (maskBand < 0.0f) maskBand = 0.0f;
-            oy -= maskBand; H += maskBand;
-        }
-    }
+    // (2026-11-27 : the grow-up to the per-count reference lines is gone -- it stretched the box over the game's party
+    //  window, which now hides whenever ours shows. The party stays bottom-anchored and grows up with its members.)
 
     // The chrome / cost box / edit overlay use the real box rect (boxOy, boxH). For the rows, EVENLY
     // DISTRIBUTE the members across the box : equal top/bottom margins AND equal gaps between members
@@ -726,6 +701,20 @@ void Party::draw(const Frame& f) {
             buffW = bmar + (float)cnt * bs + (float)(cnt - 1) * bgap;
         }
     }
+    // the strip's SIDE (2026-11-27) : Auto = where there is room (a box against the right edge has its buffs on the left,
+    // against the left edge on the right), with a margin so it does not flip back and forth ; Left / Right = that side,
+    // unless it truly does not fit there and does on the other. Frozen while the box is dragged (the box must not jump).
+    if (tier_ == 0 && g_dragTier != 0) {
+        const float roomL = px, roomR = f.screenW - (px + w);
+        bool right = buffRight_;
+        if (g_previewBuffLeft > 0.0f)       right = ui_config().buffSide == 2;    // the config preview : the chosen side (Auto shows left)
+        else if (ui_config().buffSide == 1) right = roomL < buffW && roomR >= buffW;
+        else if (ui_config().buffSide == 2) right = !(roomR < buffW && roomL >= buffW);
+        else { const float hyst = snap(40.0f * S); if (right ? roomL > roomR + hyst : roomR > roomL + hyst) right = !right; }
+        buffRight_ = right;
+    }
+    const bool bR = tier_ == 0 && buffRight_;
+    const float stripL = bR ? 0.0f : buffW;   // how far the cluster reaches LEFT of the box (the strip, when it is on the left)
     buffReserveW_ = buffW;   // expose for the config preview (so it centres the box + buff-strip cluster)
 
     // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
@@ -734,31 +723,37 @@ void Party::draw(const Frame& f) {
     // position is the PLACED top (box top + costH + maskOff) so it round-trips through the grow-up next frame.
     if (ui_config().editLayout && f.mouse && f.screenW > 0.0f) {
         const MouseState* m = f.mouse;
-        const float clX = px - buffW, clY = boxOy - costH, clW = w + buffW, clH = boxH + costH;   // cluster incl. the left buff strip
+        const float clX = px - stripL, clY = boxOy - costH, clW = w + buffW, clH = boxH + costH;   // cluster incl. the buff strip (left or right)
         const bool over = m->x >= clX && m->x < clX + clW && m->y >= clY && m->y < clY + clH;
+        const int eid = EDITBOX_PARTY + tier_;
+        BoxLayout& BL = ui_config().box[tier_];
+        edit_box_bind(eid, &BL.x, &BL.y, &BL.posSet, &ui_config().box[tcfg()].scale, f.t);   // the shared edit : undo / reset / keys
+        {   // the toolbar's steppers, a typed position, Delete : on the selected cluster (top-left = the cluster's, as shown)
+            int kdx, kdy; bool kset, kreset; float ksx, ksy;
+            if (g_dragTier != tier_ && edit_box_take(eid, f.t, kdx, kdy, kset, ksx, ksy, kreset)) {
+                if (kreset) { BL.posSet = false; ui_config().box[tcfg()].scale = 1.0f; }
+                else {
+                    float ex = kset ? ksx : clX + (float)kdx, ey = kset ? ksy : clY + (float)kdy;
+                    if (ex > f.screenW - clW) ex = f.screenW - clW; if (ex < 0.0f) ex = 0.0f;
+                    if (ey > f.screenH - clH) ey = f.screenH - clH; if (ey < 0.0f) ey = 0.0f;
+                    float nx = (ex + stripL + 2.0f * fiB) / f.screenW, ny = (ey + costH + maskOff + 2.0f * fiB) / f.screenH;
+                    BL.x = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx); BL.y = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny); BL.posSet = true;
+                }
+                save_ui_config();
+            }
+        }
         edit_z_track(EDITBOX_PARTY + tier_, over, f.t);                            // shared z-order arbiter (see edit_box.h) -> a party box under another only reacts when it's on TOP
         const bool topmost = (edit_z_topmost(EDITBOX_PARTY + tier_) && !edit_over_ui_blocker(m->x, m->y, f.t)) || (g_dragTier == tier_);   // also yield to the toolbar
         if (m->clicked && g_dragTier < 0 && over && topmost && edit_drag_grab(&g_dragTier)) {   // FRESH click + TOP box + shared lock (can't grab while any other box drags)
             g_dragTier = tier_; g_grabDX = m->x - clX; g_grabDY = m->y - clY;
+            edit_box_grabbed(eid);   // selected, and an undo step
         }
         if (g_dragTier == tier_) {
             if (m->down) {
                 float ex = m->x - g_grabDX, ey = m->y - g_grabDY;    // new cluster top-left (px)
                 const float ew = clW, eh = clH;
                 const bool altFree = (edit_shift() && edit_ctrl()) || edit_alt();   // Ctrl+Shift (or Alt) = FREE placement : no magnetic snap, no zone/box repulsion
-                const float SNAP = snap(10.0f);
-                if (!altFree) for (int b = 0; b < 3; ++b) {
-                    if (b == tier_ || !g_boxRect[b].valid) continue;
-                    const BoxRect& r = g_boxRect[b];
-                    if      (fabsf(ex - r.x) < SNAP)              ex = r.x;              // left  -> left
-                    else if (fabsf(ex - (r.x + r.w)) < SNAP)     ex = r.x + r.w;        // left  -> right
-                    else if (fabsf((ex + ew) - (r.x + r.w)) < SNAP) ex = r.x + r.w - ew;// right -> right
-                    else if (fabsf((ex + ew) - r.x) < SNAP)      ex = r.x - ew;         // right -> left
-                    if      (fabsf(ey - r.y) < SNAP)              ey = r.y;              // top    -> top
-                    else if (fabsf(ey - (r.y + r.h)) < SNAP)     ey = r.y + r.h;        // top    -> bottom
-                    else if (fabsf((ey + eh) - (r.y + r.h)) < SNAP) ey = r.y + r.h - eh;// bottom -> bottom
-                    else if (fabsf((ey + eh) - r.y) < SNAP)      ey = r.y - eh;         // bottom -> top
-                }
+                if (!altFree) edit_box_snap(eid, f.t, ex, ey, ew, eh);   // the shared guides : every box's edges and centres (2026-11-27)
                 // keep the WHOLE cluster on screen
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
@@ -772,17 +767,18 @@ void Party::draw(const Frame& f) {
                     if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
                 }
                 // cluster top-left -> stored PLACED top : the box px = ex + buffW (undo the left strip) ; undo costH + maskOff
-                float nx = (ex + buffW + 2.0f * fiB) / f.screenW, ny = (ey + costH + maskOff + 2.0f * fiB) / f.screenH;   // stored without the border (see posSet)
+                float nx = (ex + stripL + 2.0f * fiB) / f.screenW, ny = (ey + costH + maskOff + 2.0f * fiB) / f.screenH;   // stored without the border (see posSet)
                 nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that
                 ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny);   // would make the box un-grabbable next time
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
-                px = snap(ex + buffW);                                 // immediate horizontal feedback (box px = cluster left + the buff strip)
-            } else { g_dragTier = -1; edit_drag_release(&g_dragTier); }  // released -> free the shared lock
+                px = snap(ex + stripL);                                // immediate horizontal feedback (box px = cluster left + a left strip)
+            } else { g_dragTier = -1; edit_drag_release(&g_dragTier); save_ui_config(); }  // released -> free the shared lock, persist once
         }
         if (over && topmost && !edit_drag_busy())                      // hovering a grabbable box (only the TOP one glows) -> same neon cue as the standalone boxes
             edit_box_hover_glow(f.dev, f, clX, clY, clW, clH);
         // wheel over this box -> resize it (0.5x .. 2.0x)
         if (over && ui_config().wheel != 0) {
+            edit_box_wheeled(eid, f.t);
             float s = ui_config().box[tcfg()].scale + (float)ui_config().wheel * 0.05f;   // resize the config GROUP (both alliances share their scale)
             ui_config().box[tcfg()].scale = s < 0.5f ? 0.5f : (s > 2.0f ? 2.0f : s);
             ui_config().wheel = 0;
@@ -790,9 +786,9 @@ void Party::draw(const Frame& f) {
     }
     // store the CLUSTER rect (party box + the cost box above it for tier 0) so other boxes snap to
     // its real top, and the party itself snaps using the cost-box top.
-    g_boxRect[tier_].x = px - buffW; g_boxRect[tier_].y = boxOy - costH; g_boxRect[tier_].w = w + buffW; g_boxRect[tier_].h = boxH + costH; g_boxRect[tier_].valid = true;   // incl. the left buff strip (right edge px+w unchanged -> alliance right-align still holds)
+    g_boxRect[tier_].x = px - stripL; g_boxRect[tier_].y = boxOy - costH; g_boxRect[tier_].w = w + buffW; g_boxRect[tier_].h = boxH + costH; g_boxRect[tier_].valid = true;   // incl. the left buff strip (right edge px+w unchanged -> alliance right-align still holds)
     if (ui_config().editLayout)   // publish the cluster (incl. the left buff strip) so the standalone boxes repel it too
-        edit_box_publish(EDITBOX_PARTY + tier_, px - buffW, boxOy - costH, w + buffW, boxH + costH, f.t);
+        edit_box_publish(EDITBOX_PARTY + tier_, px - stripL, boxOy - costH, w + buffW, boxH + costH, f.t);
     const float cx  = px + pad + inset;
     const float gx0 = px + w - pad - inset - (3 * gw + 2 * ggap);
     // row-invariant column positions (only the row's Y varies) :
@@ -941,7 +937,7 @@ void Party::draw(const Frame& f) {
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
     if (tier_ == 0) {   // buffs LEFT of the row + (config preview only) a "+N" marker for the strip clipped at the stage edge
         Font* bfn = f.fonts ? f.fonts->get(ui_font_face(ui_config().fontFace), 700) : f.font;
-        draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(coreBandH() * S), snap(buffIconH() * S), bfn);   // curBand = cursor ref (coreBandH) so the strip hugs the cursor ; icon size driven by Buff Size % + 1/2-row mode ; centred in the row
+        draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(coreBandH() * S), snap(buffIconH() * S), bfn, bR, w, f.screenW);   // curBand = cursor ref (coreBandH) so the strip hugs the cursor ; icon size driven by Buff Size % + 1/2-row mode ; centred in the row
     }
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------

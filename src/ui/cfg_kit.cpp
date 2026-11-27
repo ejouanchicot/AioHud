@@ -7,6 +7,7 @@
 // the FFXI pointer), and the graduation on sliders. 2026-11-26 : a first flat version was refused -- "très loin de la
 // qualité qu'on a déjà" -- the redesign keeps this material and fixes size, hierarchy and states.
 #include "ui/cfg_kit.h"
+#include "ui/tune.h"   // TUNE : dev-only looks (a release compiles the default)
 #include "ui/config_controls.h"   // the material : ctl_edge / ctl_crown / rrect_fill / rpanel / drop_shadow / chevron + palette
 #include "model/ui_config.h"      // the config's own face (the Interface text element)
 #include "gfx/draw.h"
@@ -431,38 +432,6 @@ int chrome_segment(Kit& K, int id, float x, float y, float segW, float h, const 
     }
     return hit;
 }
-// A RUBY set in steel (2026-11-26 : the destructive keys "en ruby", in the world's lore -- crystals and gems, not paint).
-// A cut stone seen face-on : deep at the top where the setting shades it, the light coming THROUGH it and pooling at
-// the bottom (a gem is lit from behind its own facets), a crisp reflection on its table, two facet lines.
-static void ruby_face(Kit& K, float x, float y, float w, float h, float r, float t, bool dim) {
-    // a STEP-CUT RUBY seen face-on (2026-11-26 : "un rouge plus sombre, qu'on dirait du ruby") : pigeon-blood red, very
-    // dark where the facets turn away, alive where the light comes back through. The crown's four facets frame a flat
-    // TABLE : the top one darkest (the setting shades it), the bottom one brightest (the light returning through the
-    // stone), the sides between ; the table itself a deep red rising toward its foot ; one quiet reflection on it.
-    const u32 dev = K.dev;
-    const float k = dim ? 0.45f : 1.0f;
-    auto C = [&](u32 c) { return m_toward(m_scale(c, k), 0xFF201A1Bu, dim ? 0.55f : 0.0f); };
-    const u32 cTop = C(0xFF1A0105u), cSide = C(0xFF34040Cu), cSideR = C(0xFF2A030Au), cBot = C(m_toward(0xFF6E0818u, 0xFF861024u, t));
-    const u32 tTop = C(0xFF3A040Cu), tBot = C(m_toward(0xFF5C0614u, 0xFF6E0A1Au, t));
-    const float bw = h * 0.26f > K.px(7.0f) ? K.px(7.0f) : h * 0.26f;   // the crown facets' width
-    const float x0 = x, y0 = y, x1 = x + w, y1 = y + h, ix0 = x + bw * 1.4f, iy0 = y + bw, ix1 = x + w - bw * 1.4f, iy1 = y + h - bw;
-    cs(dev);
-    rrect(dev, x, y, w, h, r, fa(C(0xFF140104u)), fa(C(0xFF140104u)));                     // the stone's body (under the facets)
-    const float top[8] = { x0 + r * 0.6f, y0, x1 - r * 0.6f, y0, ix1, iy0, ix0, iy0 };
-    const float bot[8] = { ix0, iy1, ix1, iy1, x1 - r * 0.6f, y1, x0 + r * 0.6f, y1 };
-    const float lft[8] = { x0, y0 + r * 0.6f, ix0, iy0, ix0, iy1, x0, y1 - r * 0.6f };
-    const float rgt[8] = { ix1, iy0, x1, y0 + r * 0.6f, x1, y1 - r * 0.6f, ix1, iy1 };
-    fill_poly_aa(dev, top, 4, fa(cTop)); fill_poly_aa(dev, bot, 4, fa(cBot));
-    fill_poly_aa(dev, lft, 4, fa(cSide)); fill_poly_aa(dev, rgt, 4, fa(cSideR));
-    q4(dev, ix0, iy0, ix1 - ix0, iy1 - iy0, fa(tTop), fa(tTop), fa(tBot), fa(tBot));          // the table
-    // the facet edges : hairlines where the planes meet, catching a little light
-    seg_soft(dev, ix0, iy0, ix1, iy0, 1.0f, MA(dim ? 0x10 : 0x2A, 0xFFFFFFu));
-    seg_soft(dev, ix0, iy1, ix1, iy1, 1.0f, MA(dim ? 0x10 : 0x38, 0xFF8090u));
-    seg_soft(dev, x0 + r * 0.3f, y0 + r * 0.3f, ix0, iy0, 1.0f, MA(0x22, 0xFFFFFFu));
-    seg_soft(dev, x1 - r * 0.3f, y1 - r * 0.3f, ix1, iy1, 1.0f, MA(0x26, 0xFF8090u));
-    rrect_stroke(dev, x + 0.5f, y + 0.5f, w - 1.0f, h - 1.0f, r, fa(C(0xFF0C0002u)), K.px(1.2f));   // its girdle, in the setting
-    grad_quad(dev, ix0, iy0 + K.px(1.0f), ix1 - ix0, (iy1 - iy0) * 0.35f, MA(dim ? 0x08 : 0x1C, 0xFFFFFFu), MA(dim ? 0x08 : 0x1C, 0xFFFFFFu), 0, 0);   // the table's reflection
-}
 bool chrome_close(Kit& K, int id, float x, float y, float s) {
     // a steel key, the X ENGRAVED in it : two cuts, dark, with the light caught on their lower lip -- no red paint
     // (2026-11-26 : the red "pas credible"). Hover lifts the key like every other ; pressed, it goes down.
@@ -489,6 +458,24 @@ bool chrome_close(Kit& K, int id, float x, float y, float s) {
     for (int k = 0; k < 2; ++k) {   // a quiet reflection along the upper edge
         const float sx = k == 0 ? 1.0f : -1.0f;
         seg_soft(K.dev, cx - a * sx * 0.7f, cy - a * 0.7f - K.px(1.3f), cx + a * sx * 0.7f, cy + a * 0.7f - K.px(1.3f), K.px(0.9f), MA(0x40, 0xFFFFFFu));
+    }
+    // HOVER : the cross LIGHTS UP like a neon tube (2026-11-27) -- a wide red halo, a hotter one close in, then the tube's
+    // core near white ; a soft red light spilling onto the key. Additive, then the blend is put back (rule 3).
+    if (t > 0.01f) {
+        const u32 dev = K.dev;
+        cs_add(dev);
+        rrect_glow(dev, x + s * 0.2f, y + s * 0.2f + d, s * 0.6f, s * 0.6f, s * 0.2f, MA((u32)(0x38 * t), 0xFF2238u), s * 0.35f);   // the light on the key
+        for (int k = 0; k < 2; ++k) {
+            const float sx = k == 0 ? 1.0f : -1.0f;
+            seg_soft(dev, cx - a * sx, cy - a, cx + a * sx, cy + a, w2 * 3.2f, MA((u32)(0x28 * t), 0xFF2A40u));   // the halo
+            seg_soft(dev, cx - a * sx, cy - a, cx + a * sx, cy + a, w2 * 1.7f, MA((u32)(0x55 * t), 0xFF3A4Cu));   // the glow close in
+        }
+        cs(dev);
+        for (int k = 0; k < 2; ++k) {   // the tube's core
+            const float sx = k == 0 ? 1.0f : -1.0f;
+            seg_soft(dev, cx - a * sx * 0.92f, cy - a * 0.92f, cx + a * sx * 0.92f, cy + a * 0.92f, w2 * 0.62f, MA((u32)(0xFF * t), 0xFF5A66u));
+            seg_soft(dev, cx - a * sx * 0.88f, cy - a * 0.88f, cx + a * sx * 0.88f, cy + a * 0.88f, w2 * 0.28f, MA((u32)(0xFF * t), 0xFFE4E8u));
+        }
     }
     return hov && K.click;
 }
@@ -630,16 +617,36 @@ int chrome_stepper(Kit& K, int id, float x, float y, float w, float h, float kw,
     window_face(K, wx, y + K.px(4.0f), ww, h - K.px(8.0f), s, K.px(TS_VALUE), dim);
     return hit;
 }
+// a word in GLASS ENGRAVED in the steel (2026-11-27) : it lies at the bottom of a cut -- the cut's upper wall throws its
+// shadow on the top of the strokes, the light catches the cut's LOWER lip, the glass fills it. Lit (hover / armed), the
+// glass glows from inside the cut and its light spreads round the letters (offset copies, additive). Tint : 0 white
+// (every key), 1 red (a danger key), 2 green (a LATCHED key -- the state it stands for is on, so it stays lit).
+static void glass_text(Kit& K, float cx, float cy, const char* s, float sz, float lit, bool enabled, int tint) {
+    const bool red = tint == 1, green = tint == 2, onDark = tint == 3;   // 3 : white glass on a DARK bed (the ledger) -- light at rest
+    const u32 dev = K.dev;
+    static const float RING[8][2] = { {1,0},{-1,0},{0,1},{0,-1},{0.7f,0.7f},{-0.7f,0.7f},{0.7f,-0.7f},{-0.7f,-0.7f} };
+    const float X = snap(cx), Y = snap(cy);
+    const u32 glow = red ? 0xFF2238u : green ? 0x30FF60u : 0xC8DCFFu;
+    if (lit > 0.01f) {
+        cs_add(dev); K.fs->begin(dev);
+        for (int r = 0; r < 2; ++r) {
+            const float o = K.px(r == 0 ? 3.2f : 1.6f);
+            const u32 col = MA((u32)((r == 0 ? (red || green ? 0x12 : 0x0C) : (red || green ? 0x26 : 0x1A)) * lit), glow);
+            for (int k = 0; k < 8; ++k) K.fs->draw_c(dev, X + RING[k][0] * o, Y + RING[k][1] * o, s, sz, col, 0, 0.0f);
+        }
+        cs(dev);
+    }
+    K.fs->begin(dev);
+    if (!enabled) { K.fs->draw_c(dev, X, Y - 1.0f, s, sz, fa(0x90000000u), 0, 0.0f); K.fs->draw_c(dev, X, Y, s, sz, fa(red ? 0xFF4A3A3Cu : green ? 0xFF3A4A3Eu : 0xFF5C626Au), 0, 0.0f); return; }
+    const u32 body = red ? m_toward(0xFF6A1C22u, 0xFFFF7A88u, lit) : green ? m_toward(0xFF1C4A26u, 0xFFB8FFC8u, lit) : onDark ? m_toward(0xFF9AA2ACu, 0xFFF6FAFFu, lit) : m_toward(0xFF2A2E34u, 0xFFF6FAFFu, lit);   // the glass in the cut
+    const u32 deep = red ? m_toward(0xFF3A0A0Eu, 0xFFE8304Au, lit) : green ? m_toward(0xFF0A2410u, 0xFF30D058u, lit) : onDark ? m_toward(0xFF4A525Cu, 0xFFC0D4F0u, lit) : m_toward(0xFF101215u, 0xFFC0D4F0u, lit);   // the same glass, in the wall's shadow
+    K.fs->draw_c(dev, X, Y + 1.0f, s, sz, MA((u32)(0x48 * (1.0f - lit * 0.5f)), 0xFFFFFFu), 0, 0.0f);   // the lit lower lip of the cut
+    K.fs->draw_c(dev, X, Y - 1.0f, s, sz, fa(0xE0000000u), 0, 0.0f);                                   // the upper wall's shadow
+    K.fs->draw_c(dev, X, Y, s, sz, red || green || onDark ? fa(body) : MA((u32)(0xC8 + 0x37 * lit), body & 0xFFFFFFu), 0, 0.0f);   // the glass (white at rest : smoked translucent PVC -- the steel shows through, 2026-11-27)
+    K.fs->draw_c(dev, X, Y - 0.6f, s, sz, MA((u32)(0x70 - 0x30 * lit), deep), 0, 0.0f);                // its top in the shadow (the glass sits LOW)
+}
 // a KEY BUTTON (Save) : seated in its socket like the stepper's keys ; raised at rest, PRESSED DOWN while held ; its face
 // brass when there is something to do (unsaved changes), steel with the word inlaid when there is not
-// text ENGRAVED in metal (a key's word) : the cut's shadow above, the light caught on its lower lip below, the letters
-// with NO outline -- an outlined word reads as a sticker laid on the key (2026-11-26 : "pas de la meme qualite ... faux")
-static void engrave_c(Font* fo, u32 dev, float cx, float cy, const char* s, float sz, u32 col) {
-    fo->begin(dev);
-    fo->draw_c(dev, snap(cx), snap(cy) - 1.0f, s, sz, fa(0xB0000000u), 0, 0.0f);
-    fo->draw_c(dev, snap(cx), snap(cy) + 1.0f, s, sz, MA(0x38, 0xFFFFFFu), 0, 0.0f);
-    fo->draw_c(dev, snap(cx), snap(cy), s, sz, fa(col), 0, 0.0f);
-}
 bool chrome_keybtn(Kit& K, int id, float x, float y, float w, float h, const char* s, int kind, bool enabled, bool housing) {
     // ONE cast key, the selector's quality : a standalone button is a single plinth (no housing + socket + key = three
     // nested outlines) ; set INTO a housing (the profile group) it sits in a socket cut there. Pressed : it goes down a
@@ -649,14 +656,18 @@ bool chrome_keybtn(Kit& K, int id, float x, float y, float w, float h, const cha
     float kx = x, ky = y, kw = w, kh = h;
     if (!housing) { const float g = K.px(3.0f); kx = x + g; ky = y + g; kw = w - 2.0f * g; kh = h - 2.0f * g;
                     hollow(K, kx, ky, kw, kh, K.px(3.0f), STEEL(), 0xFF07090Cu); kx += K.px(1.0f); ky += K.px(0.5f); kw -= K.px(2.0f); kh -= K.px(2.0f); }
-    if (kind == 3) {   // LATCHED : the state it stands for is the current one -- held DOWN, its face brass (the tabs' and the
-                       // Simple / Advanced switch's language : "enfonce et jaune = valide"), not greyed out
+    if (kind == 3) {   // LATCHED (2026-11-27 : a flat brass face with green letters "pas credible") : the key PUSHED IN and
+                       // LIT -- sunk below the others into its recess, its steel face in the shadow of the recess's upper wall,
+                       // lit from behind : a green light inside the face, the word's glass glowing green.
         cs(dev);
-        rrect(dev, kx - K.px(1.4f), ky - K.px(1.4f), kw + K.px(2.8f), kh + K.px(2.8f), K.px(4.0f), fa(0xFF06080Bu), fa(m_scale(STEEL().lite, 0.45f)));   // the recess it sits in
-        rrect(dev, kx, ky + K.px(1.2f), kw, kh - K.px(1.2f), K.px(3.0f), fa(m_scale(BRASS().body, 0.92f)), fa(m_scale(BRASS().bot, 0.95f)));
-        grad_quad(dev, kx, ky + K.px(1.2f), kw, kh * 0.42f, MA(0x70, 0x000000u), MA(0x70, 0x000000u), 0, 0);
-        flat(dev, kx + K.px(3.0f), ky + kh - 1.0f, kw - K.px(6.0f), 1.0f, MA(0x90, BRASS().lite));
-        ink_c(K.fs, dev, kx + kw * 0.5f, ky + kh * 0.5f + K.px(0.8f), s, K.px(TS_VALUE), INK);
+        const float sink = K.px(1.6f);
+        rrect(dev, kx - K.px(1.4f), ky - K.px(1.4f), kw + K.px(2.8f), kh + K.px(2.8f), K.px(4.0f), fa(0xFF05070Au), fa(m_scale(STEEL().lite, 0.40f)));   // the recess
+        Metal m = STEEL(); m.top = m_scale(m.top, 0.52f); m.bot = m_scale(m.bot, 0.60f); m.glint = m_scale(m.glint, 0.35f);
+        plinth(K, kx, ky + sink, kw, kh - sink, K.px(3.0f), m, 0.0f);                                     // the face, sunk
+        grad_quad(dev, kx + K.px(1.0f), ky + sink, kw - K.px(2.0f), kh * 0.38f, MA(0x90, 0x000000u), MA(0x90, 0x000000u), 0, 0);   // the recess wall's shadow on it
+        const float fy = ky + sink, fh = kh - sink;   // the light behind it : the word's own glow (a shaped glow on the face showed its outline)
+        flat(dev, kx + K.px(3.0f), ky + kh - 1.0f, kw - K.px(6.0f), 1.0f, MA(0x50, 0x80FFA0u));                // the light leaking at its lower lip
+        glass_text(K, kx + kw * 0.5f, fy + fh * 0.5f, s, K.px(TS_VALUE), 1.0f, true, 2);                     // the word, lit green
         (void)id; (void)enabled;
         return false;
     }
@@ -670,17 +681,24 @@ bool chrome_keybtn(Kit& K, int id, float x, float y, float w, float h, const cha
     if (press) { km.top = m_scale(km.top, 0.82f); km.bot = m_scale(km.bot, 0.88f); km.glint = m_scale(km.glint, 0.7f); }
     plinth(K, kx, ky + d, kw, kh - d, K.px(housing ? 6.0f : 3.0f), km, press ? 0.0f : t * 0.6f);
     const float cx = kx + kw * 0.5f, cy = ky + kh * 0.5f + d * 0.5f;
-    if (brass) ink_c(K.fs, dev, cx, cy, s, K.px(TS_VALUE), INK);
-    else if (kind == 2 || kind == 4) {   // DESTRUCTIVE : the key IS a ruby, set in its steel (the plinth above is the setting)
-        const float g = K.px(3.5f);
-        ruby_face(K, kx + g, ky + d + g, kw - 2.0f * g, (kh - d) - 2.0f * g, K.px(3.0f), kind == 4 ? 1.0f : t, !enabled);
-        // the word engraved in the stone : pale, its cut a shade of the ruby, no outline
-        const float sz = K.px(TS_VALUE);
-        K.fs->begin(dev);
-        K.fs->draw_c(dev, snap(cx), snap(cy) - 1.0f, s, sz, fa(0xC0300006u), 0, 0.0f);
-        K.fs->draw_c(dev, snap(cx), snap(cy), s, sz, fa(!enabled ? 0xFF8A6A6Au : 0xFFF6E2DCu), 0, 0.0f);
+    if (brass) {   // a brass key : the same engraved glass as the steel keys (2026-11-27 : "les boutons ambre pareil")
+        float lit = t; if (TUNE("kit.neon", 0.0f) > 0.5f) lit = 1.0f;
+        glass_text(K, cx, cy, s, K.px(TS_VALUE), lit, true, 0);
     }
-    else engrave_c(K.fs, dev, cx, cy, s, K.px(TS_VALUE), !enabled ? 0xFF6E7580u : m_toward(0xFFB9C0CAu, 0xFFE4E8EEu, t));
+    else if (kind == 2 || kind == 4) {   // DESTRUCTIVE (2026-11-27, the user's call) : a steel key like the others, the word
+        // engraved in a DARK RED ; hovered (or armed, "Sure ?") the word lights up as a red neon tube -- the word only, the
+        // key itself does not glow (a lit ruby stone glared)
+        const float sz = K.px(TS_VALUE);
+        float lit = !enabled ? 0.0f : (kind == 4 ? (t > 0.7f ? t : 0.7f) : t);
+        if (enabled && TUNE("kit.neon", 0.0f) > 0.5f) lit = 1.0f;   // dev : tune.txt "kit.neon = 1" lights every danger key (to look at it without a hover)
+        glass_text(K, cx, cy, s, sz, lit, enabled, 1);
+    }
+    else {   // every other steel key : the same engraved glass, WHITE (2026-11-27 : "pareil pour tous les boutons, blanc")
+        float lit = !enabled ? 0.0f : t;
+        if (enabled && TUNE("kit.neon", 0.0f) > 0.5f) lit = 1.0f;
+        glass_text(K, cx, cy, s, K.px(TS_VALUE), lit, enabled, 0);
+    }
+
     return hov && K.click;
 }
 // ---- text set into the metal (the pages' labels) : 0 engraved metal, 1 a note, 2 engraved brass, 3 red enamel, 4 group caps ----
@@ -791,12 +809,80 @@ void chrome_weld(Kit& K, float ax, float ay, float bx, float by) {
     }
 }
 // the FLOOR of an opening in a frame (the settings' side) : a step darker, the frame's shadow falling in
+u32 kit_ground_alpha() {   // the config's ground (Interface page, "Background") : opaque, dark, see-through
+    static const u32 A[3] = { 0xFF, 0xC8, 0x90 };
+    const int g = ui_config().cfgBg; return A[g < 0 || g > 2 ? 0 : g];
+}
 void chrome_floor(Kit& K, float x, float y, float w, float h) {
     const u32 dev = K.dev;
     cs(dev);
-    q4(dev, x, y, w, h, fa(0xFF0C1015u), fa(0xFF0C1015u), fa(0xFF090C10u), fa(0xFF090C10u));
+    const u32 ga = kit_ground_alpha() << 24;
+    q4(dev, x, y, w, h, fa(ga | 0x0C1015u), fa(ga | 0x0C1015u), fa(ga | 0x090C10u), fa(ga | 0x090C10u));
     grad_quad(dev, x, y, w, K.px(22.0f), MA(0x88, 0x000000u), MA(0x88, 0x000000u), 0, 0);
     grad_quad(dev, x, y, K.px(12.0f), h, MA(0x50, 0x000000u), 0, MA(0x50, 0x000000u), 0);
+}
+
+// ======== the LEDGER (a hunt board : 2026-11-27, "comme un tableau de chasse") ========
+// In the config's metal (a flat dark table "lost the look") : a head band, then a row is a thin steel PLATE
+// raised -- its lamp set in the plate, its words in the keys' smoked glass, lit white on hover ; the chosen row is
+// that plate PUSHED IN and LIT, like a latched key (the face sunk in the recess's shadow, the lamp and words green).
+void chrome_ledger_head(Kit& K, float x, float y, float w, float h, const char* const* cols, const float* colX, const int* colAlign, int n) {
+    // the heads on their own BAND : a steel bar across the top of the board (a section header in small), a brass rule
+    // under it, the titles engraved in brass
+    const u32 dev = K.dev;
+    Metal m = STEEL(); m.top = m_scale(m.top, 0.66f); m.bot = m_scale(m.bot, 0.56f);
+    plinth(K, x, y, w, h, K.px(3.0f), m, 0.0f);
+    cs(dev);
+    flat(dev, x + K.px(4.0f), y + h - K.px(2.0f), w - K.px(8.0f), K.px(2.0f), MA(0xD0, BRASS().body));   // the brass rule
+    flat(dev, x + K.px(4.0f), y + h - K.px(2.0f), w - K.px(8.0f), 1.0f, MA(0x80, BRASS().lite));
+    const float sz = K.px(TS_VALUE) * 0.86f;
+    for (int i = 0; i < n; ++i) {
+        const float tw = chrome_label_w(K, cols[i], sz);
+        chrome_label(K, colAlign[i] == 2 ? colX[i] - tw : colX[i], y + (h - K.px(2.0f)) * 0.5f, cols[i], sz, 2);
+    }
+}
+bool chrome_ledger_row(Kit& K, int id, float x, float y, float w, float h, const char* const* cells, const float* colX, const int* colAlign, int n, bool sel, bool odd) {
+    (void)odd;
+    const u32 dev = K.dev;
+    const bool hov = !sel && inrect(K.mo, x, y, w, h), press = hov && K.mo && K.mo->down;
+    const float t = ease(id, 0, hov ? 1.0f : 0.0f);
+    float fy = y, fh = h;
+    if (sel) {   // pushed in : the recess, the face sunk and in its shadow
+        const float sink = K.px(1.4f);
+        cs(dev);
+        rrect(dev, x - K.px(1.0f), y - K.px(1.0f), w + K.px(2.0f), h + K.px(2.0f), K.px(4.0f), fa(0xFF05070Au), fa(m_scale(STEEL().lite, 0.40f)));
+        Metal m = STEEL(); m.top = m_scale(m.top, 0.50f); m.bot = m_scale(m.bot, 0.58f); m.glint = m_scale(m.glint, 0.30f);
+        fy = y + sink; fh = h - sink;
+        plinth(K, x, fy, w, fh, K.px(3.0f), m, 0.0f);
+        grad_quad(dev, x + K.px(1.0f), fy, w - K.px(2.0f), fh * 0.40f, MA(0x90, 0x000000u), MA(0x90, 0x000000u), 0, 0);
+        flat(dev, x + K.px(3.0f), y + h - 1.0f, w - K.px(6.0f), 1.0f, MA(0x50, 0x80FFA0u));   // the light leaking at its lower lip
+    } else {     // raised : a steel plate like a key, lifted by the hover, down while pressed
+        const float d = press ? K.px(1.0f) : 0.0f;
+        Metal m = STEEL(); m.top = m_scale(m.top, 0.80f); m.bot = m_scale(m.bot, 0.72f);
+        if (press) { m.top = m_scale(m.top, 0.82f); m.bot = m_scale(m.bot, 0.88f); }
+        fy = y + d; fh = h - d;
+        plinth(K, x, fy, w, fh, K.px(3.0f), m, press ? 0.0f : t * 0.6f);
+    }
+    // the lamp : a glass bead set in the plate (a dark ring cut round it) ; lit green on the chosen row
+    const float lr = fh * 0.18f, lx = x + K.px(14.0f), ly = fy + fh * 0.5f;
+    cs(dev);
+    rrect(dev, lx - lr - K.px(1.5f), ly - lr - K.px(1.5f), 2.0f * lr + K.px(3.0f), 2.0f * lr + K.px(3.0f), lr + K.px(1.5f), fa(0xFF0A0D11u), fa(m_scale(STEEL().lite, 0.70f)));
+    if (sel) {
+        cs_add(dev); rrect_glow(dev, lx - lr, ly - lr, 2.0f * lr, 2.0f * lr, lr, MA(0x60, 0x30FF60u), lr * 2.0f); cs(dev);
+        rrect(dev, lx - lr, ly - lr, 2.0f * lr, 2.0f * lr, lr, fa(0xFF7CFF9Cu), fa(0xFF1C9A3Cu));
+        rrect(dev, lx - lr * 0.45f, ly - lr * 0.65f, lr * 0.7f, lr * 0.5f, lr * 0.25f, MA(0xC0, 0xFFFFFFu), MA(0x40, 0xFFFFFFu));   // its spark
+    } else {
+        rrect(dev, lx - lr, ly - lr, 2.0f * lr, 2.0f * lr, lr, fa(0xFF24302Au), fa(0xFF0C120Eu));
+        rrect(dev, lx - lr * 0.45f, ly - lr * 0.65f, lr * 0.7f, lr * 0.45f, lr * 0.22f, MA(0x50, 0xFFFFFFu), MA(0x08, 0xFFFFFFu));
+    }
+    const float sz = K.px(TS_VALUE) * 0.92f;
+    for (int i = 0; i < n; ++i) {
+        if (!cells[i] || !cells[i][0]) continue;
+        const float tw = K.fs->measure(cells[i], sz);
+        const float cx = (colAlign[i] == 2 ? colX[i] - tw : colX[i]) + tw * 0.5f;
+        glass_text(K, cx, ly, cells[i], sz, sel ? 1.0f : t, true, sel ? 2 : 0);
+    }
+    return hov && K.click;
 }
 
 // ======== the SHEET ========

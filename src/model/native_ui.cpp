@@ -1219,8 +1219,10 @@ int eff_hide(const UiConfig& c) {
     // the windows AioHUD does not redraw but REPLACES with a module : hidden only while that module shows -- never
     // leave the player without a chat log or a party list (the config audit 2026-11-26)
     if (!c.chShow[0] && !c.chShow[1]) h &= ~NU_CHAT;
-    if (!c.partyShow) h &= ~(NU_PARTY | NU_COST);
-    if (!c.allyShow)  h &= ~NU_ALLY;
+    // Party / Alliance (2026-11-27) : the game's windows FOLLOW AioHUD's boxes -- shown by AioHUD, hidden in the game ;
+    // switched off in AioHUD, back in the game. Two party lists on screen was never a choice, only a missed setting.
+    if (c.partyShow) h |= (NU_PARTY | NU_COST); else h &= ~(NU_PARTY | NU_COST);
+    if (c.allyShow)  h |= NU_ALLY;               else h &= ~NU_ALLY;
     if (g_actFail) h &= ~NU_ACT;
     if (g_npcFail) h &= ~NU_NPC;
     if (g_mainFail) h &= ~NU_MAIN;
@@ -6113,7 +6115,7 @@ void native_ui_tick(bool inWorld) {
     if (!(inWorld && (c.nuHide & NU_MAIN))) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainNative = false; }
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
-    const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking || c.plShow);   // plShow : the names alone (audit 2026-11-26 : they never polled without another window)
+    const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking || c.plShow || c.partyShow || c.allyShow);   // party / alliance : the game's windows follow AioHUD's boxes   // plShow : the names alone (audit 2026-11-26 : they never polled without another window)
     // A crashed session's undo file must be honoured even when nothing is configured any more -- otherwise the
     // early-out below would never resolve, and the records it names would stay shifted until the client restarts.
     static int pendingRecovery = -1;
@@ -6123,7 +6125,7 @@ void native_ui_tick(bool inWorld) {
     }
     if (pendingRecovery == 1 && g_recovered) pendingRecovery = 0;
     if (!wanted && !g_anyApplied && pendingRecovery == 0) {   // the normal case for most players : two compares
-        const bool configured = c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0;
+        const bool configured = c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || c.partyShow || c.allyShow;
         const char* why = configured ? "waiting : no character logged in (title / char-select stay native)" : "not needed (nothing hidden or moved)";
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;

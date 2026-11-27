@@ -97,26 +97,9 @@ u32 theme_accent(int style, int color) {
 //      not the 150 that was bleaching hues which had no legibility problem in the first place.
 // Presets stay untouched (they are designed legible, and their nuance chart NEEDS its deep row to stay deep --
 // normalising row 2 would hand back row 1 and collapse three choices into two).
-static u32 accent_normalise(u32 a) {
-    int r = (int)((a >> 16) & 0xFF), g = (int)((a >> 8) & 0xFF), b = (int)(a & 0xFF);
-    // Lift to a FLOOR, not to full. Full value would repaint a mid green as a neon one -- the accent has to
-    // stay the colour that was picked. 219 leaves every vivid choice byte-for-byte untouched (EF4444, 3B82F6,
-    // 8B5CF6 all have a channel above it) and only lifts what is genuinely too dim to carry the chrome.
-    const int kVmin = 219;
-    const int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
-    if (mx > 0 && mx < kVmin) { r = r * kVmin / mx; g = g * kVmin / mx; b = b * kVmin / mx; }   // value -> the floor, ratios kept
-    u32 c = 0xFF000000u | ((u32)r << 16) | ((u32)g << 8) | (u32)b;
-    const int L = (r * 54 + g * 183 + b * 19) >> 8;
-    if (L < 96) { float f = (96.0f - (float)L) / (255.0f - (float)L); if (f > 0.5f) f = 0.5f; c = shade(c, f); }
-    return c;
-}
 void apply_ui_theme(int style, int color) {
     u32 a;
-    if (ui_config().uiAccent & 0xFF000000u) {                            // custom accent wins over the style/colour preset
-        a = accent_normalise(ui_config().uiAccent);
-    } else {
-        a = theme_accent(style, color);
-    }
+    a = theme_accent(style, color);   // (a custom accent -- uiAccent -- no longer overrides it : its setting is gone, 2026-11-27)
     C_ACCENT    = shade(a, 0.0f);          C_ACCENTHI  = shade(a, 0.45f);
     C_GOLD      = C_ACCENT;                C_GOLDHI    = C_ACCENTHI;         C_GOLD_DEEP = shade(a, 0.18f);   // eyebrow labels : a LIGHTENED accent -> readable on the dark bg for every theme colour (was -0.5 = too dark)
     C_ARROW     = shade(a, 0.35f);

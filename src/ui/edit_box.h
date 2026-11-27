@@ -68,6 +68,28 @@ bool edit_z_topmost(int boxId);
 // UI BLOCKER : the edit-layout TOOLBAR (the top bar with Done / Default / Rules) owns every click over it, above all
 // boxes. It publishes its rect each frame ; a box under it must NOT grab / glow / resize, so a box parked behind the
 // toolbar can't steal the Done button's click (reported). `t` staleness-gates it (edit off / toolbar hidden = inert).
+// THE EDIT LAYOUT REDESIGN (2026-11-27, edit_box.cpp) : names, the selection, snapping guides, keys, undo
+struct EditGuide { bool vert; float pos, a, b; };                  // a snap line : vertical at x = pos from y = a to b (or horizontal)
+const char* edit_box_name(int id, bool fr);
+int   edit_box_selected();
+void  edit_box_select(int id);                                     // -1 : none
+int   edit_box_hovered();                                          // this frame's topmost box under the cursor (-1 : none)
+bool  edit_box_rect(int id, float t, float& x, float& y, float& w, float& h);   // a box drawn recently : its rect
+bool  edit_box_bound(int id);                                      // the keys can move it (a standalone box ; not Party / Alliance yet)
+int   edit_box_guides(EditGuide* out, int max, float t);           // the snap lines of this frame's drag
+bool  edit_box_key(int dik, bool shift, bool ctrl);                // a key in edit mode : true = it was ours (consume it)
+void  edit_box_undo(); void edit_box_redo();
+bool  edit_box_can_undo(); bool edit_box_can_redo();
+void  edit_box_frame_end();
+void  edit_box_set_pos(int id, float x, float y);
+// a box with its OWN drag code (Party / Alliance) joins the shared edit : it binds its fields (undo / reset), snaps
+// through the same guides, says when it is grabbed or wheeled (an undo step, the selection), and takes the pending
+// keys / typed position / reset meant for it (dx, dy px ; or an absolute top-left ; or reset). No centre lock.
+void  edit_box_bind(int id, float* fx, float* fy, bool* posSet, float* scale, float t);
+void  edit_box_snap(int id, float t, float& ex, float& ey, float W, float H);
+void  edit_box_grabbed(int id);
+void  edit_box_wheeled(int id, float t);
+bool  edit_box_take(int id, float t, int& dx, int& dy, bool& set, float& sx, float& sy, bool& reset);                  // move a bound box to (x, y) px (the toolbar's typed numbers)                                        // drops keys a non-movable selection could not take
 void edit_set_ui_blocker(float x, float y, float w, float h, float t);
 bool edit_over_ui_blocker(float mx, float my, float t);
 

@@ -95,6 +95,16 @@ void ConfigPage::dispose() {   // //unload : device is still alive -> RELEASE ou
     on_device_lost();   // zero the handles + retry flags
 }
 void ConfigPage::set_tab(int t)     { if (t >= 0 && t < NTABS) tab_ = t; }
+// //aio config (the user's open) : the page it was closed on, or the first -- the Interface page's "Reopen on" (2026-11-27)
+void ConfigPage::toggle() {
+    if (!open_) {
+        const UiConfig& c = ui_config();
+        if (c.cfgReopen) { tab_ = (c.cfgLastTab == 2 || c.cfgLastTab < 0 || c.cfgLastTab >= NTABS) ? 0 : c.cfgLastTab; section_ = c.cfgLastSec; }
+        else             { tab_ = 0; section_ = 0; }
+        v2Hot_ = -1;
+    }
+    set_open(!open_);
+}
 // (The tab lamp used to live here as `tab_crown`. It is ctl_crown in config_controls now -- buttons and chips
 // light the same way, and one construction cannot drift into two.)
 // a crisp little VECTOR icon for a tab/module, drawn in `col` with an optional soft accent glow behind.
@@ -228,10 +238,13 @@ static u32 ground_at(float y, float sh) {
     k = 1.0f - (1.0f - k) * (1.0f - k);   // the light falls fast below the masthead, then the dark settles
     return lerpc(0xFF1B2129u, 0xFF0A0C10u, k);
 }
+static u32 ground_alpha(u32 c) {   // the config's ground : opaque, dark (the game faintly behind) or see-through
+    return (c & 0x00FFFFFFu) | (kit_ground_alpha() << 24);
+}
 static void ground(u32 dev, float x, float y, float w, float h, float sh) {
     if (w <= 0.0f || h <= 0.0f) return;
-    if (!s_ck) { flat(dev, x, y, w, h, 0xFF0E131Cu); return; }
-    const u32 t = ground_at(y, sh), b = ground_at(y + h, sh);
+    if (!s_ck) { flat(dev, x, y, w, h, ground_alpha(0xFF0E131Cu)); return; }
+    const u32 t = ground_alpha(ground_at(y, sh)), b = ground_alpha(ground_at(y + h, sh));
     q4(dev, x, y, w, h, t, t, b, b);
 }
 static u32 rim_col() { return s_ck ? 0xFF343B45u : C_STEEL; }   // the frame's rims : dark forged steel in the redesign
@@ -480,7 +493,7 @@ void ConfigPage::draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool
     const float x = coX, w = ctrlW;
     const int base = CTRL_ID;
     ry += K.px(6.0f);
-    if (!v2_section(K, ctrl_uid_i(base, 1), 3, "Interface", "Interface", x, ry, w, 0)) return;
+    if (v2_section(K, ctrl_uid_i(base, 1), 3, "HUD", "HUD", x, ry, w, 0)) {   // what belongs to no single box
     {   // the config menu's font -- also the HUD's default text face
         int gf = c.text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
         if (int d = cfg_select_row(K, ctrl_uid_i(base, 2), x, ry, w, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf), nullptr, &c.text[0][TE_UI].face, 4)) {
@@ -505,28 +518,53 @@ void ConfigPage::draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool
         const int m = c.hidePeekMode ? 1 : 0;
         if (int d = cfg_select_row(K, ctrl_uid_i(base, 4), x, ry, w, tr("Hide key (End)", "Touche masquer (Fin)"), hk[m], nullptr, &c.hidePeekMode, 4)) { (void)d; c.hidePeekMode = m ? 0 : 1; save_ui_config(); }
     }
-    // the accent : a free colour, or a style and its nuance chart
-    if (cfg_toggle_row(K, ctrl_uid_i(base, 5), x, ry, w, tr("Custom colour", "Couleur perso"), c.uiAccent != 0, nullptr, &c.uiAccent, 4)) {
-        c.uiAccent = c.uiAccent ? 0u : (theme_accent(c.uiStyle, c.uiColor) | 0xFF000000u); save_ui_config(); }
-    if (c.uiAccent != 0) cfg_color_row(K, ctrl_uid_i(base, 6), x, ry, w, &c.uiAccent);
-    else {
-        const int st = (c.uiStyle < 0 || c.uiStyle >= STYLE_N) ? 0 : c.uiStyle;
-        if (int d = cfg_select_row(K, ctrl_uid_i(base, 7), x, ry, w, tr("Colour style", "Style de couleur"), tr(STYLES[st].en, STYLES[st].fr), nullptr, &c.uiStyle, 4)) {
-            c.uiStyle = wrap(st + d, STYLE_N);
-            if (c.uiColor >= style_swatch_count(c.uiStyle)) c.uiColor = 0;
-            save_ui_config(); }
-        const ThemeStyle& S = STYLES[(c.uiStyle < 0 || c.uiStyle >= STYLE_N) ? 0 : c.uiStyle];
-        const int COLS = S.n, total = COLS * NUANCE_ROWS;
-        const float s = K.px(34.0f), gap = K.px(8.0f), x0 = x + K.px(18.0f);
-        float gy = ry + K.px(6.0f);
-        for (int k = 0; k < total; ++k) {   // one hue per column, lightness top (light) to bottom (deep)
-            const int col = k % COLS, row = k / COLS;
-            if (kit_swatch(K, ctrl_uid_i(base, 100 + k), x0 + col * (s + gap), gy + row * (s + gap), nuance(S.col[col], row), c.uiColor == k ? KS_FOCUS : 0)) {
-                c.uiColor = k; save_ui_config(); }
-        }
-        ry = gy + NUANCE_ROWS * (s + gap) + K.px(6.0f);
-    }
+    // (the accent -- Custom colour, Colour style, its nuance chart -- is gone : the forged-metal config has fixed
+    //  steel and brass colours, the accent tinted nothing any more. 2026-11-27, the user's call. uiAccent / uiStyle
+    //  stay in the config file, unread by this page.)
     v2_end(K, ry);
+    }
+    // THE CONFIG WINDOW ITSELF (2026-11-27) : its size, its language and depth (also on the masthead), its ground, the
+    // page it opens on. The config's own preferences -- a profile load or a reset keeps them.
+    if (v2_section(K, ctrl_uid_i(base, 20), 30, "Config window", "Fen\xC3\xAAtre de config", x, ry, w, 0)) {
+        {   // size : 80 .. 140 %, by steps of 10
+            static const float SZ[] = { 0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f };
+            int si = 2; float bd = 9.0f; for (int k = 0; k < 7; ++k) { const float dd = fabsf(SZ[k] - c.cfgScale); if (dd < bd) { bd = dd; si = k; } }
+            char sv[12]; _snprintf(sv, sizeof(sv), "%d %%", (int)(SZ[si] * 100.0f + 0.5f)); sv[11] = 0;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 21), x, ry, w, tr("Size", "Taille"), sv, nullptr, nullptr, 0)) {
+                si += d; if (si < 0) si = 0; if (si > 6) si = 6; c.cfgScale = SZ[si]; save_ui_config(); prefSavedT_ = frame_ ? frame_->t : 0.0f; }
+        }
+        {   // language (the masthead's EN / FR)
+            const char* ln[2] = { "English", "Fran\xC3\xA7""ais" };
+            const int L = c.lang ? 1 : 0;
+            if (cfg_select_row(K, ctrl_uid_i(base, 22), x, ry, w, tr("Language", "Langue"), ln[L], nullptr, nullptr, 0)) { c.lang = L ? 0 : 1; save_ui_config(); prefSavedT_ = frame_ ? frame_->t : 0.0f; }
+        }
+        {   // depth (the masthead's Simple / Advanced)
+            const char* dp[2] = { tr("Simple", "Simple"), tr("Advanced", "Avanc\xC3\xA9") };
+            const int A = c.cfgAdv ? 1 : 0;
+            if (cfg_select_row(K, ctrl_uid_i(base, 23), x, ry, w, tr("Settings shown", "R\xC3\xA9glages affich\xC3\xA9s"), dp[A], nullptr, nullptr, 0)) { c.cfgAdv = A ? 0 : 1; save_ui_config(); prefSavedT_ = frame_ ? frame_->t : 0.0f; }
+        }
+        {   // the ground behind it
+            const char* bg[3] = { tr("Opaque", "Opaque"), tr("Dark", "Sombre"), tr("See-through", "Translucide") };
+            const int G = (c.cfgBg < 0 || c.cfgBg > 2) ? 0 : c.cfgBg;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 24), x, ry, w, tr("Background", "Fond"), bg[G], nullptr, nullptr, 0)) { c.cfgBg = wrap(G + d, 3); save_ui_config(); prefSavedT_ = frame_ ? frame_->t : 0.0f; }
+        }
+        if (cfg_toggle_row(K, ctrl_uid_i(base, 25), x, ry, w, tr("Reopen on the last page", "Rouvrir sur la derni\xC3\xA8re page"), c.cfgReopen != 0, nullptr, nullptr, 0)) {
+            c.cfgReopen = c.cfgReopen ? 0 : 1; save_ui_config(); prefSavedT_ = frame_ ? frame_->t : 0.0f; }
+        const float noteY = ry;
+        cfg_note(K, x, ry, tr("These apply and are saved at once, for every profile (no Save needed).",
+                              "Ces r\xC3\xA9glages s'appliquent et s'enregistrent tout de suite, pour tous les profils (pas besoin d'Enregistrer)."));
+        {   // the proof it was taken : a brass "Saved" tag at the end of the note, fading out over 2 s (2026-11-27 : the
+            // Save button does not light for these -- by design -- so the change needs its own acknowledgement)
+            const float age = frame_ ? frame_->t - prefSavedT_ : 99.0f;
+            if (age >= 0.0f && age < 2.0f) {
+                const float a = age < 1.4f ? 1.0f : 1.0f - (age - 1.4f) / 0.6f;
+                const float keep = g_fade; g_fade = keep * a;
+                chrome_tag(K, x + w - K.px(130.0f), noteY + (ry - noteY) * 0.5f, tr("Saved", "Enregistr\xC3\xA9"));
+                g_fade = keep;
+            }
+        }
+        v2_end(K, ry);
+    }
     g_fade = e;
 }
 
@@ -539,6 +577,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     helpPlayer_ = false;   // off unless the Help tab reaches the visible Player-box sample this frame
     if (!open_) return;
     frame_ = &f;
+    {   // the page the config shows : remembered for the next open (Edit Layout is a mode, not a page -- not kept)
+        UiConfig& c = ui_config();
+        if (tab_ != 2 && tab_ >= 0 && tab_ <= 4 && (c.cfgLastTab != tab_ || c.cfgLastSec != section_)) { c.cfgLastTab = tab_; c.cfgLastSec = section_; save_ui_config(); }
+    }
     apply_ui_theme(ui_config().uiStyle, ui_config().uiColor);   // derive the accent family from the chosen style+colour (before any chrome draws)
     strncpy(activeProf_, active_profile_name(), sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0; profSynced_ = true;   // always reflect the live active profile (startup + auto-load on job change)
     u32 dev = f.dev;
@@ -887,15 +929,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     {
         const float lh = snap(26.0f), segW = snap(34.0f), lw = segW * 2.0f;
         const float lx = cbX - snap(12.0f) - lw, ly = cbY + (cbS - lh) * 0.5f;
-        if (s_ck) {   // the redesign : two steel slots, the chosen segment a brass block
-            static const char* LG[2] = { "EN", "FR" };
-            const float lh2 = snap(30.0f), ly2 = cbY + (cbS - lh2) * 0.5f, sg2 = snap(42.0f), lx2 = cbX - snap(14.0f) - 2.0f * sg2;
-            const int hl = chrome_segment(*s_ck, CTRL_ID, lx2, ly2, sg2, lh2, LG, 2, ui_config().lang);
-            if (hl >= 0) { ui_config().lang = hl; save_ui_config(); }
-            const char* DS[2] = { tr("Simple", "Simple"), tr("Advanced", "Avanc\xC3\xA9") };
-            const float dsW2 = snap(100.0f), dx2 = lx2 - snap(12.0f) - 2.0f * dsW2;
-            const int hd = chrome_segment(*s_ck, CTRL_ID, dx2, ly2, dsW2, lh2, DS, 2, ui_config().cfgAdv);
-            if (hd >= 0) { ui_config().cfgAdv = hd; save_ui_config(); }
+        if (s_ck) {   // the redesign : no switches here -- Language and Simple / Advanced are on the Interface page
+                      // (Config window), with the config's other preferences (2026-11-27, the user's call)
+            (void)lx; (void)ly;
         } else {
         rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B,
                (C_METAL & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
@@ -1457,6 +1493,72 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
 }
 
 // ---- Edit-Layout mode (draw-drawn ZONES + draggable panel + toolbar), lifted verbatim from draw() (byte-identical). ----
+// ======== the EDIT LAYOUT overlay (the redesign, 2026-11-27) : drawn over every box. Each box's outline (so boxes that
+// overlap read apart) ; the hovered one framed in brass with its NAME ; the selected one with corner handles, its name in
+// a brass tag and its position / size ; the snap guides of a drag. A click on a box selects it, on empty space clears. ====
+static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* mo, bool click) {
+    Kit K;
+    if (!kit_begin(K, f, sh, 1.0f)) return;
+    K.mo = mo; K.click = false;
+    const u32 dev = f.dev;
+    const bool fr = ui_config().lang == 1;
+    const int hov = edit_box_hovered();
+    if (click && mo && !edit_over_ui_blocker(mo->x, mo->y, f.t)) edit_box_select(hov);   // a box : selected ; empty space : none
+    const int sel = edit_box_selected();
+    const u32 BR = 0xFFB79A61u, BRL = 0xFFE2C482u, ST = 0xFF8C97A6u;
+    cs(dev);
+    for (int id = 0; id < EDITBOX_COUNT; ++id) {   // every box's outline : faint steel
+        float x, y, w, h; if (!edit_box_rect(id, f.t, x, y, w, h)) continue;
+        if (id == sel || id == hov) continue;
+        rrect_stroke(dev, snap(x) - 0.5f, snap(y) - 0.5f, snap(w) + 1.0f, snap(h) + 1.0f, snap(4.0f), (0x48u << 24) | (ST & 0x00FFFFFFu), 1.0f);
+    }
+    // the guides of the drag : a brass line from one box to the other, with a soft light along it
+    EditGuide g[4]; const int ng = edit_box_guides(g, 4, f.t);
+    for (int i = 0; i < ng; ++i) {
+        if (g[i].vert) { grad_quad(dev, snap(g[i].pos) - 3.0f, g[i].a - 8.0f, 6.0f, (g[i].b - g[i].a) + 16.0f, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u);
+                         grad_quad(dev, snap(g[i].pos) - 0.5f, g[i].a - 8.0f, 1.0f, (g[i].b - g[i].a) + 16.0f, BRL, BRL, BRL, BRL); }
+        else           { grad_quad(dev, g[i].a - 8.0f, snap(g[i].pos) - 3.0f, (g[i].b - g[i].a) + 16.0f, 6.0f, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u, 0x30E2C482u);
+                         grad_quad(dev, g[i].a - 8.0f, snap(g[i].pos) - 0.5f, (g[i].b - g[i].a) + 16.0f, 1.0f, BRL, BRL, BRL, BRL); }
+    }
+    auto name_tag = [&](int id, float x, float y, bool brass) {
+        const char* nm = edit_box_name(id, fr);
+        const float th = K.px(24.0f);
+        float ty = y - th * 0.5f - K.px(6.0f); if (ty - th * 0.5f < 4.0f) ty = y + th * 0.5f + K.px(4.0f);   // above the box, or inside at the top edge
+        if (brass) chrome_tag(K, snap(x), ty, nm); else chrome_tag_steel(K, snap(x), ty, nm);
+    };
+    if (hov >= 0 && hov != sel) {   // HOVER : a brass rim and the name
+        float x, y, w, h;
+        if (edit_box_rect(hov, f.t, x, y, w, h)) {
+            cs(dev); rrect_stroke(dev, snap(x) - 1.5f, snap(y) - 1.5f, snap(w) + 3.0f, snap(h) + 3.0f, snap(5.0f), (0xC0u << 24) | (BR & 0x00FFFFFFu), 1.5f);
+            name_tag(hov, x, y, false);
+        }
+    }
+    if (sel >= 0) {   // SELECTED : the rim, the four corner handles, the name in brass, the position and size
+        float x, y, w, h;
+        if (edit_box_rect(sel, f.t, x, y, w, h)) {
+            cs(dev);
+            rrect_stroke(dev, snap(x) - 2.0f, snap(y) - 2.0f, snap(w) + 4.0f, snap(h) + 4.0f, snap(5.0f), 0xFF3A2A10u, 3.0f);
+            rrect_stroke(dev, snap(x) - 1.5f, snap(y) - 1.5f, snap(w) + 3.0f, snap(h) + 3.0f, snap(5.0f), BRL, 1.5f);
+            const float hs = K.px(8.0f);
+            const float cx4[4] = { x, x + w, x, x + w }, cy4[4] = { y, y, y + h, y + h };
+            for (int k = 0; k < 4; ++k) {
+                rrect(dev, snap(cx4[k] - hs * 0.5f) - 1.0f, snap(cy4[k] - hs * 0.5f) - 1.0f, hs + 2.0f, hs + 2.0f, 2.0f, 0xFF2A1E0Cu, 0xFF2A1E0Cu);
+                rrect(dev, snap(cx4[k] - hs * 0.5f), snap(cy4[k] - hs * 0.5f), hs, hs, 1.5f, BRL, BR);
+            }
+            name_tag(sel, x, y, true);
+            char rd[64]; _snprintf(rd, sizeof(rd), "x %d   y %d   \xC2\xB7   %d \xC3\x97 %d", (int)(x + 0.5f), (int)(y + 0.5f), (int)(w + 0.5f), (int)(h + 0.5f)); rd[63] = 0;
+            float ry2 = y + h + K.px(18.0f); if (ry2 > sh - K.px(16.0f)) ry2 = y - K.px(40.0f);
+            chrome_tag_steel(K, snap(x), ry2, rd);
+            if (!edit_box_bound(sel)) {   // Party / Alliance : they move with the mouse, the keys do not drive them yet
+                chrome_label(K, snap(x) + K.fs->measure(rd, K.px(13.5f)) + K.px(30.0f), ry2, fr ? "souris seulement" : "mouse only", K.px(13.5f), 1);
+            }
+        }
+    }
+    edit_box_frame_end();
+    cs(dev);
+    (void)sw;
+}
+
 void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click, float sw, float sh) {
         g_fade = 1.0f;
         // ZONES : while Rules is OFF (placing boxes) draw each zone FAINTLY so you see the keep-out / allowed
@@ -1482,6 +1584,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         }
         // RULES mode : the HUD is hidden (hud.cpp) so only the guide ZONES + the toolbar show. Party 1p-6p and
         // Alliance 1/2 are real zones now (role-tagged) -- there is no separate reference-line handle system.
+        if (!editShowLines_ && v2_) edit_overlay(f, sw, sh, mo, click && editConfirm_ == 0);   // the redesign : names, selection, guides
         if (editShowLines_) {
         UiConfig& C = ui_config();
         // ZONES panel geometry (auto-sized) computed FIRST so EVERY draggable element under it (party-ref
@@ -1796,9 +1899,102 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
             }
         }
         }   // end if (editShowLines_)
+        // ===== THE TOOLBAR (the redesign, 2026-11-27) : one forged plate. ÉDITION ; the selected box (its name, x and y in
+        // steppers -- 1 px a click, 10 with Shift, a click on the number to type it -- and its size) ; Undo / Redo ;
+        // Rules (held down while on) / Clear lines / Default (ruby : it resets every box) / Done ; the shortcuts below. =====
+        if (v2_ && !edit_drag_busy()) {
+            Kit K;
+            if (kit_begin(K, f, sh, 1.0f)) {
+                K.mo = mo; K.click = click && editConfirm_ == 0;
+                const bool tbClick = K.click;
+                const bool frl = ui_config().lang == 1;
+                const int sel = edit_box_selected();
+                const float rowH = K.px(36.0f), gap = K.px(10.0f), pad = K.px(16.0f);
+                // the widths, left to right
+                const float wLab = K.fs->measure(tr("EDIT LAYOUT", "\xC3\x89""DITION"), K.px(13.5f)) + K.px(8.0f);
+                const float wSel = K.px(560.0f);
+                const float wKey = K.px(112.0f), wDone = K.px(124.0f);
+                const float bw = pad + wLab + gap * 2.0f + wSel + gap * 2.0f + wKey * 2.0f + gap + gap * 2.0f + wKey + gap * 2.0f + wDone + pad;
+                const float bh = K.px(92.0f), bx = snap((sw - bw) * 0.5f), by = snap(K.px(14.0f));
+                edit_set_ui_blocker(bx - K.px(4.0f), by - K.px(2.0f), bw + K.px(8.0f), bh + K.px(8.0f), f.t);   // it owns every click over it
+                chrome_casting(K, bx, by, bw, bh, 0.0f, 0.0f);
+                const float cy = by + K.px(30.0f), ky = cy - rowH * 0.5f;
+                float x = bx + pad;
+                chrome_label(K, x, cy, tr("EDIT LAYOUT", "\xC3\x89""DITION"), K.px(13.5f), 4);
+                x += wLab + gap * 2.0f;
+                // ---- the selected box ----
+                chrome_slot(K, x - K.px(6.0f), ky - K.px(4.0f), wSel + K.px(12.0f), rowH + K.px(8.0f));
+                float bx2, by2, bw2, bh2;
+                if (sel >= 0 && edit_box_rect(sel, f.t, bx2, by2, bw2, bh2)) {
+                    const float tagR = chrome_tag(K, x + K.px(4.0f), cy, edit_box_name(sel, frl));
+                    float sx = tagR + K.px(14.0f);
+                    const bool movable = edit_box_bound(sel);
+                    const float stW = K.px(150.0f), stH = rowH - K.px(4.0f), kw = stH;
+                    for (int axis = 0; axis < 2; ++axis) {   // x, then y
+                        chrome_label(K, sx, cy, axis == 0 ? "x" : "y", K.px(15.0f), 0);
+                        sx += K.px(14.0f);
+                        char vb[16];
+                        if (editNumField_ == axis + 1 && nameFocus_) _snprintf(vb, sizeof(vb), "%s_", nameBuf_);
+                        else _snprintf(vb, sizeof(vb), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f));
+                        vb[15] = 0;
+                        const int d = chrome_stepper(K, ctrl_uid_i(CTRL_ID, axis), sx, cy - stH * 0.5f, stW, stH, kw, vb, !movable, true);
+                        if (movable && d) {   // a click : 1 px (10 with Shift), as the arrows would
+                            const int n = edit_shift() ? 10 : 1;
+                            for (int i = 0; i < n; ++i) edit_box_key(axis == 0 ? (d < 0 ? 0xCB : 0xCD) : (d < 0 ? 0xC8 : 0xD0), false, false);
+                        }
+                        // a click on the number : type it
+                        const float wx = sx + kw + K.px(6.0f), ww = stW - 2.0f * (kw + K.px(6.0f));
+                        if (movable && tbClick && inrect(mo, wx, cy - stH * 0.5f, ww, stH)) {
+                            editNumField_ = axis + 1; nameFocus_ = true;
+                            _snprintf(nameBuf_, sizeof(nameBuf_), "%d", (int)((axis == 0 ? bx2 : by2) + 0.5f)); nameBuf_[sizeof(nameBuf_) - 1] = 0;
+                            nameLen_ = (int)strlen(nameBuf_); nameCur_ = nameLen_;
+                        }
+                        sx += stW + K.px(14.0f);
+                    }
+                    char sz[32]; _snprintf(sz, sizeof(sz), "%d \xC3\x97 %d", (int)(bw2 + 0.5f), (int)(bh2 + 0.5f)); sz[31] = 0;
+                    chrome_label(K, sx, cy, sz, K.px(14.0f), movable ? 0 : 1);
+                    if (!movable) chrome_label(K, sx + K.fs->measure(sz, K.px(14.0f)) + K.px(12.0f), cy, frl ? "(souris)" : "(mouse)", K.px(13.5f), 1);
+                } else {
+                    chrome_label(K, x + K.px(8.0f), cy, tr("Click a box to select it", "Clique une bo\xC3\xAEte pour la s\xC3\xA9lectionner"), K.px(14.5f), 1);
+                    if (editNumField_) { editNumField_ = 0; nameFocus_ = false; }
+                }
+                // a typed number : applied on Enter or when the field loses the keyboard
+                if (editNumField_ && (kbCommit_ || !nameFocus_)) {
+                    kbCommit_ = false;
+                    if (sel >= 0 && edit_box_bound(sel) && nameLen_ > 0) {
+                        float cx2, cy2, cw2, ch2;
+                        if (edit_box_rect(sel, f.t, cx2, cy2, cw2, ch2)) {
+                            const int v = atoi(nameBuf_);
+                            if (editNumField_ == 1) edit_box_set_pos(sel, (float)v, cy2); else edit_box_set_pos(sel, cx2, (float)v);
+                        }
+                    }
+                    editNumField_ = 0; nameFocus_ = false; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0;
+                }
+                x += wSel + gap * 2.0f;
+                // ---- undo / redo ----
+                if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Undo", "Annuler"), 0, edit_box_can_undo()) && tbClick) edit_box_undo();
+                x += wKey + gap;
+                if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Redo", "R\xC3\xA9tablir"), 0, edit_box_can_redo()) && tbClick) edit_box_redo();
+                x += wKey + gap * 2.0f;
+                // ---- default / done (2026-11-27 : no Rules / Clear lines -- the reference lines covered the game's party window,
+                //      which now hides whenever ours shows) ----
+                editShowLines_ = false;
+                if (chrome_keybtn(K, CTRL_ID, x, ky, wKey, rowH, tr("Default", "D\xC3\xA9""faut"), 2, true) && tbClick) editConfirm_ = 2;
+                x += wKey + gap * 2.0f;
+                if (chrome_keybtn(K, CTRL_ID, x, ky, wDone, rowH, tr("Done", "Termin\xC3\xA9"), 1, true) && tbClick) {
+                    ui_config().editLayout = false; editShowLines_ = false; editZoneName_ = -1; nameFocus_ = false; groupSel_ = -1; editNumField_ = 0; save_ui_config(); }
+                // ---- the shortcuts, engraved under a groove ----
+                const float gy = by + K.px(56.0f);
+                cs(dev); flat(dev, bx + pad, gy, bw - 2.0f * pad, 1.0f, fa(0xFF07090Cu)); flat(dev, bx + pad, gy + 1.0f, bw - 2.0f * pad, 1.0f, fa(0x20FFFFFFu));
+                const char* lg = tr("Wheel : size   \xC2\xB7   Shift : horizontal only   \xC2\xB7   Ctrl : vertical only   \xC2\xB7   Alt : free (no snapping)   \xC2\xB7   Delete : back to default   \xC2\xB7   Ctrl+Z / Ctrl+Y : undo / redo   \xC2\xB7   Escape : deselect",
+                                    "Molette : taille   \xC2\xB7   Maj : horizontal seul   \xC2\xB7   Ctrl : vertical seul   \xC2\xB7   Alt : libre (sans aimant)   \xC2\xB7   Suppr : par d\xC3\xA9""faut   \xC2\xB7   Ctrl+Z / Ctrl+Y : annuler / r\xC3\xA9tablir   \xC2\xB7   \xC3\x89""chap : d\xC3\xA9s\xC3\xA9lectionner");
+                const float lw = K.fr->measure(lg, K.px(13.0f));
+                chrome_label(K, bx + (bw - lw) * 0.5f, by + K.px(74.0f), lg, K.px(13.0f), 1);
+            }
+        }
         // The toolbar HIDES while a box is being dragged (it sits at the top and would otherwise mask boxes
-        // dragged up there) -> it reappears the moment the click is released.
-        if (!edit_drag_busy()) {
+        // dragged up there) -> it reappears the moment the click is released. (the old toolbar : //aio config v1)
+        if (!v2_ && !edit_drag_busy()) {
         const float bw = snap(820.0f), bh = snap(62.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
         const float pop = ease(CTRL_ID, 1.0f, 16.0f);                                   // subtle slide-in
         const float byA = by - (1.0f - pop) * snap(10.0f);
@@ -2258,6 +2454,9 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
 bool ConfigPage::v2_kit(Kit& K, const MouseState* mo, bool click) {
     if (!s_ck_page) return false;
     K = *s_ck_page;                                   // a copy : this page's mouse is gated to the viewport
+    {   // the config's SIZE (Interface page) : the settings themselves -- the window's frame (masthead, tabs, rail) keeps
+        // its size, its housings are cut for it (scaled, "Advanced" ran out of its key)
+        float sc = ui_config().cfgScale; if (sc < 0.8f || sc > 1.4f) sc = 1.0f; K.u *= sc; }
     K.mo = mo; K.click = click; K.clipTop = viewTop_; K.clipBot = viewBot_;
     return true;
 }
@@ -2283,8 +2482,8 @@ void ConfigPage::v2_rows(Kit& K, int uid, const OptDef* d, int n, float x, float
 void ConfigPage::v2_end(Kit& K, float& ry) { ry += K.px(18.0f); }
 void ConfigPage::v2_simple_note(Kit& K, float x, float& ry) {
     K.fr->begin(K.dev);
-    K.fr->draw_lc(K.dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
-                  "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+    K.fr->draw_lc(K.dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced (Interface page). Right-click a modified setting to reset it.",
+                  "Cadre, texte, tailles fines : Avanc\xC3\xA9 (page Interface). Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
                   K.px(13.5f), fa(C_DIM), 0, 0.0f);
     ry += K.px(40.0f);
 }

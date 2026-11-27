@@ -16,7 +16,7 @@ void ctrl_release_drag();   // config_controls.cpp -- drops a held slider/picker
 
 class ConfigPage {
 public:
-    void toggle()         { set_open(!open_); }
+    void toggle();        // the user's open / close : reopens on the remembered page (Interface : Reopen on the last page)
     // Closing (or switching tab) while a slider is held strands the drag latch in config_controls and loses
     // the edit -- the row that would release it stops being drawn. Release it here instead.
     void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; icon_pack_forget(); } if (!o && open_) ctrl_release_drag(); open_ = o; }
@@ -407,6 +407,8 @@ private:
     float pvStageX_ = 0.0f, pvStageY_ = 0.0f, pvStageW_ = 0.0f, pvStageH_ = 0.0f;   // full preview stage rect -> the opaque page bg leaves a HOLE here so the real game shows (transparent preview)
     // edit-layout : "Rules" toggle + the destructive-action confirmation modal
     bool  editShowLines_ = false;   // draw reference lines AND hide the HUD boxes (only rules + toolbar show)
+    int   editNumField_  = 0;
+    float prefSavedT_ = -100.0f;   // Interface > Config window : when one of its (instantly saved) settings last changed -> "Saved" tag       // the redesign's edit toolbar : 1 / 2 = the selected box's x / y being typed
     int   editConfirm_   = 0;       // 0 = none, 1 = Clear-lines pending, 2 = Default pending -> confirm dialog
     bool  profResetConfirm_ = false;   // Profile tab : "Reset all settings" pending -> confirm dialog
     // user-drawn ZONES : selection + inline rename (reuses the nameBuf_ text field) + rubber-band draw

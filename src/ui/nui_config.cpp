@@ -161,12 +161,8 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         if (row_selector(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), SHW[v_])) { c.nuHide = v_ ? (c.nuHide & ~(BIT)) : (c.nuHide | (BIT)); save_ui_config(); } \
         } ROW_NEXT(52.0f)
     NUI_SECTION(25, tr("Game windows replaced by AioHUD", "Fen\xC3\xAAtres du jeu remplac\xC3\xA9""es par AioHUD"))
-        ROW_NOTE(tr("Each stays shown while its AioHUD module is off.", "Chacune reste affich\xC3\xA9""e tant que son module AioHUD est d\xC3\xA9sactiv\xC3\xA9."))
-        NUI_HIDE_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
-        ROW_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
-        NUI_HIDE_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
+        ROW_NOTE(tr("The party and alliance windows follow AioHUD's boxes : hidden while they show.", "Les fen\xC3\xAAtres de groupe et d'alliance suivent les bo\xC3\xAEtes AioHUD : masqu\xC3\xA9""es tant qu'elles s'affichent."))
         NUI_HIDE_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
-        NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
     NUI_SECTION_END(25)
     #undef NUI_HIDE_ROW
 
@@ -340,13 +336,9 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
             v2_end(K, ry);
         }
     }
-    if (v2_section(K, ctrl_uid_i(base, 29), 25, "Game windows replaced by AioHUD", "Fen\xC3\xAAtres du jeu remplac\xC3\xA9""es par AioHUD", x, ry, w, nui_bits_mod(c.nuHide, F.nuHide, NU_PARTY | NU_ALLY | NU_CHAT | NU_COST))) {
-        cfg_note(K, x, ry, tr("Each stays shown while its AioHUD module is off.", "Chacune reste affich\xC3\xA9""e tant que son module AioHUD est d\xC3\xA9sactiv\xC3\xA9."));
-        bitRow(30, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY, SHW);
-        cfg_note(K, x, ry, tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."));
-        bitRow(31, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY, SHW);
+    if (v2_section(K, ctrl_uid_i(base, 29), 25, "Game windows replaced by AioHUD", "Fen\xC3\xAAtres du jeu remplac\xC3\xA9""es par AioHUD", x, ry, w, nui_bits_mod(c.nuHide, F.nuHide, NU_CHAT))) {
+        cfg_note(K, x, ry, tr("The party and alliance windows follow AioHUD's boxes : hidden while they show.", "Les fen\xC3\xAAtres de groupe et d'alliance suivent les bo\xC3\xAEtes AioHUD : masqu\xC3\xA9""es tant qu'elles s'affichent."));
         bitRow(32, tr("Chat log", "Journal du chat"), NU_CHAT, SHW);
-        bitRow(33, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST, SHW);
         v2_end(K, ry);
     }
     if (adv) {   // BEHAVIOUR : move the game's menus

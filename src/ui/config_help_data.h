@@ -33,12 +33,12 @@ static const HelpItem HELP_GENERAL[] = {
         "*Debug* liste les bugs connus et le travail pr\xC3\xA9vu."},
 
     {0, "Simple or Advanced", "Simple ou Avanc\xC3\xA9"},
-    {1, "The *Simple / Advanced* switch, left of EN / FR in the header, sets how deep every page goes. Simple shows each module's essential settings, always open. Advanced adds the frame, the text styles and the fine sizes. Nothing is lost when you switch : a setting hidden in Simple keeps its value.",
-        "Le bouton *Simple / Avanc\xC3\xA9*, \xC3\xA0 gauche de EN / FR dans l'en-t\xC3\xAAte, r\xC3\xA8gle la profondeur de chaque page. Simple montre les r\xC3\xA9glages essentiels de chaque module, toujours ouverts. Avanc\xC3\xA9 ajoute le cadre, les styles de texte et les tailles fines. Rien n'est perdu quand tu bascules : un r\xC3\xA9glage cach\xC3\xA9 en Simple garde sa valeur."},
+    {1, "*Settings shown* (*Simple / Advanced*), on the *Interface* page under *Config window*, sets how deep every page goes. Simple shows each module's essential settings, always open. Advanced adds the frame, the text styles and the fine sizes. Nothing is lost when you switch : a setting hidden in Simple keeps its value.",
+        "*R\xC3\xA9glages affich\xC3\xA9s* (*Simple / Avanc\xC3\xA9*), sur la page *Interface* sous *Fen\xC3\xAAtre de config*, r\xC3\xA8gle la profondeur de chaque page. Simple montre les r\xC3\xA9glages essentiels de chaque module, toujours ouverts. Avanc\xC3\xA9 ajoute le cadre, les styles de texte et les tailles fines. Rien n'est perdu quand tu bascules : un r\xC3\xA9glage cach\xC3\xA9 en Simple garde sa valeur."},
 
     {0, "Language", "Langue"},
-    {1, "The EN / FR button in the top-right corner switches the whole interface between English and French. It is on every tab and your choice is saved.",
-        "Le bouton EN / FR en haut \xC3\xA0 droite bascule toute l'interface entre l'anglais et le fran\xC3\xA7""ais. Il est pr\xC3\xA9sent sur chaque onglet et ton choix est sauvegard\xC3\xA9."},
+    {1, "*Language*, on the *Interface* page under *Config window*, switches the whole interface between English and French. Your choice is saved.",
+        "*Langue*, sur la page *Interface* sous *Fen\xC3\xAAtre de config*, bascule toute l'interface entre l'anglais et le fran\xC3\xA7""ais. Ton choix est sauvegard\xC3\xA9."},
 
     {0, "Profiles", "Profils"},
     {1, "A profile stores every setting under a name. Load one to switch your whole setup at once. They are handy for a per-character or per-job look.",
@@ -68,8 +68,8 @@ static const int HELP_GENERAL_N = (int)(sizeof(HELP_GENERAL) / sizeof(HELP_GENER
 // INTERFACE : the config menu's own look + a few global HUD settings (config_page.cpp draw_interface_category).
 static const HelpItem HELP_INTERFACE[] = {
     {0, "Interface", "Interface"},
-    {1, "The *Interface* page holds the settings that belong to no single box : the font, the status icons, the key that hides the HUD and the colour of this config window.",
-        "La page *Interface* regroupe les r\xC3\xA9glages qui n'appartiennent \xC3\xA0 aucun cadre en particulier : la police, les ic\xC3\xB4nes de statut, la touche qui masque le HUD et la couleur de cette fen\xC3\xAAtre de configuration."},
+    {1, "The *Interface* page holds the settings that belong to no single box : the font, the status icons and the key that hides the HUD.",
+        "La page *Interface* regroupe les r\xC3\xA9glages qui n'appartiennent \xC3\xA0 aucun cadre en particulier : la police, les ic\xC3\xB4nes de statut et la touche qui masque le HUD."},
 
     {0, "Configuration", "Configuration"},
     {2, "*Font (config + HUD)* is the font of this window, and also the HUD's default face. A text element given its own font in a module's *Text* section keeps it.",
@@ -78,8 +78,6 @@ static const HelpItem HELP_INTERFACE[] = {
         "*Ic\xC3\xB4nes de statut* choisit le pack d'ic\xC3\xB4nes d'o\xC3\xB9 viennent toutes les ic\xC3\xB4nes de buff et de debuff, dans les cadres groupe, joueur, cible, Timers et debuffs. *Auto* est le d\xC3\xA9""faut et prend le meilleur pack trouv\xC3\xA9."},
     {2, "*Hide key* hides the whole HUD : *Toggle* hides it with one press and shows it with the next, *Hold* hides it only while the key is held.",
         "*Touche masquer* cache tout le HUD : *Bascule* le cache d'un appui et le remontre au suivant, *Maintien* le cache seulement tant que la touche est enfonc\xC3\xA9""e."},
-    {2, "*Colour style* and *Colour* set the accent of this window from a family of presets. Turn *Custom colour* on to pick any colour instead.",
-        "*Style couleur* et *Couleur* r\xC3\xA8glent l'accent de cette fen\xC3\xAAtre parmi une famille de pr\xC3\xA9r\xC3\xA9glages. Active *Couleur perso* pour choisir n'importe quelle couleur \xC3\xA0 la place."},
 };
 static const int HELP_INTERFACE_N = (int)(sizeof(HELP_INTERFACE) / sizeof(HELP_INTERFACE[0]));
 

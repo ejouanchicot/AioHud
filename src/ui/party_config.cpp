@@ -470,8 +470,8 @@ void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool cl
                         br = (tint & 0x00FFFFFF) | 0xFF000000u;
                         bw2 = snap(1.6f);
                     } else if (i == bsSel_) {
-                        ft = (C_ACCENT & 0x00FFFFFF) | 0x3C000000u; fb = (C_ACCENT & 0x00FFFFFF) | 0x18000000u;
-                        br = C_ACCENTHI; bw2 = snap(1.5f);
+                        ft = 0x3CB79A61u; fb = 0x188E7440u;   // brass, like the rest of the chrome (no accent colour any more)
+                        br = 0xFFD4B574u; bw2 = snap(1.5f);
                     } else if (i == hot && !carrying) {
                         drop_shadow(dev, runs[i].x, ty2, runs[i].w, th2, snap(5.0f), (u32)(70.0f * hov2));   // the lift needs a shadow or it is just a nudge
                         ft = 0x40202830u; fb = 0x40161C22u; br = (tint & 0x00FFFFFF) | 0xAA000000u; bw2 = snap(1.3f);
@@ -531,7 +531,7 @@ void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool cl
                 fo->begin(dev);
                 for (int i = 0; i < nRun; ++i) {
                     if (!runs[i].lbl || runs[i].hid) continue;   // a hidden tile's name is drawn LAST, over the scrim
-                    const u32 c2 = (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI : C_DIM;
+                    const u32 c2 = (i == bsSel_ || (carrying && i == bsDrag_)) ? 0xFFE2C482u : C_DIM;
                     fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
                 }
                 // ---- PASS 4 : HIDDEN -- a scrim over the whole finished tile, then the slash on top ----
@@ -560,7 +560,7 @@ void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool cl
                 fo->begin(dev);
                 for (int i = 0; i < nRun; ++i) {
                     if (!runs[i].lbl || !runs[i].hid) continue;
-                    const u32 c3 = (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI : C_DIM;
+                    const u32 c3 = (i == bsSel_ || (carrying && i == bsDrag_)) ? 0xFFE2C482u : C_DIM;
                     fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c3), fa(C_STROKE), 1.0f);
                 }
                 ROW_NEXT(bandH)
@@ -1092,7 +1092,7 @@ static const OptDef G_PARTY_FRAME_X[] = {   // the party box is the MASTER frame
 };
 static const OptDef G_PARTY[] = {
     { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(partyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
-    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(box[0].scale), 1.0f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(box[0].scale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
     { "Gauge style", "Style de jauge", OK_SELECT, OL_SIMPLE, F_(gaugeStyle[0]), 0, 0, G_GS_EN, G_GS_FR, 8, nullptr, 0 },
     { "Low HP blink", "Clignote si PV bas", OK_BTOGGLE, OL_SIMPLE, F_(animHP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "TP ready pulse", "Pulse quand TP pr\xC3\xAAt", OK_BTOGGLE, OL_SIMPLE, F_(animTP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
@@ -1119,8 +1119,15 @@ static const OptDef G_ALLY_ROWS[] = {
     { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
     { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
+static const char* const G_BS_EN[3] = { "Auto", "Left", "Right" }, * const G_BS_FR[3] = { "Auto", "Gauche", "Droite" };   // Auto = where there is room (the note under it says so)
+static const OptDef G_BUFFS_SIMPLE[] = {   // Simple's Buffs section : just the side
+    { "Buffs side", "C\xC3\xB4t\xC3\xA9 des buffs", OK_SELECT, OL_SIMPLE, [](UiConfig& c) -> void* { return &c.buffSide; }, 0, 0, G_BS_EN, G_BS_FR, 3, nullptr, 0 },
+    { "Auto : on the side where there is room (a box against the right edge has its buffs on the left).", "Auto : du c\xC3\xB4t\xC3\xA9 o\xC3\xB9 il y a la place (une bo\xC3\xAEte coll\xC3\xA9""e \xC3\xA0 droite a ses buffs \xC3\xA0 gauche).", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
 static const OptDef G_BUFFS[] = {
     { "Buff size", "Taille des buffs", OK_PCT, OL_ADV, F_(buffScale), 0.4f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Buffs side", "C\xC3\xB4t\xC3\xA9 des buffs", OK_SELECT, OL_ADV, F_(buffSide), 0, 0, G_BS_EN, G_BS_FR, 3, nullptr, 0 },
+    { "Auto : on the side where there is room (a box against the right edge has its buffs on the left).", "Auto : du c\xC3\xB4t\xC3\xA9 o\xC3\xB9 il y a la place (une bo\xC3\xAEte coll\xC3\xA9""e \xC3\xA0 droite a ses buffs \xC3\xA0 gauche).", OK_NOTE, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
 };
 #undef F_
 #define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
@@ -1209,7 +1216,11 @@ void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool cli
                 v2_end(K, ry);
             }
         }
-    } else v2_simple_note(K, x, ry);
+    } else {   // SIMPLE : the buffs' side too -- many players want it (2026-11-27) ; the rest of Buffs is Advanced
+        if (v2_section(K, ctrl_uid_i(base, 24), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), false)))
+            v2_rows(K, ctrl_uid_i(base, 25), G_BUFFS_SIMPLE, NOPT(G_BUFFS_SIMPLE), x, ry, w);
+        v2_simple_note(K, x, ry);
+    }
     g_fade = e;
 }
 #undef NOPT

@@ -560,8 +560,8 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
         cfg_rows(K, ctrl_uid_i(base, 4), TGT_SHOWS, NOPT(TGT_SHOWS), x, ry, w, false);
         ry += K.px(14.0f);
         K.fr->begin(dev);
-        K.fr->draw_lc(dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
-                       "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+        K.fr->draw_lc(dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced (Interface page). Right-click a modified setting to reset it.",
+                       "Cadre, texte, tailles fines : Avanc\xC3\xA9 (page Interface). Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
                       K.px(13.5f), fa(C_DIM), 0, 0.0f);
         ry += K.px(40.0f);
         cfg_flush(mo);

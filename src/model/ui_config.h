@@ -106,6 +106,7 @@ struct UiConfig {
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
     int   buffMax   = 20;      // max buff icons shown per member (config choice) ; > 16 wraps to TWO rows of 16
     int   buffRows  = 2;       // buff strip : 1 or 2 rows ; 1 = one bigger (full-line-tall) row
+    int   buffSide  = 0;       // the party buff strip's side : 0 Auto (where there is room), 1 Left, 2 Right (2026-11-27)
     // ---- buff strip ORDER : the display groups (buff_groups.h, BuffGroup) listed in the order they are drawn.
     // Position 0 is drawn FIRST = nearest the member's row = RIGHTMOST, because the strip fills right-to-left.
     // That also makes the Max Buffs cut deliberate : it drops the tail, i.e. whatever the user parked last.
@@ -797,6 +798,12 @@ struct UiConfig {
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
     int   cfgAdv = 0;          // the config's depth : 0 SIMPLE (the essentials of each module), 1 ADVANCED (every setting) ;
                                // a preference of the config itself -- not a profile's, kept across a reset (as lang)
+    // the CONFIG WINDOW's own preferences (Interface page, 2026-11-27) -- like cfgAdv : the config's, not a profile's
+    // (kept across a reset and a profile load), outside persist_eq (they never mark a profile modified)
+    float cfgScale = 1.0f;     // the config's size : 0.8 .. 1.4 (every kit part and its text)
+    int   cfgBg = 0;           // the ground behind the config : 0 opaque, 1 dark (the game faintly behind), 2 see-through
+    int   cfgReopen = 1;       // 1 : the config reopens on the page it was closed on (across a reload too) ; 0 : on the first
+    int   cfgLastTab = 0, cfgLastSec = 0;   // that page (written as the config moves)
     // The in-game safety harness (model/selftest.h). OFF by default and shipped that way: it costs a pass
     // over the registered checks every 30 s, which is nothing, but a watcher nobody armed writing files
     // into someone's plugins folder is not a default anyone asked for. `//aio selftest on` arms it, and it

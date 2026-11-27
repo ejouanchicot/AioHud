@@ -191,6 +191,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
     fprintf(f, "buffMax=%d\n", c.buffMax);
     fprintf(f, "buffRows=%d\n", c.buffRows);
+    fprintf(f, "buffSide=%d\n", c.buffSide);
     fprintf(f, "buffOrder=");                                                  // party buff strip : the display groups, in drawing order
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.buffOrder[i]);
     fprintf(f, "\n");
@@ -357,6 +358,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "distcol=%08X,%08X,%08X\n", c.distColClose, c.distColNormal, c.distColFar);   // distance-zone colours : Close / Normal / Far
     fprintf(f, "lang=%d\n", c.lang);
     fprintf(f, "cfgadv=%d\n", c.cfgAdv);
+    fprintf(f, "cfgui=%.3f,%d,%d,%d,%d\n", c.cfgScale, c.cfgBg, c.cfgReopen, c.cfgLastTab, c.cfgLastSec);
     fprintf(f, "selftest=%d\n", c.selfTest);   // the watcher survives a reload : a harness you must re-arm is one you forget to arm
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
@@ -504,6 +506,7 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
     if (!strncmp(line, "cfgadv=", 7)) { c.cfgAdv = atoi(line + 7) ? 1 : 0; return true; }   // the config's depth (Simple / Advanced)
+    if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
     if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (!strncmp(line, "menuscale=", 10)) { c.muScale = (float)atof(line + 10); return true; }   // clamped by config_rules
@@ -939,7 +942,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
         else if (sscanf(line, "buffMax=%d", &v) == 1)    c.buffMax = v;
-        else if (sscanf(line, "buffRows=%d", &v) == 1)   c.buffRows = v;
+        else if (sscanf(line, "buffRows=%d", &v) == 1 || sscanf(line, "buffSide=%d", &v) == 1) { if (line[4] == 'R') c.buffRows = v; else c.buffSide = v; }   // two keys, ONE branch : the chain sits at the compiler's nesting limit (C1061)
         else if (sscanf(line, "uiStyle=%d", &v) == 1)    c.uiStyle = v;
         else if (sscanf(line, "uiColor=%d", &v) == 1)    c.uiColor = v;
         else if (sscanf(line, "uiAccent=%x", &uc) == 1)  c.uiAccent = uc;
@@ -1176,6 +1179,20 @@ static void seed_default_profile() {
     FILE* f = fopen(active_path(), "w"); if (f) { fputs("Default", f); fclose(f); }   // mark it the active profile
 }
 
+// A PROFILE file onto the live config, KEEPING the config window's own preferences -- language, Simple / Advanced, size,
+// ground, the page it reopens on. They are the config's, not a profile's : every path that loads a profile goes through
+// here (the startup auto-apply, the other-client sync, profile_load). Only profile_load kept them at first, so a
+// relaunch came back in the profile's English / Advanced (2026-11-27).
+static bool load_profile_file(const char* path) {
+    const UiConfig& live = ui_config();
+    const int lang = live.lang, adv = live.cfgAdv, bg = live.cfgBg, reopen = live.cfgReopen, lt = live.cfgLastTab, ls = live.cfgLastSec;
+    const float scale = live.cfgScale;
+    if (!load_config_from(path)) return false;
+    UiConfig& c = ui_config();
+    c.lang = lang; c.cfgAdv = adv; c.cfgScale = scale; c.cfgBg = bg; c.cfgReopen = reopen; c.cfgLastTab = lt; c.cfgLastSec = ls;
+    return true;
+}
+
 void load_ui_config() {
     migrate_data_folder();   // move any legacy root files into data\ BEFORE the first read
     seed_default_profile();  // first-run only : plant the shipped Default profile as the starting config
@@ -1192,7 +1209,7 @@ void load_ui_config() {
     }
     if (g_active[0]) {
         char p[300]; profile_path(g_active, p, sizeof(p));
-        if (load_config_from(p)) save_config_to(config_path());   // adopt the profile as the live config
+        if (load_profile_file(p)) save_config_to(config_path());   // adopt the profile as the live config (config.txt's window prefs kept)
         else g_active[0] = 0;                                   // profile was deleted -> no active profile
     }
     profile_mark_clean();
@@ -1319,7 +1336,7 @@ void profile_sync_poll() {
     if (profile_dirty()) { g_profStamp = ft; return; }         // mid-edit here : deliberately skip THIS change, don't re-offer it
 
     char p[300]; profile_path(g_active, p, sizeof(p));
-    if (!load_config_from(p)) return;                          // transient read failure -> leave the stamp, retry next tick
+    if (!load_profile_file(p)) return;                         // transient read failure -> leave the stamp, retry next tick
     g_profStamp = ft;
     profile_mark_clean();
     request_scale_baseline_reset();                            // adopt the profile's box scales as-is (same as profile_load)
@@ -1328,9 +1345,7 @@ void profile_sync_poll() {
 bool profile_load(const char* name) {
     if (!name || !name[0]) return false;
     char p[300]; profile_path(name, p, sizeof(p));
-    const int adv = ui_config().cfgAdv;   // the config's depth is not a profile's (a job auto-switch flipped it)
-    if (!load_config_from(p)) return false;
-    ui_config().cfgAdv = adv;
+    if (!load_profile_file(p)) return false;   // the config window's preferences are kept (a job auto-switch flipped them)
     save_ui_config();   // adopt as the live config too
     profile_mark_clean();
     set_active_profile(name);   // remember for auto-load at next startup
@@ -1372,7 +1387,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.allyThemeCopy != b.allyThemeCopy || a.allyTheme != b.allyTheme || a.allyLum != b.allyLum || a.allyHue != b.allyHue || a.allyBoxAlpha != b.allyBoxAlpha) return false;
     if (a.buffScale != b.buffScale) return false;
     if (a.buffMax != b.buffMax) return false;
-    if (a.buffRows != b.buffRows) return false;
+    if (a.buffRows != b.buffRows || a.buffSide != b.buffSide) return false;
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) if (a.buffOrder[i] != b.buffOrder[i]) return false;   // the strip order is part of the profile
     for (int i = 0; i < 80; ++i) if (a.buffStatusOff[i] != b.buffStatusOff[i]) return false;   // hidden buffs are part of the profile
     if (a.buffGroupOff != b.buffGroupOff) return false;                                                    // and so is which groups are hidden
@@ -1387,7 +1402,8 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.partyRefX[0] != b.partyRefX[0] || a.partyRefX[1] != b.partyRefX[1]) return false;
     if (a.zonePanelX != b.zonePanelX || a.zonePanelY != b.zonePanelY) return false;   // dragging the Zones panel is a layout edit -> must mark dirty
     for (int i = 0; i < 4; ++i) if (a.allyRefY[i] != b.allyRefY[i]) return false;
-    if (a.lang != b.lang) return false;   // language is part of a profile : toggling FR/EN marks it modified so Save keeps it
+    // (lang is NOT compared : since 2026-11-27 it is the config window's own preference, like cfgAdv / cfgui -- applied
+    //  and saved at once, for every profile ; a profile load keeps it. It made Save light up while Simple did not.)
     if (a.guideGroupCount != b.guideGroupCount) return false;
     for (int i = 0; i < a.guideGroupCount; ++i) {
         if (a.guideGroup[i].x != b.guideGroup[i].x || a.guideGroup[i].y != b.guideGroup[i].y ||
