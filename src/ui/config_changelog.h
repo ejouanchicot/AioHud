@@ -686,6 +686,13 @@ static const ChangeLine CL_88[] = {
       "*Les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lanc\xC3\xA9 un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne.", CK_FIXED, "Timers", "Timers" },
 };
 
+static const ChangeLine CL_111[] = {
+    { "*The Update tab flags the new release again after an update from 1.0.103.* That version rewrote the config without the last release you had seen, so 1.1.0 showed no count on the tab ; now the installed release counts as new once.",
+      "*L'onglet Mise \xC3\xA0 jour signale de nouveau la nouvelle version apr\xC3\xA8s une mise \xC3\xA0 jour depuis la 1.0.103.* Cette version r\xC3\xA9\xC3\xA9""crivait la config sans la derni\xC3\xA8re version vue, et la 1.1.0 n'affichait aucun compteur sur l'onglet ; d\xC3\xA9sormais la version install\xC3\xA9""e compte une fois comme nouvelle.", CK_FIXED, "Update", "Mise \xC3\xA0 jour" },
+    { "*The new-release count on the Update tab* sits after the tab's label, without a glow spilling over the text.",
+      "*Le compteur de nouvelles versions de l'onglet Mise \xC3\xA0 jour* se place apr\xC3\xA8s le nom de l'onglet, sans halo qui d\xC3\xA9""borde sur le texte.", CK_FIXED, "Update", "Mise \xC3\xA0 jour" },
+};
+
 static const ChangeLine CL_110[] = {
     { "*The config has a new look, and its modules are grouped.* Open it with //aio config : a forged-metal window, the module list on the left sorted into General, Party, Combat, World and Chat & Game UI, the settings in the middle, and a live preview beside them that follows the section your pointer is over.",
       "*La config a un nouveau look, et ses modules sont regroup\xC3\xA9s.* Ouvre-la avec //aio config : une fen\xC3\xAAtre en m\xC3\xA9tal forg\xC3\xA9, la liste des modules \xC3\xA0 gauche rang\xC3\xA9""e en G\xC3\xA9n\xC3\xA9ral, Groupe, Combat, Monde et Chat & Interface, les r\xC3\xA9glages au milieu, et un aper\xC3\xA7u en direct \xC3\xA0 c\xC3\xB4t\xC3\xA9 qui suit la section que tu survoles.", CK_NEW, "Config", "Config" },
@@ -958,6 +965,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.1.1", CL_111, (int)(sizeof(CL_111) / sizeof(CL_111[0])), "2026-11-27" },
     { "1.1.0", CL_110, (int)(sizeof(CL_110) / sizeof(CL_110[0])), "2026-11-27" },
     { "1.0.103", CL_103, (int)(sizeof(CL_103) / sizeof(CL_103[0])), "2026-11-15" },
     { "1.0.102", CL_102, (int)(sizeof(CL_102) / sizeof(CL_102[0])), "2026-11-12" },

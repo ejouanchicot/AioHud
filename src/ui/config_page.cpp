@@ -1041,18 +1041,19 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float t2 = chrome_tabkey(*s_ck, ctrl_uid_i(CTRL_ID, i), tx, tabY + snap(2.0f), tabW, tabH - snap(4.0f), active);   // a key in the beam's slot
             const u32 fg2 = chrome_tab_ink(active, t2);
             const float cyT2 = cyT - (active ? 0.0f : snap(1.0f));
-            const float textW2 = fo->measure(tab_label(i), snap(15.0f)), groupW2 = iconS + iconGap + textW2, leftX2 = cxT - groupW2 * 0.5f;
+            // the Update tab's UNSEEN releases : a bead AFTER the label, the icon + label + bead centred together -- it sat on
+            // the tab's right edge and its glow spilled over the label (2026-11-27)
+            const int nNew = i == 4 ? unseen_releases() : 0;
+            const float br = snap(8.0f), bGap = snap(7.0f), bRoom = nNew > 0 ? bGap + br * 2.0f : 0.0f;
+            const float textW2 = fo->measure(tab_label(i), snap(15.0f)), groupW2 = iconS + iconGap + textW2, leftX2 = cxT - (groupW2 + bRoom) * 0.5f;
             tab_icon(dev, i, leftX2 + iconS * 0.5f, cyT2, iconS, fg2, fo, fg2, 0.0f);
             chrome_tab_text(*s_ck, leftX2 + iconS + iconGap + textW2 * 0.5f, cyT2, tab_label(i), active, t2, snap(15.0f));
-            if (i == 4) {   // UNSEEN releases : a lit green bead with their count on the Update tab
-                const int nNew = unseen_releases();
-                if (nNew > 0) {
-                    char nb[8]; _snprintf(nb, sizeof(nb), "%d", nNew); nb[7] = 0;
-                    const float br = snap(10.0f), bx = tx + tabW - br - snap(8.0f), by = tabY + tabH * 0.5f;
-                    cs(dev); cs_add(dev); disc_glow(dev, bx, by, br, fa(0x6030FF60u), br * 0.9f); cs(dev);
-                    disc(dev, bx, by, br, fa(0xFF1C9A3Cu)); disc(dev, bx, by - snap(1.0f), br - snap(2.0f), fa(0xFF3FD068u));
-                    fo->begin(dev); fo->draw_c(dev, bx, by, nb, snap(12.0f), fa(0xFFFFFFFFu), fa(0x90000000u), 1.0f);
-                }
+            if (nNew > 0) {   // a lit green bead set in the key (a dark seat, no glow) with the count
+                char nb[8]; _snprintf(nb, sizeof(nb), "%d", nNew); nb[7] = 0;
+                const float bx = snap(leftX2 + groupW2 + bGap + br), by = snap(cyT2);
+                cs(dev); disc(dev, bx, by + snap(1.0f), br + snap(1.0f), fa(0x90000000u));   // its seat
+                disc(dev, bx, by, br, fa(0xFF1C8A38u)); disc(dev, bx, by - snap(1.0f), br - snap(1.5f), fa(0xFF35C060u));
+                fo->begin(dev); fo->draw_c(dev, bx, by, nb, snap(11.0f), fa(0xFFFFFFFFu), fa(0x80000000u), 1.0f);
             }
             continue;
         }
@@ -3304,7 +3305,9 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 
 #include "ui/config_changelog.h"   // CL_<ver> groups + RELEASES[] (data only -- see the header)
 static int unseen_releases() {
-    if (!ui_config().updSeen[0]) return 0;   // never opened the tab : nothing to flag (everything would be "new")
+    // no "seen" version : the tab never opened, OR a release before 1.1.0 rewrote the config without the line (every
+    // player updating from 1.0.103 -- the 2026-11-27 update test) -> the installed release is the new one : 1
+    if (!ui_config().updSeen[0]) return RELEASES_N > 0 ? 1 : 0;
     int n = 0; while (n < RELEASES_N && strcmp(RELEASES[n].version, ui_config().updSeen) != 0) ++n;
     return n < RELEASES_N ? n : 0;          // an unknown "seen" version (a downgrade) : no badge
 }
@@ -3616,8 +3619,7 @@ void ConfigPage::draw_update_tab_v2(const Frame& f, u32 dev, Font* fo, const Mou
     }
     // "new since" : frozen when the tab opens, then the newest is recorded as seen
     if (relNewN_ < 0) {
-        int k = 0; while (k < RELEASES_N && strcmp(RELEASES[k].version, ui_config().updSeen) != 0) ++k;
-        relNewN_ = (ui_config().updSeen[0] && k < RELEASES_N) ? k : 0;
+        relNewN_ = unseen_releases();   // the same count as the tab's bead
         if (RELEASES_N > 0 && strcmp(ui_config().updSeen, RELEASES[0].version) != 0) { lstrcpynA(ui_config().updSeen, RELEASES[0].version, (int)sizeof(ui_config().updSeen)); save_ui_config(); }
         relOpenIdx_ = 0; relDetScroll_ = 0.0f;
     }
