@@ -716,9 +716,7 @@ bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
 void row_image(u32 dev, const NativeEntryMenu& m, int i, RowSpec& r, bool alt = false) {
     if (i < 0 || i >= 32 || !m.sheet[i]) return;
     if (!client_labels_ok()) return;   // the client's own label : in its language -- only when the menus speak it
-    // ONE TYPE (2026-11-27, the uniform pass) : a row that has its own text keeps it ; the client's letter images (a heavier,
-    // larger bitmap type) only for the rows with no text of ours
-    if (r.label && r.label[0]) return;
+    // (2026-11-27 : tried "our text first" -- Config's column then showed its HELP lines, the names are in the images only)
     const unsigned short id = alt && m.spr[i][1] ? m.spr[i][1] : m.spr[i][0];   // (grey : the normal look, dimmed by the row)
     label_img(dev, m.sheet[i], id, r);
 }
@@ -9444,14 +9442,15 @@ void macrobar_draw(const Frame& f) {
     draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     // the 10 cells : key (1..9, 0) + the macro's name ; empty ones dimmed
     const float L = bx + pad, W = bw - 2.0f * pad;
-    const float cy0 = snap(by + pad), cg = snap(4.0f * S), cw = (W - 9.0f * cg) / 10.0f;
+    const float cy0 = snap(by + pad), cg = snap(2.0f * S), cw = (W - 9.0f * cg) / 10.0f;
     const float flashT = (float)(now - g_mcRunMs[bar]) / 1000.0f;
     for (int i = 0; i < 10; ++i) {
         const float cx = snap(L + (float)i * (cw + cg)), cwi = snap(L + (float)(i + 1) * (cw + cg) - cg) - cx;
         const char* nm = M.name[bar * 10 + i];
         const bool hand = M.hand == i + 1, empty = !nm[0];
-        const float r = snap(4.0f * S);
-        rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(empty ? 0x14FFFFFFu : 0x22FFFFFFu, A), with_alpha(empty ? 0x0CFFFFFFu : 0x16FFFFFFu, A));
+        const float r = snap(6.0f * S);   // the Equipment grid's well (2026-11-27, the uniform pass)
+        rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(0x80101826u, A * (empty ? 0.7f : 1.0f)), with_alpha(0x80080C14u, A * (empty ? 0.7f : 1.0f)));
+        rrect_stroke(dev, cx, cy0, cwi, cellH, r, with_alpha(empty ? 0x22C8D6EAu : 0x40C8D6EAu, A), 1.0f);
         if (g_mcRunMs[bar] && M.lastRun[bar] == i && flashT < 0.6f) {        // just run : a gold flash fading out
             const float fa = A * (1.0f - flashT / 0.6f);
             rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(0x70FFDA8Au, fa), with_alpha(0x30FFDA8Au, fa));
