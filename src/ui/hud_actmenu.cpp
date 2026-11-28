@@ -1064,7 +1064,11 @@ static bool mouse_moved(const MouseState* ms, float* last) {
 }
 // growW (optional) : a box STACKED on a wider neighbour takes its width + left edge -> both vertical edges run straight
 // through the join (the user : "les barres verticales mal alignees") ; its content must lay out from *growW afterwards
+float topbar_height(const Metrics& k);   // below (the top bar)
 int menu_place(const Frame& f, int key, float& x, float& y, float w, float h, float* growW = nullptr, float targetH = 0.0f) {
+    // NEVER UNDER AioHUD's TOP BAR (2026-11-28 : "Status est trop haut, elle touche la barre d'infos") : the client's rects
+    // sit under ITS bar, thinner than ours -- every redrawn menu starts below ours, a hair of gap
+    if ((ui_config().nuHide & NU_HELP) && h > 0.0f) { const Metrics km = metrics(f); const float tb = snap(topbar_height(km) + 3.0f * km.S); if (y < tb) y = tb; }
     const float bi = box_inset(ui_config().muBox);
     if (bi <= 0.0f || w <= 0.0f || h <= 0.0f) return 0;
     const float W = f.screenW, H = f.screenH, near_ = 2.0f * bi + 4.0f, al = 6.0f;
@@ -1963,11 +1967,6 @@ static float card_draw_sheet(const Frame& f, const Metrics& k, float bx, float b
     for (int b = 0; b < 2; ++b) if (BADGE[b]) fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), ty, BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
     { char cut[96]; fo->draw_lc(dev, bx, ty, fit_text(fo, title, snap(tz * 1.04f), right - bx - 6.0f * S, cut, sizeof(cut)), snap(tz * 1.04f), with_alpha(cTitle, A), sh, k.ow); }
     y = snap(y + lh);
-    // its maker, when the piece worn is signed (the client's card writes it under the name)
-    if (const char* sig = native_item_signature(g_card.id)) {
-        fo->draw_lc(dev, bx, snap(y + lh * 0.5f), sig, sz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-        y = snap(y + lh);
-    }
     // 2) the kind ; the item level at the right
     {   const char* ilv = X && X->ilvl[0] ? X->ilvl : 0; char il[24] = "";
         if (ilv) { const char* q = ilv; while (*q && (*q < '0' || *q > '9')) ++q; int v = atoi(q); if (v > 0) sprintf(il, "iLv %d", v); }
@@ -2083,6 +2082,7 @@ static float card_draw_sheet(const Frame& f, const Metrics& k, float bx, float b
         }
     }
     // 5) the level and the jobs, quiet
+    float lastLvW = -1.0f;                                              // its last line's width (the maker goes beside it)
     if (g_card.level > 0) {
         char lv[200]; int o = _snprintf(lv, sizeof(lv), "Lv.%d  ", g_card.level);
         const unsigned all = 0x7FFFFEu;
@@ -2092,6 +2092,17 @@ static float card_draw_sheet(const Frame& f, const Metrics& k, float bx, float b
         y = snap(y + 4.0f * S);
         char wl[3][160]; const int nw = wrap_lines(fo, lv, sz, bw, wl, 3);
         for (int j = 0; j < nw; ++j) { fo->draw_lc(dev, bx, snap(y + lh * 0.5f), wl[j], sz, with_alpha(cDim, A), sh, k.ow); y = snap(y + lh); }
+        if (nw > 0) lastLvW = fo->measure(wl[nw - 1], sz);
+    }
+    // its MAKER (a crafted, signed piece) as the client writes it : "[Name]" at the bottom right -- on the level's last
+    // line when there is room, else on its own line (2026-11-28 : under the name it "n'est pas beau")
+    if (const char* sig = native_item_signature(g_card.id)) {
+        char sb[32]; _snprintf(sb, sizeof(sb), "[%s]", sig); sb[sizeof(sb) - 1] = 0;
+        const float sw = fo->measure(sb, sz);
+        float ly = snap(y - lh * 0.5f);                                // the level's last line
+        const bool own = lastLvW < 0.0f || lastLvW + sw + 16.0f * S > bw;
+        if (own) { ly = snap(y + lh * 0.5f); y = snap(y + lh); }
+        fo->draw_lc(dev, snap(bx + bw - sw), ly, sb, sz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
     }
     return y;
 }
@@ -2506,6 +2517,7 @@ void persona_draw(const Frame& f) {
     const u32 cLab = 0xFF93A6BEu, cVal = 0xFFE4EAF2u, cGold = 0xFFE8D9B0u;
     static const char* ATTR[7] = { "STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR" };
     float persBottom = 0.0f, persX = 0.0f, persW = 0.0f;
+    static float s_mlW = 0.0f; static unsigned s_mlMs = 0;   // the Master Level box's own width, last frame : the stats take it when wider (one width, 2026-11-28)
     if (drawP) {
         const PersonaMem& d = lastD;
         char l1[40], l2[40], l3[32], hpS[24], mpS[24], tpS[12], av[7][8], ad[7][8];
@@ -2539,7 +2551,8 @@ void persona_draw(const Frame& f) {
         float w = cW - 2.0f * pad + 2.0f * k.bi;                              // the content width inside the client's rect
         { const float wn = fo->measure(nm, snap(lzz * 1.12f)); if (wn > w) w = wn;
           const float w2 = fo->measure(mj, jz); if (w2 > w) w = w2; const float w3 = fo->measure(sj, jz); if (w3 > w) w = w3; }
-        const float bw = snap(w + 2.0f * pad), bh = snap(fmaxf(cH + 2.0f * k.bi, pad + 4.0f * headL * 0.85f + 6.0f * S + 3.0f * gaugeBlk + 6.0f * S + 7.0f * attrStep + pad));
+        float bw = snap(w + 2.0f * pad); const float bh = snap(fmaxf(cH + 2.0f * k.bi, pad + 4.0f * headL * 0.85f + 6.0f * S + 3.0f * gaugeBlk + 6.0f * S + 7.0f * attrStep + pad));
+        if (s_mlMs && now - s_mlMs < 300u && s_mlW > bw) bw = s_mlW;           // the Master Level box under it is wider : the same width
         float bx, by; place(lastP, bw, bh, bx, by);
         const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
         persBottom = by + bh; persX = bx; persW = bw;          // its REST place : the Master Level box hangs from it (it slides on its own)
@@ -2613,6 +2626,7 @@ void persona_draw(const Frame& f) {
         if (tz > lh * 0.92f) tz = lh * 0.92f;
         w = fo->measure(ml, tz); { const float w2[4] = { fo->measure(lEp, tz), fo->measure(ep, tz), fo->measure(lNx, tz), fo->measure(nx, tz) }; for (int i = 0; i < 4; ++i) if (w2[i] > w) w = w2[i]; }
         if (w + 2.0f * pad > bw) bw = snap(w + 2.0f * pad);
+        s_mlW = bw; s_mlMs = now;                                             // its own width : the stats above take it when wider
         if (persW > bw) bw = persW;                                           // the stats' width : the two edges line up
         float bx, by; place(lastL, bw, bh, bx, by);
         // with the stats shown : RIGHT UNDER them, their left edge (2026-11-20 : the client's rect put it at the bottom of

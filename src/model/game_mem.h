@@ -202,6 +202,8 @@ int count_items(const unsigned* ids, int n, unsigned* out);
 // used at cast time to read the caster's live "Enhancing Magic eff. dur." gear/augments (see enh_dur.h).
 // ids[s] = 0 for an empty slot. Returns false if the item container isn't ready.
 bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]);
+// an item by id in every bag : its extdata (the first signed copy, else the first) ; false : not found / not ready
+bool find_item_ext(unsigned id, unsigned char ext[24]);
 // The character sheet from the client's own mirror of the 0x061 body (game_mem.cpp). Lets the sheet fill on
 // LOAD instead of waiting for the next login / job change / zone, which is the only time the packet comes.
 struct CharSheet;

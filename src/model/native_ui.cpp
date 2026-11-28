@@ -22,6 +22,7 @@
 
 namespace aio {
 void worn_sig_refresh();   // the worn pieces' signatures (below)
+void sig_resolve();        // ... and a card's item, any bag (below)
 
 using windower::u32;
 using windower::valid_ptr;
@@ -5288,9 +5289,27 @@ void worn_sig_refresh() {
     static int said = 0; if (said < 3) { ++said; int n = 0; for (int s2 = 0; s2 < 16; ++s2) if (g_wsSig[s2][0]) ++n;
         windower::debug::log("NATIVEUI worn signatures : %s, %d signed piece(s)", g_wsOk ? "read" : "NOT read (the container not ready)", n); }
 }
+// ... and any item the card shows (the inventory, the safes, a wardrobe) : asked by the UI, read by the poller (one frame
+// later), kept per id (8 entries) -- a miss (not found / not ready) is asked again after 2 s (rule 10)
+static unsigned g_sigAsk = 0;
+static struct { unsigned id; char sig[20]; DWORD at; bool ok; } g_sigC[8]; static int g_sigNext = 0;
+void sig_resolve() {
+    if (!g_sigAsk) return;
+    const unsigned id = g_sigAsk; g_sigAsk = 0;
+    unsigned char e[24]; const bool ok = find_item_ext(id, e);
+    int slot = -1; for (int i = 0; i < 8; ++i) if (g_sigC[i].id == id) slot = i;
+    if (slot < 0) { slot = g_sigNext; g_sigNext = (g_sigNext + 1) % 8; }
+    g_sigC[slot].id = id; g_sigC[slot].ok = ok; g_sigC[slot].at = GetTickCount();
+    if (ok) sig_decode(e, g_sigC[slot].sig, sizeof(g_sigC[slot].sig)); else g_sigC[slot].sig[0] = 0;
+    static int said = 0; if (said < 6) { ++said; windower::debug::log("NATIVEUI signature of item %u : %s%s", id, !ok ? "NOT FOUND (asked again later)" : g_sigC[slot].sig[0] ? g_sigC[slot].sig : "none (not signed)", ""); }
+}
 const char* native_item_signature(unsigned id) {
-    if (!g_wsOk || !id) return 0;
-    for (int s2 = 0; s2 < 16; ++s2) if (g_wsId[s2] == id && g_wsSig[s2][0]) return g_wsSig[s2];
+    if (!id) return 0;
+    if (g_wsOk) for (int s2 = 0; s2 < 16; ++s2) if (g_wsId[s2] == id && g_wsSig[s2][0]) return g_wsSig[s2];   // worn
+    for (int i = 0; i < 8; ++i) if (g_sigC[i].id == id) {
+        if (!g_sigC[i].ok && GetTickCount() - g_sigC[i].at > 2000) g_sigAsk = id;   // a miss : asked again
+        return g_sigC[i].sig[0] ? g_sigC[i].sig : 0; }
+    g_sigAsk = id;                                                       // not asked yet : the poller reads it next frame
     return 0;
 }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
@@ -6371,6 +6390,7 @@ void native_ui_tick(bool inWorld) {
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
     rgb_poll(wanted && (c.nuHide & NU_NPC), manager());                  // Font Colors' RGB editor
     gauges_poll(wanted && (c.nuHide & NU_PARTY), manager());             // the cast / HP-MP-TP gauges (redrawn)
+    if (wanted) sig_resolve();                                           // the item a card asked about : its maker (any bag)
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
         if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list");

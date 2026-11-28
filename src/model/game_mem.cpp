@@ -891,6 +891,26 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
     return ready || found > 0;
 }
 
+// an item BY ID in every bag (inventory, safes, wardrobes...) : its 24-byte extdata -- the first SIGNED copy when one is
+// (extdata byte 12 != 0 : a maker's name), else the first copy. false : not found / the containers not ready (2026-11-28 :
+// a signed piece in the inventory showed no maker -- only the worn ones were read)
+bool find_item_ext(unsigned id, unsigned char ext[24]) {
+    for (int k = 0; k < 24; ++k) ext[k] = 0;
+    const u32 ir = items_root(); if (!ir || !id) return false;
+    bool any = false;
+    for (u32 bag = 0; bag < (u32)ITEM_BAG_MAX; ++bag) for (u32 idx = 1; idx < (u32)ITEM_BAG_ENTRIES; ++idx) {
+        const u32 item = ir + bag * 0xCA8 + idx * 0x28;
+        u32 v = 0; if (!safe_read(item, &v)) break;                    // a bag not mapped : the next one
+        if ((v & 0xFFFF) != id) continue;
+        unsigned char e[24]; bool ok = true;
+        for (int k = 0; k < 24 && ok; ++k) { u32 b = 0; if (!safe_read(item + 0x0D + k, &b)) ok = false; else e[k] = (unsigned char)(b & 0xFF); }
+        if (!ok) continue;
+        if (!any) { for (int k = 0; k < 24; ++k) ext[k] = e[k]; any = true; }
+        if (e[12]) { for (int k = 0; k < 24; ++k) ext[k] = e[k]; return true; }   // a signed copy : that one
+    }
+    return any;
+}
+
 // Player buffs, reversed from LuaCore get_player (FUN_10072040). The same player struct
 // pl = *(g + 0x3C) holds a 32-entry uint16 status-icon array at pl+0x1C (loop runs the ushorts
 // in [pl+0x1C, pl+0x5C) ); 0xFF marks an EMPTY slot. We compact the non-empty ids in slot order.
