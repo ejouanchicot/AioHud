@@ -343,7 +343,7 @@ static void vrect_b(TriBatch& tb, float x, float y, float w, float h, u32 cT, u3
 // about. Returns false when the mask cannot be used, and the caller then draws the geometry exactly as before.
 //
 // TWO GUARDS, both of them load-bearing:
-//   * feather > 0 is checked by the CALLER. An rrect with feather 0 is a STENCIL MASK (d3d8-rendering 10c),
+//   * feather > 0 is checked by the CALLER. An rrect with feather 0 is a STENCIL MASK (d3d8-rendering 10h),
 //     and during a mask pass alpha-test is off and colour-write is off -- a textured quad would write stencil
 //     across its whole rectangle regardless of the mask's alpha, squaring off every rounded clip in the HUD.
 //   * the rect must ALREADY be on the pixel grid. One texel per pixel is the entire point, and it means
