@@ -22,15 +22,15 @@ public:
     void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; icon_pack_forget(); } if (!o && open_) ctrl_release_drag(); open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
-    void set_section(int s) { if (s != section_) v2Hot_ = -1; section_ = s; }
-    void toggle_kit() { kitSheet_ = !kitSheet_; }
+    void set_section(int s) { if (s != section_) v2Hot_ = -1; section_ = s; }   // //aio config sec N : open a module's page (0-based, MODULES order)
+    void toggle_kit() { kitSheet_ = !kitSheet_; }   // //aio config kit : the redesign's component sheet (cfg_kit.cpp)
     void set_box(int b) { cfgTarget_ = (b == 1) ? 1 : 0; }   // //aio config box 0|1 : the Party / Alliance switch (Party page, Advanced)
-    void set_v2(bool on) { v2_ = on; }   // //aio config v1 | v2 : the old / the new pages (the redesign's comparison)   // //aio config kit : the redesign's component sheet (cfg_kit.cpp)
+    void set_v2(bool on) { v2_ = on; }   // //aio config v1 | v2 : the old / the new pages (the redesign's comparison)
     void set_help(int h) { helpSel_ = h; helpScroll_ = 0.0f; }   // //aio config help N : that Help page
     // the section the preview follows : in the redesign, the one the pointer last went over (a Simple page shows every
     // section open, so "open" could not choose : the Game UI page never showed its name plates) ; else the open one
     bool cat_is_open(int c) const { if (c < 0 || c >= CFG_CAT_N) return false; if (v2_ && v2Hot_ >= 0) return v2Hot_ == c; return catOpen_[c] && (v2_ ? ui_config_adv() : true); }
-    void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; v2Hot_ = c; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
+    void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; v2Hot_ = c; }   // //aio config sec N cat C : that category alone, open
 
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);
@@ -377,8 +377,8 @@ private:
     unsigned profErrMs_ = 0;      // GetTickCount of the failure (0 = none) -> the banner shows for ~8 s
     char     profErrName_[64] = { 0 };
     bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
-    bool  kitSheet_    = false;
-    bool  v2_          = true;    // the redesigned pages (Target first) ; false = the old ones   // the component sheet replaces the page while on
+    bool  kitSheet_    = false;   // the component sheet replaces the page while on
+    bool  v2_          = true;    // the redesigned pages (every module, Profile, Update, Interface) ; false = the old ones (//aio config v1)
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
     float navScroll_   = 0.0f;    // the Configuration tab's module rail : its scroll once the groups outgrow the screen

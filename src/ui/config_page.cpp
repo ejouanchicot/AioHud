@@ -1155,7 +1155,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 { -1, "WORLD", "MONDE" },                                { 3, 0, 0 }, { 10, 0, 0 }, { 6, 0, 0 }, { 8, 0, 0 }, { 12, 0, 0 },
                 { -1, "CHAT & GAME UI", "CHAT & INTERFACE" },             { 16, 0, 0 }, { 15, 0, 0 },
             };
-            static_assert(sizeof(NAV) / sizeof(NAV[0]) == 18 + 5, "every module once in the rail (MODULE_N = 18) + 5 group titles");
+            static_assert(sizeof(NAV) / sizeof(NAV[0]) == MODULE_N + 5, "every module once in the rail + 5 group titles");
             const int pick = nav_rail(dev, fo, mo, click, ix + snap(10.0f), bodyY + snap(s_ck ? 26.0f : 10.0f), sbW - snap(20.0f), bodyY + bodyH - snap(s_ck ? 22.0f : 10.0f),
                                       NAV, (int)(sizeof(NAV) / sizeof(NAV[0])), section_, module_label, navScroll_, 5, pulse, CTRL_ID);
             if (pick >= 0) { if (pick != section_) v2Hot_ = -1; section_ = pick; }   // a new page : its preview starts from its default

@@ -499,6 +499,14 @@ static bool parse_nui_line(const char* line, UiConfig& c) {
     return true;
 }
 
+// The config WINDOW's own preferences (cfgadv= / cfgui=), OUT-OF-LINE (C1061). They used to sit in parse_chat_line,
+// which had become the catch-all ; the window's keys now have a parser of their own.
+static bool parse_cfgwin_line(const char* line, UiConfig& c) {
+    if (!strncmp(line, "cfgadv=", 7)) { c.cfgAdv = atoi(line + 7) ? 1 : 0; return true; }   // the config's depth (Simple / Advanced)
+    if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
+    return false;
+}
+
 // Chat-module lines (chat0= / chat1= / chbox0= / chbox1= / chText0= / chText1=), OUT-OF-LINE (C1061). Absent in an
 // older file -> both boxes off, at their default places.
 static bool s_alphaOwnSeen = false;   // "alphaOwn=" read in this load (absent -> migrated, load_config_from)
@@ -510,10 +518,8 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chatat=", 7)) { c.chAtColor = (unsigned)strtoul(line + 7, 0, 16) | 0xFF000000u; return true; }
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
-    if (!strncmp(line, "cfgadv=", 7)) { c.cfgAdv = atoi(line + 7) ? 1 : 0; return true; }   // the config's depth (Simple / Advanced)
     if (!strncmp(line, "edlock=", 7)) { c.edLock = atoi(line + 7); return true; }
     if (!strncmp(line, "updseen=", 8)) { lstrcpynA(c.updSeen, line + 8, (int)sizeof(c.updSeen)); for (char* q = c.updSeen; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0; return true; }
-    if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
     if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
     if (!strncmp(line, "eqstyle=", 8)) { c.eqStyle = atoi(line + 8) == 0 ? 0 : 1; return true; }
     if (!strncmp(line, "menufont=", 9)) { const int v = atoi(line + 9); c.muFont = v >= 0 && v < ui_font_count() ? v : 0; return true; }
@@ -916,6 +922,7 @@ static bool load_config_from(const char* path) {
         if (parse_nui_line(line, c)) continue;
         if (parse_cursor_style_line(line, c)) continue;
         if (parse_border_line(line, c)) continue;
+        if (parse_cfgwin_line(line, c)) continue; // out-of-line : the config window's own preferences
         if (parse_chat_line(line, c)) continue;   // out-of-line : the Chat module    // out-of-line : Game UI (the client's own windows)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
         if (parse_geo_line(line, c)) continue;    // out-of-line : the GEO box (same nesting-limit reason)

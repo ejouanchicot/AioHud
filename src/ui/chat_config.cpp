@@ -389,6 +389,26 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
         }
     }
     if (adv) {
+        {   // ---- Behaviour : when nothing happens, collapse and / or fade, each on its own delay (chBehave bits 2 / 1) ----
+            const int nMod = cfg_count_modified_bytes(&c.chBehave[b], 4) + cfg_count_modified_bytes(&c.chIdle[b], 4) + cfg_count_modified_bytes(&c.chFoldLines[b], 4)
+                           + cfg_count_modified_bytes(&c.chFadeIdle[b], 4) + cfg_count_modified_bytes(&c.chFadeTo[b], 4);
+            if (v2_section(K, ctrl_uid_i(base, 12), 22, "Behaviour", "Comportement", x, ry, w, nMod)) {
+                // the two bits share one int : no per-row marker / reset (the section count still sees them)
+                if (cfg_toggle_row(K, ctrl_uid_i(base, 13), x, ry, w, tr("Collapse when idle", "Repli au repos"), (c.chBehave[b] & 2) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 2; save_ui_config(); }
+                const char* noFold = (c.chBehave[b] & 2) ? nullptr : tr("inactive : collapse off", "inactif : repli coup\xC3\xA9");
+                _snprintf(v, sizeof(v), "%d s", c.chIdle[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 14), tr("Each line stays", "Chaque ligne reste"), &c.chIdle[b], c.chIdle[b], 3, 120, 1, v, noFold);
+                _snprintf(v, sizeof(v), "%d", c.chFoldLines[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 15), tr("Lines kept", "Lignes gard\xC3\xA9""es"), &c.chFoldLines[b], c.chFoldLines[b], 1, 20, 1, v, noFold);
+                if (cfg_toggle_row(K, ctrl_uid_i(base, 16), x, ry, w, tr("Fade when idle", "Fondu au repos"), (c.chBehave[b] & 1) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 1; save_ui_config(); }
+                const char* noFade = (c.chBehave[b] & 1) ? nullptr : tr("inactive : fade off", "inactif : fondu coup\xC3\xA9");
+                _snprintf(v, sizeof(v), "%d s", c.chFadeIdle[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 17), tr("Fade after", "Fondu apr\xC3\xA8s"), &c.chFadeIdle[b], c.chFadeIdle[b], 3, 120, 1, v, noFade);
+                _snprintf(v, sizeof(v), "%d%%", c.chFadeTo[b]); v[31] = 0;
+                islider(ctrl_uid_i(base, 18), tr("Faded opacity", "Opacit\xC3\xA9 au repos"), &c.chFadeTo[b], c.chFadeTo[b], 0, 80, 1, v, noFade);
+                v2_end(K, ry);
+            }
+        }
         // ---- History : what was said, to a text file (the Battle box : the combat log too) ----
         if (v2_section(K, ctrl_uid_i(base, 19), 24, "History", "Historique", x, ry, w, 0)) {
             if (btn_row(ctrl_uid_i(base, 20), tr("Export the history", "Exporter l'historique"), tr("Export", "Exporter"), false)) {
@@ -418,26 +438,6 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
                 if (btn_row(ctrl_uid_i(ubase, k), chat_ban_name(k), tr("Unban", "D\xC3\xA9""bannir"), false)) unban = k;
             if (unban >= 0) { char nm[20]; lstrcpynA(nm, chat_ban_name(unban), sizeof(nm)); chat_ban_remove(nm); }   // after the loop : the list moves
             v2_end(K, ry);
-        }
-        {   // ---- Behaviour : when nothing happens, collapse and / or fade, each on its own delay (chBehave bits 2 / 1) ----
-            const int nMod = cfg_count_modified_bytes(&c.chBehave[b], 4) + cfg_count_modified_bytes(&c.chIdle[b], 4) + cfg_count_modified_bytes(&c.chFoldLines[b], 4)
-                           + cfg_count_modified_bytes(&c.chFadeIdle[b], 4) + cfg_count_modified_bytes(&c.chFadeTo[b], 4);
-            if (v2_section(K, ctrl_uid_i(base, 12), 22, "Behaviour", "Comportement", x, ry, w, nMod)) {
-                // the two bits share one int : no per-row marker / reset (the section count still sees them)
-                if (cfg_toggle_row(K, ctrl_uid_i(base, 13), x, ry, w, tr("Collapse when idle", "Repli au repos"), (c.chBehave[b] & 2) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 2; save_ui_config(); }
-                const char* noFold = (c.chBehave[b] & 2) ? nullptr : tr("inactive : collapse off", "inactif : repli coup\xC3\xA9");
-                _snprintf(v, sizeof(v), "%d s", c.chIdle[b]); v[31] = 0;
-                islider(ctrl_uid_i(base, 14), tr("Each line stays", "Chaque ligne reste"), &c.chIdle[b], c.chIdle[b], 3, 120, 1, v, noFold);
-                _snprintf(v, sizeof(v), "%d", c.chFoldLines[b]); v[31] = 0;
-                islider(ctrl_uid_i(base, 15), tr("Lines kept", "Lignes gard\xC3\xA9""es"), &c.chFoldLines[b], c.chFoldLines[b], 1, 20, 1, v, noFold);
-                if (cfg_toggle_row(K, ctrl_uid_i(base, 16), x, ry, w, tr("Fade when idle", "Fondu au repos"), (c.chBehave[b] & 1) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 1; save_ui_config(); }
-                const char* noFade = (c.chBehave[b] & 1) ? nullptr : tr("inactive : fade off", "inactif : fondu coup\xC3\xA9");
-                _snprintf(v, sizeof(v), "%d s", c.chFadeIdle[b]); v[31] = 0;
-                islider(ctrl_uid_i(base, 17), tr("Fade after", "Fondu apr\xC3\xA8s"), &c.chFadeIdle[b], c.chFadeIdle[b], 3, 120, 1, v, noFade);
-                _snprintf(v, sizeof(v), "%d%%", c.chFadeTo[b]); v[31] = 0;
-                islider(ctrl_uid_i(base, 18), tr("Faded opacity", "Opacit\xC3\xA9 au repos"), &c.chFadeTo[b], c.chFadeTo[b], 0, 80, 1, v, noFade);
-                v2_end(K, ry);
-            }
         }
         // ---- Text (of the box picked at the top) + the auto-translated words' colour (both boxes) ----
         const char* lab[1] = { b == 1 ? tr("Battle", "Combat") : tr("Chat", "Discussion") };

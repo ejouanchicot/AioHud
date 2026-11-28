@@ -550,8 +550,7 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
                        "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
                       K.px(13.5f), fa(C_DIM), 0, 0.0f);
         ry += K.px(40.0f);
-        cfg_flush(mo);
-        return;
+        return;   // (a slider moved here is saved by ConfigPage::draw's one cfg_flush per frame)
     }
     // ADVANCED (2026-11-27 restructure) : sections by ELEMENT, each "on/off + how it shows" pair is ONE choice
     // (Speed : Off / Text / Icon), and the page uses the shared sections (one open, the preview follows it)
@@ -613,7 +612,7 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
         if (own) {   // the standalone box's frame : exists only in that mode
             BoxStyle& bs = c.dbBox;
             const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
-            if (v2_section(K, ctrl_uid_i(base, 17), 22, "Debuff box frame", "Cadre de la bo\xC3\xAEte des debuffs", x, ry, w, cfg_frame_modified(fr))) {
+            if (v2_section(K, ctrl_uid_i(base, 17), 27, "Debuff box frame", "Cadre de la bo\xC3\xAEte des debuffs", x, ry, w, cfg_frame_modified(fr))) {
                 cfg_frame_rows(K, ctrl_uid_i(base, 26), x, ry, w, fr); v2_end(K, ry); }
         }
     }
@@ -634,7 +633,6 @@ void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool cl
         if (v2_section(K, ctrl_uid_i(base, 16), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) {
             cfg_text_rows(K, ctrl_uid_i(base, 27), x, ry, w, lab, ts, n, &cfgTgtTextElem_); v2_end(K, ry); }
     }
-    cfg_flush(mo);
     g_fade = e;
 }
 #undef NOPT

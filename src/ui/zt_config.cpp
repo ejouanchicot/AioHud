@@ -362,7 +362,7 @@ void ConfigPage::draw_zt_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
     // the zone's section, titled with the zone : what its box shows, top to bottom, each size under its element
     if (v2_section(K, ctrl_uid_i(base, 5), 15, Z_ZN_EN[zv], Z_ZN_FR[zv], x, ry, w, cfg_count_modified(ZT_ZONE[zv], ZT_ZONE_N[zv], true)))
         v2_rows(K, ctrl_uid_i(base, 7 + zv), ZT_ZONE[zv], ZT_ZONE_N[zv], x, ry, w);   // 7..13 : one uid block per zone
-    if (zv == 6 && v2_section(K, ctrl_uid_i(base, 19), 7, "Behaviour", "Comportement", x, ry, w, cfg_count_modified(ZT_SO_BEHAV, NOPT(ZT_SO_BEHAV), true)))
+    if (zv == 6 && v2_section(K, ctrl_uid_i(base, 19), 22, "Behaviour", "Comportement", x, ry, w, cfg_count_modified(ZT_SO_BEHAV, NOPT(ZT_SO_BEHAV), true)))
         v2_rows(K, ctrl_uid_i(base, 20), ZT_SO_BEHAV, NOPT(ZT_SO_BEHAV), x, ry, w);   // Sortie only
     {   // TEXT : the zone's elements that are SHOWN (no dead element -- the Target page's rule) ; the selector walks THIS list
         int el[ZT_TE_COUNT]; const char* lab[ZT_TE_COUNT]; int n = 0;

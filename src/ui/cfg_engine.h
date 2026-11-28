@@ -2,8 +2,8 @@
 //
 // An option is DESCRIBED once (OptDef) ; the engine draws it with the kit (cfg_kit.h), saves it, greys it with its reason
 // when a dependency makes it inert, marks it "modified" when it differs from the factory value, and resets it to that
-// value on a right-click. A page is a list of these tables between section headers. Pilot page : Target
-// (target_config.cpp draw_target_v2).
+// value on a right-click. A page is a list of these tables between section headers. Every module's
+// page is built on it (draw_<module>_v2) ; Target (target_config.cpp draw_target_v2) was the pilot.
 //
 // "Modified" / reset work on ANY field that lives inside UiConfig : its factory twin is found at the same offset in a
 // value-initialised UiConfig (cfg_factory_of). So the shared blocks (Frame on a BoxStyle, Text on a TextStyle) get the
