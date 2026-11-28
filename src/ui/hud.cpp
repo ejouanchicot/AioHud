@@ -511,7 +511,13 @@ void Hud::render(u32 dev) {
             PERF_BEGIN("gameui.screens");           // every redrawn client screen below, as ONE row (most draw nothing unless their menu is open)
             Font* const uiFont = f.font;            // Game UI -> Menu font : the screens below in it (the interface's when 0 / missing / not baked yet)
             {   const int mf = ui_config().muFont;
-                if (mf > 0 && ui_font_installed(mf)) { Font* m = fonts_.get(ui_font_face(mf), 0); if (m) { m->ensure(f.dev); if (m->ready()) f.font = m; } } }
+                int why = 0;   // the DECISION, logged once per change (2026-11-28 : "Police des menus ... n'affecte rien")
+                if (mf > 0 && ui_font_installed(mf)) { Font* m = fonts_.get(ui_font_face(mf), 0); if (m) { m->ensure(f.dev); if (m->ready()) { f.font = m; why = m == uiFont ? 4 : 1; } else why = 3; } }
+                else if (mf > 0) why = 2;
+                static int s_mf = -1, s_why = -1;
+                if (mf != s_mf || why != s_why) { s_mf = mf; s_why = why;
+                    static const char* W[5] = { "off (the interface's font)", "APPLIED", "NOT APPLIED : face not installed", "NOT APPLIED : not baked yet", "the same font as the interface's (the pool's default slot ?)" };
+                    windower::debug::log("FONTS Game UI menu font %d '%s' : %s", mf, mf > 0 ? ui_font_face(mf) : "-", W[why]); } }
             topbar_draw(f);                         // the top bar (menu name + help), in place of the client's (Game UI) -- under the menus
             buffbar_draw(f);                        // your buff icons under it (Game UI -> NU_BUFF)
             netbox_draw(f);                         // the connection box (netstat), top right, in place of the client's

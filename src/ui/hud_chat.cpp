@@ -1205,6 +1205,11 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         if (add > 0) {
             st.vpos += (float)add;
             if (st.scroll > 0) { st.scroll += add; st.newBelow += msgs; }
+            // the unfolded log's LINE CURSOR counts rows up from the newest : new rows below push the line it is on further
+            // up by exactly `add`. Not shifted, it slid onto another message by itself whenever text came in (Gab 2026-11-28 :
+            // "j'ai pas bouge la ligne en surbrillance, elle bouge seule quand du nouveau texte rentre"). On the newest line
+            // (0) it stays on the newest.
+            if (fullOn && g_flCur[box] > 0) g_flCur[box] += add;
         }
         if (st.vpos > (float)st.scroll + lines * 2.0f) st.vpos = (float)st.scroll + lines * 2.0f;   // a burst : don't crawl
     }
@@ -1218,12 +1223,16 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         // cursor to the top row) : followed step by step, the box jumped, paused, jumped again ("pas fluide"). A line move
         // (1-2 rows) applies at once ; a bigger one waits until the game holds still (150 ms), then the box glides there once
         if (fullOn && FL.focused && box == 0) fulllog_pad(nowMs);          // the pad's D-pad, as the arrows
-        {   static int lastPos[2] = { -1, -1 }, applied[2] = { 0, 0 }; static unsigned movedMs[2] = { 0, 0 };
+        {   static int lastPos[2] = { -1, -1 }, applied[2] = { 0, 0 }; static unsigned movedMs[2] = { 0, 0 }, openMs[2] = { 0, 0 };
             if (fullOn) {
+                if (!openMs[box]) openMs[box] = nowMs ? nowMs : 1u;
                 const int pos = FL.back + (FL.last > 0 ? FL.last - FL.top : 0);
                 if (pos != lastPos[box]) { lastPos[box] = pos; movedMs[box] = nowMs; }
                 const int d = pos - applied[box];
-                const bool keys = g_flKeyMs && nowMs - g_flKeyMs < 1500u;  // the keyboard drives : the game's state is only noted
+                // the keyboard / the pad drive : the game's state is only noted -- for the WHOLE unfold once a key moved it
+                // here. It used to be 1.5 s : then the next line of text moved the game's own cursor and ours was set to it,
+                // and OUR pages are not the game's 72-row ones -- the band jumped elsewhere by itself (Gab 2026-11-28)
+                const bool keys = g_flKeyMs && (int)(g_flKeyMs - openMs[box]) >= 0;
                 if (keys) applied[box] = pos;
                 if (keys) {
                     const int vis = g_flVis[box] > 1 ? g_flVis[box] : 1;
@@ -1236,7 +1245,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
                     if (g_flCur[box] < st.scroll) st.scroll = g_flCur[box];
                     if (g_flCur[box] > st.scroll + vis - 1) st.scroll = g_flCur[box] - vis + 1;
                 }
-            } else { lastPos[box] = -1; applied[box] = 0; } }
+            } else { lastPos[box] = -1; applied[box] = 0; openMs[box] = 0; } }
         if (st.scroll < 0) st.scroll = 0;
         if (st.scroll == 0) st.newBelow = 0;
     } else { st.scroll = 0; st.vpos = 0.0f; }

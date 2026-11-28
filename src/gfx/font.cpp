@@ -547,7 +547,11 @@ Font* FontManager::get(const char* face, int weight, bool italic) {
         f_[n_].set_face(rf, rw, italic);
         return &f_[n_++];
     }
-    return &f_[0];   // pool full -> fall back to the default slot
+    // pool full -> fall back to the default slot. SAID, once per face asked (rule 10) : a font that silently comes back as
+    // the default reads as "the option does nothing" (Game UI > Menu font, 2026-11-28) -- this line is what tells the two apart
+    { static char s_lastMiss[64] = { 0 };
+      if (lstrcmpA(s_lastMiss, fc) != 0) { lstrcpynA(s_lastMiss, fc, 64); windower::debug::log("FONTS pool FULL (%d faces x weights) : '%s' %d falls back to the default face", MAXF, fc, w); } }
+    return &f_[0];
 }
 void FontManager::ensure_all(u32 dev)   { for (int i = 0; i < n_; ++i) f_[i].ensure(dev); }
 void FontManager::on_device_lost()      { for (int i = 0; i < n_; ++i) f_[i].on_device_lost(); font_wide_forget(); }
