@@ -5585,6 +5585,36 @@ void mon_read(NativeProfile& P) {
         }
     }
 }
+// ---- ENCUMBRANCE : the u32 the client's 0x01B handler (FUN_05430A80) stores from packet +0x60, in the same player
+// object as the mentor byte (Ghidra 2026-11-28, docs/game-data/player/encumbrance-flags.md). The handler's own bytes :
+//   8B 48 60 (ecx = pkt[0x60]) 8D 70 6C  89 8A <ENC>  8A 48 64  88 8A <+0x64 byte>  8A 48 65  88 8A <MENTOR>
+// unique in the June AND November clients ; ENC = MENTOR + 5 in both (0x40DF0 / 0x40EA0). Adopted only when the
+// handler's MENTOR operand is the very offset the profile draw reads (mon_res, the pointer it reads it through) and
+// ENC = MENTOR + 5 -- so the object, the field and the pointer are tied together. Why it exists : 0x01B comes on a login
+// or a job change, NOT on a zone, so after a plugin reload the locked-slot crosses were blank until the next job change.
+// Bounded retry (every 5 s via mon_res, logged at the first try and every minute), never given up (rule 10).
+u32 g_encOff = 0; bool g_encOk = false; int g_encTries = 0; DWORD g_encNext = 0;
+static bool enc_res() {
+    if (g_encOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_encTries && (int)(now - g_encNext) < 0) return false;
+    ++g_encTries; g_encNext = now + 5000;
+    mon_res();
+    const u32 h = aob_masked("8B 48 60 8D 70 6C 89 8A ?? ?? ?? ?? 8A 48 64 88 8A ?? ?? ?? ?? 8A 48 65 88 8A ?? ?? ?? ??");
+    u32 enc = 0, men = 0;
+    if (h && g_mentorOk && safe_read(h + 8, &enc) && safe_read(h + 0x1A, &men) && men == g_mon.mentorOff && enc == men + 5) {
+        g_encOff = enc; g_encOk = true;
+        windower::debug::log("NATIVEUI encumbrance resolved (try %d) : *(FFXiMain+%X) + 0x%X", g_encTries, g_mon.mentorPtrVar - ffximain_base(), enc);
+    } else if (g_encTries == 1 || g_encTries % 12 == 0)
+        windower::debug::log("NATIVEUI encumbrance NOT resolved (try %d : handler %d mentor %d enc 0x%X mentorOp 0x%X)", g_encTries, !!h, g_mentorOk ? 1 : 0, enc, men);
+    return g_encOk;
+}
+bool read_encumbrance_mem(unsigned& out) {
+    if (!enc_res()) return false;
+    u32 pl = 0, v = 0;
+    if (!safe_read(g_mon.mentorPtrVar, &pl) || !valid_ptr(pl) || !safe_read(pl + g_encOff, &v)) return false;
+    out = v; return true;
+}
 // ---- Status -> Job / Master Levels : the client's player object P = *(&P), what its 0x01B handler keeps (Ghidra
 // 2026-11-18, docs/notes/job-levels-re-2026-11-18.md section 5) -- every offset from the code's own operands, adopted
 // only when the cross-checks of both clients hold : the same &P in A and B, ML = mastered + 4, levels = block + 0x44.

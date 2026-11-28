@@ -1841,7 +1841,9 @@ void poll_game_state(GameState& gs) {
       read_charsheet_mem(cs_);
       // The job table is a SEPARATE read : the 0x061 mirror does not carry it, and it is the one
       // block whose packet may not come back for hours (0x01B needs a job change, not a zone).
-      read_job_table_mem(cs_, gs.me.mjob, gs.me.mlvl); }
+      read_job_table_mem(cs_, gs.me.mjob, gs.me.mlvl);
+      // The encumbrance flags ride the same packet : the client's stored copy fills them until a 0x01B arrives.
+      unsigned enc = 0; if (read_encumbrance_mem(enc)) party().encumbrance_from_mem(enc); }
 
     PERF_END("poll.charsheet");
     PERF_BEGIN("poll.jobs");   // grimoire, BST, GEO, SMN, Sortie track

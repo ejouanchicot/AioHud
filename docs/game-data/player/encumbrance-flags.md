@@ -6,8 +6,10 @@ source: Windower addons/libs/packets/fields.lua (0x01B field list)
 # Encumbrance flags — the `0x01B` packet
 
 AioHUD parses inbound packet id `0x01B` ("Job Info") to cache which equip slots are
-**locked** (encumbered). The client resends `0x01B` on **job change / zone / encumbrance
-change**, so the cache stays current with no polling. Same packet-fed idiom as `target_th`.
+**locked** (encumbered). The game sends `0x01B` on a **login or a job change — not on a zone** (measured
+2026-09-15, see [Character sheet](char-sheet.md)). Whether it also comes when the encumbrance itself changes
+mid-session is **not measured**. So after a plugin reload the packet alone left the crosses blank until the next
+job change — the client's stored copy (below) fills that gap.
 
 - Feed: `feed_packet()` in `src/plugin/aiohud.cpp` hands every packet to `aio::model_feed_packet()`
   (`src/model/party_state.cpp`, the SEH-guarded model router since 2026-09-13), which dispatches
@@ -18,6 +20,33 @@ change**, so the cache stays current with no polling. Same packet-fed idiom as `
   delivers the encumbrance (see [Character sheet](char-sheet.md)).
 - Read: `party().encumbrance()` (u32). Consumers: the Equipment Viewer (`ui/player.cpp`, no cross in the
   demo/fake preview) and the redrawn native Equipment menu grid (`ui/hud_actmenu.cpp`, same red cross).
+
+## The client's stored copy (memory, Ghidra 2026-11-28)
+
+The client's `0x01B` handler (`FUN_05430A80`, registered `push 0x05430A80 ; push 0x1B ; call 0x0543C4F0` at
+`0x05430946`, November dump) stores the u32 at packet `+0x60` in its player-info object, the same object whose
+mentor byte the Profile panel reads:
+
+```
+05430ABC  8B 48 60            mov ecx,[eax+0x60]        ; pkt+0x60 : the encumbrance flags
+05430ABF  8D 70 6C            lea esi,[eax+0x6C]
+05430AC2  89 8A A0 0E 04 00   mov [edx+0x40EA0],ecx     ; P + ENC
+05430AC8  8A 48 64 / 88 8A .. mov [edx+0x40E9A],cl      ; pkt+0x64
+05430AD1  8A 48 65 / 88 8A .. mov [edx+0x40E9B],cl      ; pkt+0x65 : MENTOR
+```
+
+| client | handler AOB hit | ENC | MENTOR | ENC - MENTOR |
+|---|---|---|---|---|
+| June 2026 (`re/ffximain_dump.bin`) | file `+0xF08AC`, unique | `0x40DF0` | `0x40DEB` | 5 |
+| Nov 2026 (`re/ffximain_dump_20261115.bin`) | file `+0xF0ABC`, unique | `0x40EA0` | `0x40E9B` | 5 |
+
+P = `*(FFXiMain+0x4E0F48)` (Nov). **Code**: `enc_res` / `read_encumbrance_mem` (`model/native_ui.cpp`) find the
+handler by the signature `8B 48 60 8D 70 6C 89 8A ?? ?? ?? ?? 8A 48 64 88 8A ?? ?? ?? ?? 8A 48 65 88 8A ?? ?? ?? ??`
+and adopt ENC only when its MENTOR operand equals the offset `mon_res` resolved from the Profile draw AND
+ENC = MENTOR + 5 — the object, the field and the pointer tied together. The poller (`game_mem.cpp`, `poll.charsheet`)
+reads it each frame into `PartyState::encumbrance_from_mem`: it **is** the value until a `0x01B` arrives; after that the
+packet owns it and the copy is compared once — `ENC match` / `ENC MISMATCH` in `aiohud_debug.log` (the live proof;
+pending its first in-game run). Log lines: `NATIVEUI encumbrance resolved` / `NOT resolved`.
 
 ## The field
 

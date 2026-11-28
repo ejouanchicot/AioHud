@@ -2174,12 +2174,24 @@ void PartyState::on_076(const unsigned char* p) {
     }
 }
 
+// The client's own copy of 0x01B +0x60 (native_ui.cpp enc_res), read by the poller each frame. Until a 0x01B arrives
+// it IS the value ; once one has, the packet owns encumber_ and the copy is compared ONCE and logged -- the in-game
+// proof that the offset is right (ENC match) or not (ENC MISMATCH : the packet keeps winning, nothing goes wrong).
+void PartyState::encumbrance_from_mem(unsigned e) {
+    if (!encPkt_) { encumber_ = e; return; }
+    if (encChecked_) return;
+    encChecked_ = true;
+    windower::debug::log("ENC %s : memory 0x%08X, packet 0x%08X", e == encumber_ ? "match" : "MISMATCH", e, encumber_);
+}
+
 // 0x01B job-info : cache the 'Encumbrance Flags' bitfield (u32 @+0x60 ; bit sid = equip slot sid is locked).
 // The bit order matches our equip-slot ids exactly (main=0 .. back=15) -> the equipment viewer indexes it
-// directly. Resent by the game on job change / zone / encumbrance change, so caching stays current.
+// directly. The game sends it on a LOGIN or a JOB CHANGE -- not on a zone (measured 2026-09-15, char-sheet.md) -- so
+// after a plugin reload the poller fills encumber_ from the client's stored copy (encumbrance_from_mem) until one lands.
 void PartyState::on_01b(const unsigned char* p) {
     if (pkt_short(p, 0x64)) return;          // reads the encumbrance flags @0x60..0x63
     encumber_ = pkt_u32(p, 0x60);
+    encPkt_ = true;
     // The same packet carries the level of all 22 jobs, which are unlocked and which are mastered -- read on
     // its OWN floor (0x7E) so a shorter 0x01B still delivers the encumbrance above instead of being refused.
     cs_read_01b(p, pkt_bytes(p), sheet_);

@@ -962,6 +962,8 @@ struct PartyState {
     unsigned  curTarget_ = 0, selfId_ = 0;   // context for on_action : the mob you're on + your own id
     float     selfX_ = 0.0f, selfZ_ = 0.0f;  // the player's own horizontal position (entity X@+0x04 / Z@+0x0C) -> target distance
     unsigned  encumber_ = 0;              // 0x01B 'Encumbrance Flags' (bit sid = equip slot sid is locked) -> equipment viewer cross
+    bool      encPkt_ = false;            // a 0x01B arrived since the load : the packet owns encumber_, memory is only compared
+    bool      encChecked_ = false;        // the one memory-vs-packet comparison was logged
     unsigned  learnedMs_[256] = {0};      // LEARNED real debuff durations per STATUS id -- only for an entry whose casting spell is
                                           // unknown (an ability, a mob skill). Kept as the fallback it always was.
     unsigned  learnedSpellMs_[1024] = {0};   // LEARNED real durations per SPELL id, which is the one that can be right : Dia I, II and III
@@ -1028,6 +1030,7 @@ struct PartyState {
     void on_076(const unsigned char* p);  // 0x076 : party-member status icons (buffs) -> buffs_[]
     void on_01b(const unsigned char* p);  // 0x01B : job info -> caches the 'Encumbrance Flags' bitfield (locked equip slots)
     unsigned encumbrance() const { return encumber_; }   // bit sid set = equip slot sid is locked (equipment viewer cross)
+    void encumbrance_from_mem(unsigned e);   // the client's stored copy (poller) : fills encumber_ until a 0x01B, then cross-checks it once
     const BuffSet* buffs_for(unsigned id) const;   // a member's buffs (null if none cached)
     // per-frame context for the debuff tracker (set by the HUD from the snapshot) : the current
     // target id (the mob debuffs are attributed to) and the local player id (only YOUR debuffs are tracked).

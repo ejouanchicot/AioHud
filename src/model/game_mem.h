@@ -235,6 +235,8 @@ bool read_persona_mem(PersonaMem& p);
 // The 22 job levels + master levels from the client's own table (see game_mem.cpp).
 // mainJob/mainLvl are the cross-check that the table belongs to this character.
 bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl);
+// The 0x01B encumbrance flags as the client stores them (native_ui.cpp enc_res) ; false = not resolved / unreadable.
+bool read_encumbrance_mem(unsigned& out);
 
 // Merit level (0..5) for merit id `mid` / Job-Point gift rank for gift id `gid`, from the LuaCore-mirrored
 // arrays (indexed by id>>1). Used for the caster's "Enhancing Magic Duration" merit (2320) + JP gift (338)
