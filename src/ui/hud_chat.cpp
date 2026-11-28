@@ -937,6 +937,24 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     float ox, oy;                                                          // the box's top-left (the content sits bi inside)
     if (ovS > 0.0f) { ox = snap(ovX - oW * 0.5f); oy = snap(ovY - oH * 0.5f); }
     else            { ox = snap(C.chX[box] * f.screenW); oy = snap(C.chY[box] * f.screenH - (growUp ? oH : 0.0f)); }
+    // STACKED BOXES (2026-11-28 : "la box chat grandit et la box deux bouge pas, ca se chevauche") : the Battle box
+    // yields to the Discussion box -- when the first, grown with its content, reaches into it, it glides out of the way
+    // (up when it sits above, down when below), a hair of gap ; it comes back to its own place when the first shrinks
+    {   static float s_push[2] = { 0.0f, 0.0f };
+        float want = 0.0f;
+        if (box == 1 && !preview && !editing && ovS <= 0.0f && g_liveMs[0] && nowMs - g_liveMs[0] < 300u) {
+            const float* R = g_liveRect[0]; const float gap = snap(4.0f * S);
+            const bool hx = ox < R[0] + R[2] && ox + oW > R[0];
+            if (hx && oy < R[1] + R[3] + gap && oy + oH + gap > R[1]) {
+                const bool above = oy + oH * 0.5f < R[1] + R[3] * 0.5f;
+                want = above ? (R[1] - gap) - (oy + oH) : (R[1] + R[3] + gap) - oy;
+            }
+        }
+        // GLUED to the first box's edge, frame by frame : that box already eases its height -- a second easing here lagged
+        // behind it ("pendant l'animation c'est un peu bizarre")
+        s_push[box] = want;
+        if (box == 1) oy = snap(oy + s_push[1]);
+    }
     if (preview && S > 0.0f) { g_pvSizeU[box][0] = oW / S; g_pvSizeU[box][1] = oH / S; }   // the config preview stacks the boxes : last frame's size
     const MouseState* m = f.mouse;
     if (editing) {

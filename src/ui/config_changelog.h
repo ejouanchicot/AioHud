@@ -686,6 +686,37 @@ static const ChangeLine CL_88[] = {
       "*Les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lanc\xC3\xA9 un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne.", CK_FIXED, "Timers", "Timers" },
 };
 
+static const ChangeLine CL_113[] = {
+    { "*Config > Log Settings, Font Colors and Windows redrawn* : each Log Settings row shows its ON / OFF, each Font Colors row its colour, the RGB editor opens beside the list ; every caption in the menus' font.",
+      "*Config > Log Settings, Font Colors et Windows redessin\xC3\xA9s* : chaque ligne de Log Settings montre son ON / OFF, chaque ligne de Font Colors sa couleur, l'\xC3\xA9""diteur RVB s'ouvre \xC3\xA0 c\xC3\xB4t\xC3\xA9 de la liste ; toutes les l\xC3\xA9gendes dans la police des menus.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Config > Misc. no longer crowded* : the captions keep the game's spacing, and the Icon Type (1, 2) and Window Type (1 to 8) buttons are back.",
+      "*Config > Misc. n'est plus charg\xC3\xA9* : les l\xC3\xA9gendes gardent l'espacement du jeu, et les boutons Icon Type (1, 2) et Window Type (1 \xC3\xA0 8) sont revenus.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*The Casting Time and HP / MP / TP gauges* of the game no longer show at the top left : AioHUD draws them, at their place and size.",
+      "*Les jauges Casting Time et HP / MP / TP* du jeu n'apparaissent plus en haut \xC3\xA0 gauche : AioHUD les dessine, \xC3\xA0 leur place et \xC3\xA0 leur taille.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*A crafted item shows its maker* : \"[Name]\" at the bottom right of its card, as in the game, whatever bag it is in.",
+      "*Un objet craft\xC3\xA9 montre son crafteur* : \xC2\xAB [Nom] \xC2\xBB en bas \xC3\xA0 droite de sa fiche, comme dans le jeu, quel que soit son sac.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Compact macro palette readable* : the names keep their first letters, as in the game.",
+      "*Palette de macros compacte lisible* : les noms gardent leurs premi\xC3\xA8res lettres, comme dans le jeu.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*Log Out / Shut Down confirms* drawn as the other menus ; the trade's count box no longer covers the trade window, and no game window flashes when an item is picked.",
+      "*Les confirmations Log Out / Shut Down* dessin\xC3\xA9""es comme les autres menus ; la bo\xC3\xAEte de quantit\xC3\xA9 de l'\xC3\xA9""change ne couvre plus la fen\xC3\xAAtre, et plus aucune fen\xC3\xAAtre du jeu ne clignote quand on choisit un objet.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*At the auction house, what your job can wear* shows in the game's yellow.",
+      "*\xC3\x80 l'h\xC3\xB4tel des ventes, ce que ton job peut porter* s'affiche dans le jaune du jeu.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*Status no longer touches the top bar*, and has the width of the Master Level box under it.",
+      "*Status ne touche plus la barre du haut*, et a la largeur de la bo\xC3\xAEte Master Level en dessous.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*Game UI > Menu font* : a font of your choice for the redrawn menus.",
+      "*Interface du jeu > Police des menus* : la police de ton choix pour les menus redessin\xC3\xA9s.", CK_NEW, "Game UI", "Interface du jeu" },
+    { "*12 fonts shipped with AioHUD* (Roboto, Open Sans, Inter, Noto Sans, Lato, Montserrat, Source Sans 3, Fira Sans, Nunito, Exo 2, Merriweather, Cinzel) : they work on every PC. Fonts Windows does not have are no longer offered (they silently fell back to the default).",
+      "*12 polices fournies avec AioHUD* (Roboto, Open Sans, Inter, Noto Sans, Lato, Montserrat, Source Sans 3, Fira Sans, Nunito, Exo 2, Merriweather, Cinzel) : elles marchent sur tous les PC. Les polices que Windows n'a pas ne sont plus propos\xC3\xA9""es (elles retombaient en silence sur celle par d\xC3\xA9""faut).", CK_NEW, "Fonts", "Polices" },
+    { "*Chat : \"Follows the content\" works on its own* ; a box stacked on the other moves with it instead of being covered.",
+      "*Chat : \xC2\xAB Suit le contenu \xC2\xBB fonctionne seul* ; une bo\xC3\xAEte empil\xC3\xA9""e sur l'autre se d\xC3\xA9""cale avec elle au lieu d'\xC3\xAAtre recouverte.", CK_FIXED, "Chat", "Chat" },
+    { "*Chat : a longer history* (16384 lines), and *the unfolded log scrolls line by line* with a cursor, keyboard and gamepad alike.",
+      "*Chat : un historique plus long* (16384 lignes), et *le log d\xC3\xA9velopp\xC3\xA9 d\xC3\xA9""file ligne par ligne* avec un curseur, au clavier comme \xC3\xA0 la manette.", CK_IMPROVED, "Chat", "Chat" },
+    { "*Square minimap* : the dial's information no longer hides behind the map (Carousel, Globe).",
+      "*Minimap carr\xC3\xA9""e* : les infos du cadran ne passent plus derri\xC3\xA8re la carte (Carousel, Globe).", CK_FIXED, "Minimap", "Minimap" },
+    { "*AioHUD is 25 to 40 % lighter* (text and shapes drawn in fewer calls), and *the first skillchain of a session no longer stutters*.",
+      "*AioHUD est 25 \xC3\xA0 40 % plus l\xC3\xA9ger* (texte et formes dessin\xC3\xA9s en moins d'appels), et *le premier skillchain d'une session ne saccade plus*.", CK_IMPROVED, "Performance", "Performances" },
+};
+
 static const ChangeLine CL_112[] = {
     { "*Config, in our type everywhere* : its option names, captions and buttons (ON / OFF, Full / Compact...) are written in the menus' font, no longer the client's pictures ; a slider's value sits inside its bar.",
       "*Config, dans notre police partout* : noms des options, lÃ©gendes et boutons (ON / OFF, Full / Compact...) sont Ã©""crits dans la police des menus, plus les images du client ; la valeur d'une rÃ©glette est dans sa barre.", CK_IMPROVED, "Game UI", "Interface du jeu" },
@@ -996,6 +1027,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.1.3", CL_113, (int)(sizeof(CL_113) / sizeof(CL_113[0])), "2026-11-28" },
     { "1.1.2", CL_112, (int)(sizeof(CL_112) / sizeof(CL_112[0])), "2026-11-28" },
     { "1.1.1", CL_111, (int)(sizeof(CL_111) / sizeof(CL_111[0])), "2026-11-27" },
     { "1.1.0", CL_110, (int)(sizeof(CL_110) / sizeof(CL_110[0])), "2026-11-27" },
