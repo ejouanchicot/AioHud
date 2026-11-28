@@ -61,7 +61,15 @@ public:
 
 private:
     struct G { float u0, v0, u1, v1; float w, h, adv; float il, ir, it, ib; };  // il..ib = ink bbox (rel. cell top-left), atlas px
-    struct Slot { u32 tex = 0; int em = 0; unsigned used = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f, ascent = 0.0f; G g[224] = {}; };  // one atlas, baked at `em` px ; `used` = LRU stamp
+    struct Slot { u32 tex = 0; int em = 0; unsigned used = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f, ascent = 0.0f; G g[224] = {};
+                  // THE STROKE, BAKED (2026-11-28 : 8 offset copies = 9 quads a glyph, 59k triangles a frame in Edit Layout) :
+                  // the atlas's coverage kept (small sizes only, em <= 26 : laid out with room for it), and up to two
+                  // stroke atlases -- each for one stroke width (in quarter atlas px) -- the 8 copies' blend, precomputed
+                  // ... in the SAME texture (its lower half : one draw a string, measured 2026-11-28 -- a second texture
+                  // doubled the draws and the draws ARE the cost, ~1.7 us each) ; one width per size (sdq, 0 = not baked)
+                  unsigned char* cov = nullptr; short aw = 0, ah = 0, th = 0; unsigned char sdq = 0; };
+    static void slot_free(Slot& s);                  // its coverage (the texture is the slot's own)
+    bool stroke_ready(u32 dev, Slot& s, int dq);      // the lower half holds the stroke of width dq/4 atlas px (baked once)
 
     void build(u32 dev, Slot& s, int em);   // bake the glyphs at `em` px into slot s (its own right-sized atlas)
     int  pick(u32 dev, float size);         // slot index for `size` (build on demand) ; -1 on failure

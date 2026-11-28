@@ -195,6 +195,7 @@ static inline void gbuf_quad(u32 dev, float x, float y, float w, float h,
     g_gbuf[g_gn++] = tr; g_gbuf[g_gn++] = br; g_gbuf[g_gn++] = bl;   // tri 2
 }
 
+static int g_fontBakeBudget = 1 << 30;   // the per-frame bake cap (see font_set_bake_budget below)
 // ---- bake the glyphs at `em` pixels into slot s, on a right-sized power-of-two atlas. ----
 void Font::build(u32 dev, Slot& s, int em) {
     if (em < 7) em = 7; if (em > 72) em = 72;   // cap raised to 72 so BIG text (WS popup) bakes crisp instead of scaling a 36px atlas up
@@ -225,7 +226,7 @@ void Font::build(u32 dev, Slot& s, int em) {
 
     TEXTMETRICA tm; GetTextMetricsA(hdc, &tm);
     s.ascent = (float)tm.tmAscent;              // the wide glyphs sit on this baseline (their own face's ascent differs)
-    int cellH = tm.tmHeight, pad = 2;
+    int cellH = tm.tmHeight, pad = em <= 26 ? 5 : 2;   // the small sizes : room for a baked stroke (up to 2 px each side, no bleed)
     int penx = pad, peny = pad, rowH = cellH + pad;
     const u32* px = (const u32*)bits;
     int inkTop = cellH, inkBot = -1;
@@ -255,7 +256,8 @@ void Font::build(u32 dev, Slot& s, int em) {
         if (c != ' ') TextOutA(hdc, penx, peny, &ch, 1);
         G& g = s.g[c - FIRST];
         g.u0 = (float)penx / AW;          g.u1 = (float)(penx + cw) / AW;
-        g.v0 = (float)peny / AH;          g.v1 = (float)(peny + cellH) / AH;
+        const float TH = (float)(em <= 26 ? 2 * AH : AH);             // the small sizes : the lower half is the stroke's
+        g.v0 = (float)peny / TH;          g.v1 = (float)(peny + cellH) / TH;
         g.w  = (float)cw; g.h = (float)cellH; g.adv = (float)adv;
 
         // per-glyph INK bbox (rel. to this cell's top-left) -> true visual centring (draw_cc)
@@ -290,11 +292,18 @@ void Font::build(u32 dev, Slot& s, int em) {
     s.cap_h   = (inkBot >= 0) ? (float)(inkBot - inkTop + 1) : cellH * 0.66f;
 
     // GDI wrote white AA glyphs (coverage in R). Convert -> ARGB (alpha = coverage, rgb = white).
-    u32* buf = (u32*)HeapAlloc(GetProcessHeap(), 0, AW * AH * 4);
+    const int TH = em <= 26 ? 2 * AH : AH;
+    u32* buf = (u32*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (SIZE_T)AW * TH * 4);
+    slot_free(s);                                                      // (a slot rebuilt : its old coverage goes)
+    s.sdq = 0; s.aw = (short)AW; s.ah = (short)AH; s.th = (short)TH;
+    if (em <= 26) {                                                    // the small sizes keep their coverage : the stroke is baked from it
+        s.cov = (unsigned char*)HeapAlloc(GetProcessHeap(), 0, (SIZE_T)AW * AH);
+        if (s.cov) { const u32* src = (const u32*)bits; for (int i = 0; i < AW * AH; ++i) s.cov[i] = (unsigned char)((src[i] >> 16) & 0xFF); }
+    }
     if (buf) {
         const u32* src = (const u32*)bits;
         for (int i = 0; i < AW * AH; ++i) { u32 cov = (src[i] >> 16) & 0xFF; buf[i] = (cov << 24) | 0x00FFFFFF; }
-        s.tex = make_texture_argb_mip(dev, AW, AH, buf);   // a light mip chain : crisp at native size (scale 1.0 = mip 0), gently smoothed only where slightly scaled
+        s.tex = make_texture_argb_mip(dev, AW, TH, buf);   // a light mip chain : crisp at native size (scale 1.0 = mip 0), gently smoothed only where slightly scaled
         HeapFree(GetProcessHeap(), 0, buf);
     }
 
@@ -307,8 +316,9 @@ void Font::build(u32 dev, Slot& s, int em) {
 // the single biggest load-time hitch (frame 1 wants ~10-15 sizes at once). We amortise : the Hud resets this to
 // a small budget each frame, so new sizes bake a couple per frame and the rest transiently reuse the nearest
 // already-baked size (a hair blurry for 1-2 frames, then crisp). No visible pop, no startup freeze.
-static int g_fontBakeBudget = 1 << 30;
-void font_set_bake_budget(int n) { g_fontBakeBudget = n; }
+// (g_fontBakeBudget itself is declared above Font::build : the stroke bake spends it too)
+unsigned g_fontFrame = 0;   // bumped once a frame (font_set_bake_budget) : the stroke bake's per-frame cap
+void font_set_bake_budget(int n) { g_fontBakeBudget = n; ++g_fontFrame; }
 
 // Drop whatever glyphs are sitting half-accumulated in the shared batch. Called from the HUD's SEH handler: a
 // widget faulting mid-Font::emit leaves g_gn pointing past vertices that were never flushed, and the NEXT frame
@@ -350,6 +360,7 @@ int Font::pick(u32 dev, float size) {
         if (fresh.tex) {
             // Only drop the old atlas once the new one exists -- a failed bake must not cost us a working slot.
             if (old) release_texture(old);
+            slot_free(slot_[v]);
             slot_[v] = fresh; slot_[v].used = clk;
             --g_fontBakeBudget;
             return v;
@@ -375,16 +386,54 @@ void Font::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     if (dirty_) {                                    // face/weight changed -> drop every cached size
         for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) release_texture(slot_[i].tex);
-        for (int i = 0; i < NSLOT; ++i) slot_[i] = Slot();
+        for (int i = 0; i < NSLOT; ++i) { slot_free(slot_[i]); slot_[i] = Slot(); }
         nslot_ = 0; dirty_ = false;
     }
     if (nslot_ == 0) { build(dev, slot_[0], 18); if (slot_[0].tex) nslot_ = 1; }   // a default slot -> ready()/measure() always have a fallback
 }
 
-void Font::on_device_lost() { for (int i = 0; i < NSLOT; ++i) slot_[i].tex = 0; nslot_ = 0; }
+void Font::on_device_lost() { for (int i = 0; i < NSLOT; ++i) { slot_[i].tex = 0; slot_[i].sdq = 0; } nslot_ = 0; }   // FORGET (rule 4)
 // Release AND forget. Zeroing the handles matters now that pick() recycles slots: nslot_ = 0 alone left dangling
 // handles in the array that a later build() would silently overwrite, leaking whatever they pointed at.
-void Font::dispose()        { for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) { release_texture(slot_[i].tex); slot_[i].tex = 0; } nslot_ = 0; }
+void Font::dispose()        { for (int i = 0; i < NSLOT; ++i) { if (i < nslot_ && slot_[i].tex) { release_texture(slot_[i].tex); slot_[i].tex = 0; } slot_free(slot_[i]); } nslot_ = 0; }
+void Font::slot_free(Slot& s) { if (s.cov) { HeapFree(GetProcessHeap(), 0, s.cov); s.cov = nullptr; } s.sdq = 0; }
+// the stroke atlas for a width of dq / 4 atlas px : per texel, the 8 offset copies' over-blend, 1 - prod(1 - a_k) (the
+// copies share one colour : this IS what drawing them did), bilinear like the GPU sampled them. Glyph cells only.
+bool Font::stroke_ready(u32 dev, Slot& s, int dq) {
+    if (!s.cov || dq < 2 || dq > 8 || s.th != 2 * s.ah) return false;
+    if (s.sdq) return s.sdq == dq;                                     // ONE width a size : another keeps the 8 copies
+    // at most ONE stroke bake a frame, never more than the frame's bake budget (2026-11-28 : rebaking every frame = 6 fps)
+    static unsigned s_frameTag = 0, s_baked = 0; extern unsigned g_fontFrame;
+    if (s_frameTag != g_fontFrame) { s_frameTag = g_fontFrame; s_baked = 0; }
+    if (s_baked >= 1 || g_fontBakeBudget <= 0) return false;          // not this frame : the 8 copies meanwhile
+    ++s_baked; --g_fontBakeBudget;
+    const int AW = s.aw, AH = s.ah, TH = s.th; const float d = (float)dq * 0.25f; const int e = (dq + 3) / 4 + 1;
+    u32* buf = (u32*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (SIZE_T)AW * TH * 4);
+    if (!buf) return false;
+    for (int i = 0; i < AW * AH; ++i) buf[i] = ((u32)s.cov[i] << 24) | 0x00FFFFFF;   // the upper half : the glyphs, as built
+    u32* low = buf + AW * AH;
+    static const float ox[8] = { -1, 1, 0, 0, -1, -1,  1, 1 }, oy[8] = { 0, 0, -1, 1, -1,  1, -1, 1 };
+    auto A = [&](float x, float y) -> float {                          // bilinear coverage at a point (texel centres at i + 0.5)
+        x -= 0.5f; y -= 0.5f; const int x0 = (int)floorf(x), y0 = (int)floorf(y); const float fx = x - x0, fy = y - y0;
+        auto at = [&](int xi, int yi) -> float { return (xi < 0 || yi < 0 || xi >= AW || yi >= AH) ? 0.0f : s.cov[yi * AW + xi] * (1.0f / 255.0f); };
+        return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy; };
+    for (int c = 0; c < 224; ++c) {
+        const G& g = s.g[c]; if (g.w <= 0.0f) continue;
+        const int gx0 = (int)(g.u0 * AW + 0.5f) - e, gy0 = (int)(g.v0 * TH + 0.5f) - e, gx1 = (int)(g.u1 * AW + 0.5f) + e, gy1 = (int)(g.v1 * TH + 0.5f) + e;
+        for (int y = gy0 < 0 ? 0 : gy0; y < gy1 && y < AH; ++y) for (int x = gx0 < 0 ? 0 : gx0; x < gx1 && x < AW; ++x) {
+            float keep = 1.0f; const float cx = x + 0.5f, cy = y + 0.5f;
+            for (int k = 0; k < 8; ++k) keep *= 1.0f - A(cx - ox[k] * d, cy - oy[k] * d);
+            const u32 al = (u32)((1.0f - keep) * 255.0f + 0.5f);
+            if (al) low[y * AW + x] = (al << 24) | 0x00FFFFFF;
+        }
+    }
+    const u32 nt = make_texture_argb_mip(dev, AW, TH, buf);
+    HeapFree(GetProcessHeap(), 0, buf);
+    if (!nt) return false;
+    if (s.tex) release_texture(s.tex);
+    s.tex = nt; s.sdq = (unsigned char)dq;
+    return true;
+}
 
 void Font::set_face(const char* face, int weight, bool italic) {
     if (face && face[0] && lstrcmpA(face, face_) != 0) { lstrcpynA(face_, face, sizeof(face_)); dirty_ = true; }
@@ -581,8 +630,40 @@ void Font::passes(u32 dev, const Slot& S, float x, float y, const char* s, float
     // the stroke (8 offsets) THEN the fill, in ONE draw : the same atlas and state, and a draw rasterises its triangles
     // in order -- the fill still lands wholly over the stroke. Two draws per string before (2026-11-28, Edit Layout :
     // 1221 text draws a frame)
-    if (stroke) for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 0);
-    emit(dev, S, x, y, s, scale, color, gap, prev, 0);
+    // The string is LAID OUT ONCE (each Latin glyph's pen x and its cell) and its 9 passes are written from that list :
+    // before, each pass decoded the whole string again (utf-8, case, wide test, punctuation, lookup -- 9 times)
+    {   static const G* lg[512]; static float lx[512]; int ln = 0; bool fits = true;
+        float penx = 0.0f; unsigned char pv = prev;
+        for (const char* p = s; *p; ) {
+            int c = upcase(utf8_next(p));
+            if (is_wide(c)) {                                          // the wide ones : their own pass below ; the pen as emit's
+                WPage* WP = wide_page(S.em, weight_ >= 600);
+                if (WP) { penx += wide_adv(*WP, (unsigned)c) * scale; pv = 0; continue; }
+                c = '?';
+            }
+            if (c < FIRST || c > LAST) c = '?';
+            if (gap > 0.0f) { penx += punct_pre(pv, (unsigned char)c, gap); pv = (unsigned char)c; }
+            const G& gg = S.g[c - FIRST];
+            if (c != ' ') { if (ln >= 512) { fits = false; break; } lg[ln] = &gg; lx[ln] = penx; ++ln; }
+            penx += gg.adv * scale;
+        }
+        // the BAKED stroke (small sizes) : one quad a glyph from the stroke atlas, then the fill from the glyphs' ; else the 8 copies
+        bool st = false; int dq = 0;
+        if (fits && stroke && S.cov && scale > 0.0f) { dq = (int)(ow / scale * 4.0f + 0.5f); st = stroke_ready(dev, const_cast<Slot&>(S), dq); }
+        if (st) dSetTex(dev, 0, S.tex);                                // (re-made by the bake : bind it again)
+        if (fits && st) {
+            const int e = (dq + 3) / 4 + 1; const float eu = (float)e / S.aw, ev = (float)e / S.th, es = (float)e * scale, hv = (float)S.ah / S.th;
+            for (int i = 0; i < ln; ++i) { const G& gg = *lg[i]; gbuf_quad(dev, x + lx[i] - es, y - es, gg.w * scale + 2.0f * es, gg.h * scale + 2.0f * es, gg.u0 - eu, gg.u1 + eu, gg.v0 + hv - ev, gg.v1 + hv + ev, outline); }
+            for (int i = 0; i < ln; ++i) { const G& gg = *lg[i]; gbuf_quad(dev, x + lx[i], y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color); }
+        } else if (fits) {
+            if (stroke) for (int k = 0; k < 8; ++k) { const float ox = x + dx[k] * ow, oy = y + dy[k] * ow;
+                for (int i = 0; i < ln; ++i) { const G& gg = *lg[i]; gbuf_quad(dev, ox + lx[i], oy, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, outline); } }
+            for (int i = 0; i < ln; ++i) { const G& gg = *lg[i]; gbuf_quad(dev, x + lx[i], y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color); }
+        } else {                                                       // a very long string : the pass-by-pass way
+            if (stroke) for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 0);
+            emit(dev, S, x, y, s, scale, color, gap, prev, 0);
+        }
+    }
     gbuf_flush(dev);
     // the wide glyphs : bake what is missing FIRST (a full page starts over once, then they are all there)
     bool any = false;
