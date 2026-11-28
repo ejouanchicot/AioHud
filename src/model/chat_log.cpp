@@ -511,7 +511,7 @@ static void append_raw(const char* raw, int mode, int hhmm, unsigned ago) {
         }
         for (int k = nc; k < 8; ++k) h.pal[k] = 0;
         h.atIdx = 0; for (int f = 0; f < nc; ++f) if (codes[f] == CHAT_AT_TEXT) h.atIdx = (unsigned char)(f + 1);
-        h.modeArgb = (chan == CH_SYSTEM || chan == CH_BATTLE || chan == CH_NPC || chan == CH_OTHER) ? chat_game_color((unsigned short)(0x200 | (mode & 0xFF))) : 0;
+        h.modeArgb = chat_game_color((unsigned short)(0x200 | (mode & 0xFF)));   // every mode (2026-11-28) : talk lines too, for Chat > Text > "the game's colours"
         if (L == 0) chat_parse_speaker(h);                // the speaker sits on the message's FIRST line only
         else { const ChatLine& h0 = g_hist[(g_histHead - L + CHAT_HIST) & (CHAT_HIST - 1)];   // ...and its continuations carry it
                memcpy(h.chSpeaker, h0.chSpeaker, sizeof(h.chSpeaker)); h.chTellOut = h0.chTellOut; }   // (drawn on the first line only : !cont)

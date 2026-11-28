@@ -19,6 +19,7 @@ namespace aio {
 
 static char g_chatExportMsg[160] = "";   // the last export's result, under its button
 static int  g_banPage = 0;               // the banned-players list : the page shown
+static int  g_chanColSel = 0;            // Text > the talk channel whose colour is edited (0 say .. 9 assist)
 static int g_chatCfgBox = 0;   // 0 = Chat, 1 = Battle (which box the rows edit)
 
 void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -443,11 +444,27 @@ void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool clic
         const char* lab[1] = { b == 1 ? tr("Battle", "Combat") : tr("Chat", "Discussion") };
         TextStyle* ts[1] = { &c.chText[b] };
         const bool atMod = cfg_count_modified_bytes(&c.chAtColor, 4) != 0;
-        if (v2_section(K, ctrl_uid_i(base, 24), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, 1) + (atMod ? 1 : 0))) {
+        const int colMod = cfg_count_modified_bytes(&c.chColGame, 4) + cfg_count_modified_bytes(c.chChanCol, (int)sizeof(c.chChanCol));
+        if (v2_section(K, ctrl_uid_i(base, 24), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, 1) + (atMod ? 1 : 0) + colMod)) {
             int sel = 0;
             cfg_text_rows(K, ctrl_uid_i(base, 25), x, ry, w, lab, ts, 1, &sel);
             if (btn_row(ctrl_uid_i(base, 26), tr("Auto-translate colour", "Couleur des auto-translate"), tr("Default", "D\xC3\xA9""faut"), atMod)) { c.chAtColor = 0xFF9FE8CFu; save_ui_config(); }
             cfg_color_row(K, ctrl_uid_i(base, 27), x, ry, w, &c.chAtColor);
+            // the TALK channels : the name and its message in ONE colour -- the game's (its Font Colors) or ours per channel
+            static const char* const SRC[2][2] = { { "AioHUD's", "Celles d'AioHUD" }, { "The game's", "Celles du jeu" } };
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 46), x, ry, w, tr("Channel colours", "Couleurs des canaux"),
+                                       tr(SRC[c.chColGame ? 1 : 0][0], SRC[c.chColGame ? 1 : 0][1]), nullptr, &c.chColGame, 4)) { (void)d; c.chColGame = c.chColGame ? 0 : 1; save_ui_config(); }
+            if (!c.chColGame) {
+                static const char* const CHN[10][2] = { { "Say", "Dire" }, { "Shout", "Crier" }, { "Yell", "Hurler" }, { "Tell", "Tell" }, { "Party", "Groupe" },
+                                                        { "Linkshell 1", "Linkshell 1" }, { "Linkshell 2", "Linkshell 2" }, { "Unity", "Unity" }, { "Emote", "Emote" }, { "Assist", "Assist" } };
+                const int k = g_chanColSel >= 0 && g_chanColSel < 10 ? g_chanColSel : 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 47), x, ry, w, tr("Channel", "Canal"), tr(CHN[k][0], CHN[k][1]), nullptr, nullptr, 0)) g_chanColSel = wrap(k + d, 10);
+                static const UiConfig def{};   // the factory colours (built once, not per frame)
+                const bool chMod = c.chChanCol[k] != def.chChanCol[k];
+                if (btn_row(ctrl_uid_i(base, 48), tr("Its colour (name and message)", "Sa couleur (nom et message)"), tr("Default", "D\xC3\xA9""faut"), chMod)) { c.chChanCol[k] = def.chChanCol[k]; save_ui_config(); }
+                cfg_color_row(K, ctrl_uid_i(base, 49), x, ry, w, &c.chChanCol[k]);
+            } else cfg_note(K, x, ry, tr("Each channel in the colour set in the game (Config > Font Colors) ; a line the game gives none keeps AioHUD's.",
+                                         "Chaque canal dans la couleur r\xC3\xA9""gl\xC3\xA9""e dans le jeu (Config > Font Colors) ; une ligne sans couleur du jeu garde celle d'AioHUD."));
             v2_end(K, ry);
         }
     } else v2_simple_note(K, x, ry);

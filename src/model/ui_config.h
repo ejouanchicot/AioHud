@@ -386,6 +386,12 @@ struct UiConfig {
     // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
     float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };
     unsigned chAtColor = 0xFF9FE8CFu;      // the auto-translated words in the chat (bold, between green / red brackets)
+    // the TALK channels' colours (2026-11-28, Gab : "pas le controle sur les couleurs ... nom x, message y") : the name AND
+    // its message in ONE colour ; chColGame = 1 -> the colour the GAME gives the mode (its own Font Colors), else ours below,
+    // one per channel in chat_log.h order (say, shout, yell, tell, party, LS1, LS2, unity, emote, assist)
+    int      chColGame = 0;
+    unsigned chChanCol[10] = { 0xFFE9EEF5u, 0xFFFFB46Eu, 0xFFFF8F6Bu, 0xFFF2A0DAu, 0xFF7FD3FFu,
+                               0xFF98E38Au, 0xFFC8EE88u, 0xFFFFD66Eu, 0xFFC6B6F2u, 0xFFA9DCFFu };
     int   chDock = 2;                   // the GAME's input line : 0 = its own place, 1 = docked under the chat box,
                                            // 2 = INSIDE the chat box (the client's line hidden, its text drawn by AioHUD)
     int   chInputOk = -1;                  // transient : reading the client's input text works (1) / failed (0) / not tried (-1)

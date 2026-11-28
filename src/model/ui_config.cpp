@@ -280,6 +280,9 @@ static bool save_config_to(const char* path) {
     }
     save_text_styles(f, "chText", c.chText, 2);   // Chat module : typography per box
     fprintf(f, "chatat=%08X\n", c.chAtColor);      // Chat module : the auto-translated words' colour
+    fprintf(f, "chatcol=%d", c.chColGame);           // Chat module : the talk channels' colours (the game's, or ours per channel)
+    for (int k = 0; k < 10; ++k) fprintf(f, ",%08X", c.chChanCol[k]);
+    fprintf(f, "\n");
     fprintf(f, "chatdock=%d\n", c.chDock);         // Chat module : the game's input line docked under the chat box
     fprintf(f, "menubox=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", c.muBox.on, c.muBox.alpha, c.muBox.themeCopy, c.muBox.theme, c.muBox.lum, c.muBox.hue, c.muBox.border, c.muBox.alphaOwn);   // Game UI : the redrawn menus' theme
     fprintf(f, "menuscale=%.2f\n", c.muScale);     // Game UI : the redrawn menus' size
@@ -516,6 +519,10 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
         if (sscanf(line, "alphaOwn=%d,%d,%d", &a, &t, &p) == 3) { c.allyAlphaOwn = a != 0; c.tgtAlphaOwn = t != 0; c.plrAlphaOwn = p != 0; s_alphaOwnSeen = true; return true; }
     }
     if (!strncmp(line, "chatat=", 7)) { c.chAtColor = (unsigned)strtoul(line + 7, 0, 16) | 0xFF000000u; return true; }
+    if (!strncmp(line, "chatcol=", 8)) {   // mode,c0..c9 ; a missing colour keeps its default
+        const char* q = line + 8; c.chColGame = atoi(q) ? 1 : 0;
+        for (int k = 0; k < 10; ++k) { q = strchr(q, ','); if (!q) break; ++q; c.chChanCol[k] = (unsigned)strtoul(q, 0, 16) | 0xFF000000u; }
+        return true; }
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
     if (!strncmp(line, "edlock=", 7)) { c.edLock = atoi(line + 7); return true; }
@@ -1522,7 +1529,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muLang != b.muLang || a.muFont != b.muFont || a.eqStyle != b.eqStyle || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || a.chColGame != b.chColGame || memcmp(a.chChanCol, b.chChanCol, sizeof(a.chChanCol)) != 0 || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muLang != b.muLang || a.muFont != b.muFont || a.eqStyle != b.eqStyle || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;

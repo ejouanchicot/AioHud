@@ -106,6 +106,17 @@ static u32 code_col(const ChatLine& L, unsigned char idx, u32 base) {
     if (mx < 110) { const float k = 110.0f / (float)(mx ? mx : 1); return 0xFF000000u | ((u32)(r * k) << 16) | ((u32)(g * k) << 8) | (u32)(b * k); }
     return c;
 }
+// a TALK channel's colour (say .. assist) : the game's (its Font Colors, when Chat > Text asks for them and the client
+// gave one) or ours, per channel (Chat > Text). System / NPC / battle keep the colour the client gives their mode.
+static u32 chan_col(int ch, unsigned modeArgb) {
+    if (ch < 0 || ch >= CH_COUNT) ch = CH_OTHER;
+    if (ch < CH_SYSTEM) {
+        const UiConfig& C = ui_config();
+        if (C.chColGame && modeArgb) return modeArgb | 0xFF000000u;
+        return C.chChanCol[ch] | 0xFF000000u;
+    }
+    return CHAN_COL[ch];
+}
 static inline u32 with_alpha(u32 c, float a) {   // scale a colour's alpha (row fades)
     if (a >= 1.0f) return c; if (a <= 0.0f) return c & 0x00FFFFFFu;
     return (c & 0x00FFFFFFu) | ((u32)((float)(c >> 24) * a + 0.5f) << 24);
@@ -626,7 +637,7 @@ static void input_decode(const char* raw, int rn, InLine& o) {
         if (o.n >= L && !_strnicmp(o.t, PFX[k].cmd, L)) {
             int e = L;
             if (PFX[k].chan == CH_TELL) { while (e < o.n && o.t[e] != ' ') ++e; }   // + the name
-            for (int j = 0; j < e; ++j) o.c[j] = CHAN_COL[PFX[k].chan];
+            for (int j = 0; j < e; ++j) o.c[j] = chan_col(PFX[k].chan, 0);
             break;
         }
     }
@@ -658,8 +669,8 @@ struct ChatRow { const ChatLine* L; short a, b; bool first; };
 // ---- tab icons, drawn with the HUD's own primitives (no texture) : one glyph per channel family ----
 static u32 icon_col(int icon) {
     switch (icon) {
-        case TI_PARTY: return CHAN_COL[CH_PARTY]; case TI_LS: return CHAN_COL[CH_LS1]; case TI_TELL: return CHAN_COL[CH_TELL];
-        case TI_SAY: return CHAN_COL[CH_SAY];     case TI_SYS: return CHAN_COL[CH_SYSTEM]; case TI_SWORDS: return 0xFFFF9C6Eu;
+        case TI_PARTY: return chan_col(CH_PARTY, 0); case TI_LS: return chan_col(CH_LS1, 0); case TI_TELL: return chan_col(CH_TELL, 0);
+        case TI_SAY: return chan_col(CH_SAY, 0);     case TI_SYS: return CHAN_COL[CH_SYSTEM]; case TI_SWORDS: return 0xFFFF9C6Eu;
         case TI_ME: return 0xFF9FD8FFu;           default: return 0xFFDDE4EDu;
     }
 }
@@ -1312,10 +1323,11 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         }
         a *= A;
         if (a <= 0.02f) continue;
-        // talk lines : the name carries the channel colour, the message a light tint of it (easier to read) ;
+        // talk lines : the name AND the message in the channel's colour (2026-11-28, Gab : "pas convaincu du confort
+        // d'avoir le nom d'une couleur x et le message d'une couleur y" -- the message used to be a light tint of it) ;
         // system / battle / NPC lines keep the colour the client gives their mode
         const bool talk = L.chan != CH_SYSTEM && L.chan != CH_BATTLE && L.chan != CH_NPC && L.chan != CH_OTHER;
-        const u32 base = te_col(TS, talk ? mix(CHAN_COL[L.chan], 0xFFFFFFFFu, 0.55f)
+        const u32 base = te_col(TS, talk ? chan_col(L.chan, L.modeArgb)
                                          : (L.modeArgb ? (L.modeArgb | 0xFF000000u) : CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER]));
         const u32 stroke = with_alpha(0xE0000000u, a);
         if (C.chStamp[box] && R.first) {
@@ -1323,7 +1335,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             fo->draw(dev, x0, cy - sOff, stampFmt, tz * 0.86f, with_alpha(0xFF5F6B7Eu, a), stroke, tow * 0.8f);
         }
         float x = x0 + stampW;
-        const u32 chanC = CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER];
+        const u32 chanC = talk ? chan_col(L.chan, L.modeArgb) : CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER];
         if (R.first) {                                                      // the badge, then the speaker's name
             LinePrefix lp; line_prefix(L, fo, bz, adv, S, lp);
             if (lp.badge) {
@@ -1621,7 +1633,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         if (chLbl) {
             const float cz = 11.5f * S, chh = snap(fh - 8.0f * S); chipW = snap(fo->measure(chLbl, cz) + 14.0f * S);
             const float cxp = snap(fx + 5.0f * S), cyp = snap(fy + fh * 0.5f + capMid - chh * 0.5f);   // on the text's capitals
-            const u32 cc = CHAN_COL[inCh];
+            const u32 cc = chan_col(inCh, 0);
             dColorQuadState(dev);
             rrect(dev, cxp, cyp, chipW, chh, chh * 0.5f, with_alpha((cc & 0x00FFFFFFu) | 0x38000000u, a), with_alpha((cc & 0x00FFFFFFu) | 0x24000000u, a));
             rrect_stroke(dev, cxp, cyp, chipW, chh, chh * 0.5f, with_alpha((cc & 0x00FFFFFFu) | 0x90000000u, a), 1.0f);
