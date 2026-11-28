@@ -9661,62 +9661,77 @@ void dialog_draw(const Frame& f) {
         if (D0.open && D0.focused && row >= 1 && row <= 2 && f.mouse && f.mouse->clicked) native_dialog_pick(row);
         return;
     }
-    // THE STANDARD (2026-11-28 : "shutdown et log out ont une boite yes no, pas faite") : the question in a band at the top,
-    // then Yes / No as the menus' rows -- the lit row is the cursor, as everywhere ; no pills of its own
-    const Metrics kN = no_icons(k);
+    // Yes | No SIDE BY SIDE, Yes on the left, as the client lays them out (2026-11-28 : rows one above the other were
+    // tried -- "c'est yes a gauche et no a droite")
+    const float pad = snap(7.0f * S) + k.bi;
     const u32 sh = with_alpha(0xC8000000u, A);
     const u32 GOLD = 0xFFFFDA8Au, TXT = 0xFFE4EAF2u, DIM = 0xFF93A6BEu;
-    RowSpec rows[2] = {};
-    rows[0].label = gtr("Yes", "Oui"); rows[1].label = gtr("No", "Non");
-    for (int i = 0; i < 2; ++i) { rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; }
-    float mw, mh; block_size(f, kN, rows, 2, mw, mh);
-    const float sx = f.screenW / (float)D.uiW;
-    float bw = snap((float)(D.rx1 - D.rx0) * sx); if (bw < snap(300.0f * S)) bw = snap(300.0f * S); if (bw < mw) bw = mw;
-    const float tx0 = k.bi + kN.gutter, textW = bw - 2.0f * tx0;
-    // the question : its own lines (\n), each wrapped to the box ; none of its own : the client says it on the top bar
+    const float sx = f.screenW / (float)D.uiW, sy = f.screenH / (float)D.uiH;
+    float bw = snap((float)(D.rx1 - D.rx0) * sx); if (bw < snap(360.0f * S)) bw = snap(360.0f * S);
+    // the question : its own lines (\n), each wrapped to the box
     char lines[10][160]; int nl = 0;
+    // no question of its own (shopbuy / shopsell, live 2026-11-20 : "") : the client says it on its help line -- the top bar
     const char* qtext = D.text[0] ? D.text : native_topbar().help.text;
     {   char para[400]; const char* p = qtext;
         while (*p && nl < 10) {
             int n = 0; while (p[n] && p[n] != '\n' && n < (int)sizeof(para) - 1) { para[n] = p[n]; ++n; } para[n] = 0;
-            if (n) nl += wrap_lines(fo, para, tz, textW, lines + nl, 10 - nl);
+            if (n) nl += wrap_lines(fo, para, tz, bw - 2.0f * pad, lines + nl, 10 - nl);
             p += n; if (*p == '\n') ++p;
         }
         if (!nl) { lstrcpynA(lines[0], "?", sizeof(lines[0])); nl = 1; }
     }
-    const float lineH = snap(tz * 1.45f), titleH = D.title[0] ? snap(tz * 1.6f) : 0.0f;
-    const bool hint = D.cancelOk || D.hold;
-    const float inTop = snap(kN.pad + titleH + (float)nl * lineH + (hint ? lineH * 0.9f : 0.0f) + 2.0f * S);
-    const float bh = snap(mh + inTop);
-    float bx = 16.0f * S, by = snap(f.screenH * 0.5f);
+    const float lineH = snap(tz * 1.35f), titleH = D.title[0] ? snap(k.capH * 1.1f) : 0.0f, btnH = snap(k.capH * 1.4f), gap = snap(10.0f * S);
+    const float bh = snap(pad + titleH + (titleH > 0.0f ? gap * 0.6f : 0.0f) + (float)nl * lineH + gap + btnH + pad + (D.cancelOk || D.hold ? lineH * 0.9f : 0.0f));
+    float bx = snap((float)D.rx0 * sx), by = snap((float)D.ry0 * sy);
     // ABOVE AioHUD's CHAT, its left edge (the user 2026-11-20 : the client's place -- anchored to the bottom -- put it IN
     // the chat), as the NPC windows ; no chat box : the client's place
     {   float cax = 0.0f, caw = 0.0f, ctop = 0.0f, cbot = 0.0f;
-        if (chat_anchor(cax, caw, ctop, cbot)) { bx = snap(cax); by = snap(ctop - 6.0f * S - bh); }
-        else { bx = snap((float)D.rx0 * sx); by = snap((float)D.ry0 * f.screenH / (float)D.uiH); } }
+        if (chat_anchor(cax, caw, ctop, cbot)) { bx = snap(cax); by = snap(ctop - 6.0f * S - bh); } }
     by = snap(by + (1.0f - tO) * 4.0f * S);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
     if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
-    g_dlB.inTop = inTop;
-    const int row = block_draw(f, kN, g_dlB, rows, 2, D.cursor, D.focused, bx, by, bw, bh, A, dt);
-    g_dlB.inTop = 0.0f;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     if (D0.open) { g_hit[14][0] = bx / f.screenW; g_hit[14][1] = by / f.screenH; g_hit[14][2] = bw / f.screenW; g_hit[14][3] = bh / f.screenH; }
-    const float L = bx + tx0, R = bx + bw - tx0;
-    float y = by + k.bi + kN.pad;
+    const float L = bx + pad, R = bx + bw - pad;
+    float y = by + pad;
     fo->begin(dev);
-    if (titleH > 0.0f) { fo->draw_lc(dev, L, snap(y + titleH * 0.5f), D.title, tz, with_alpha(0xFFE8D9B0u, A), sh, k.ow); y += titleH; }
-    for (int i = 0; i < nl; ++i) { fo->draw_lc(dev, L, snap(y + lineH * 0.5f), lines[i], tz, with_alpha(titleH > 0.0f ? TXT : 0xFFE8D9B0u, A), sh, k.ow); y += lineH; }
-    // the hints : Escape answers No (when the asker allows it) ; a protected answer is HELD to confirm (the client's gauge)
-    if (hint) {
-        const char* h = D.hold ? gtr("Hold the button to confirm", "Maintiens la touche pour confirmer") : gtr("Esc : No", "\xC3\x89""chap : Non");
-        fo->draw_lc(dev, snap(R - fo->measure(h, tz * 0.85f)), snap(y + lineH * 0.4f), h, tz * 0.85f, with_alpha(D.hold ? GOLD : DIM, A), sh, k.ow);
+    if (titleH > 0.0f) {
+        fo->draw_lc(dev, L, snap(y + titleH * 0.5f), D.title, tz * 1.05f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        y += titleH; rrect(dev, L, snap(y), R - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A)); y += gap * 0.6f;
+        fo->begin(dev);
     }
-    cs(dev);
-    static int lastRow = 0;
+    for (int i = 0; i < nl; ++i) { fo->draw_lc(dev, L, snap(y + lineH * 0.5f), lines[i], tz, with_alpha(TXT, A), sh, k.ow); y += lineH; }
+    y = snap(y + gap);
+    // Yes | No
+    const MouseState* ms = f.mouse;
     const bool live = D0.open && D0.focused;
-    if (live && row >= 1 && row <= 2 && row != lastRow && row != D.cursor) native_dialog_hover(row);
-    lastRow = row;
-    if (live && row >= 1 && row <= 2 && f.mouse && f.mouse->clicked) native_dialog_pick(row);
+    const float bwid = snap((R - L - 10.0f * S) * 0.5f);
+    int hov = 0;
+    for (int e = 1; e <= 2; ++e) {
+        const float x = snap(L + (float)(e - 1) * (bwid + 10.0f * S));
+        const bool cur = D.cursor == e, h = live && ms && ms->focused && ms->x >= x && ms->x < x + bwid && ms->y >= y && ms->y < y + btnH;
+        if (h) hov = e;
+        const u32 c1 = e == 1 ? 0x30FFDA8Au : 0x22FFFFFFu, c2 = e == 1 ? 0x18FFDA8Au : 0x14FFFFFFu;
+        rrect(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(c1, A), with_alpha(c2, A));
+        if (cur) { rrect_clip_begin(dev, x, y, bwid, btnH, btnH * 0.5f); party_selframe(dev, x, y, bwid, btnH, f.t, A, 0); rrect_clip_end(dev);
+                   rrect_stroke(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(0xD8FFDA8Au, A), 1.5f * S); }
+        else if (h) rrect_stroke(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(0x80FFDA8Au, A), 1.0f * S);
+        const char* lb = e == 1 ? gtr("Yes", "Oui") : gtr("No", "Non");
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(x + (bwid - fo->measure(lb, tz * 1.05f)) * 0.5f), snap(y + btnH * 0.5f), lb, tz * 1.05f, with_alpha(cur ? 0xFFFFFFFFu : TXT, A), sh, k.ow);
+    }
+    // the hints : Escape answers No (when the asker allows it) ; a protected answer is HELD to confirm (the client's gauge)
+    if (D.cancelOk || D.hold) {
+        char hint[96]; hint[0] = 0;
+        if (D.hold) lstrcpynA(hint, gtr("Hold the button to confirm", "Maintiens la touche pour confirmer"), sizeof(hint));
+        else lstrcpynA(hint, gtr("Esc : No", "\xC3\x89""chap : Non"), sizeof(hint));
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(R - fo->measure(hint, tz * 0.8f)), snap(y + btnH + lineH * 0.55f), hint, tz * 0.8f, with_alpha(D.hold ? GOLD : DIM, A), sh, k.ow);
+    }
+    static int lastHov = 0;
+    if (live && hov && hov != lastHov && hov != D.cursor) native_dialog_hover(hov);
+    lastHov = hov;
+    if (live && hov && ms && ms->clicked) native_dialog_pick(hov);
 }
 
 // ======== THE CLIENT'S SMALL GAUGES, REDRAWN (Gab 2026-11-27 : "on les veut toujours mais refaits") : at the client's place
