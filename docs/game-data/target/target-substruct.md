@@ -15,15 +15,15 @@ two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.
 
 > **Probe location note:** this page says several times that a probe is "kept in
 > `plugin/aiohud.cpp`". The RE probes were since **moved to `src/plugin/aiohud_probes.cpp`**
-> (gitignored, compiled only when present under `/DAIOHUD_PROBES`); only `keylog` / `dbflog` and the
-> `#ifdef`-ed call sites remain in `aiohud.cpp`. See
+> (gitignored, compiled only when present under `/DAIOHUD_PROBES`); the shipped diagnostics are the SHIPPED
+> rows of `src/plugin/aio_verbs.h` (`keylog`, `dbflog`, `rva`, `doctor` …). See
 > [reverse-engineering/probes.md](../../reverse-engineering/probes.md) for the full command list.
 >
-> **Removed-probe note:** the `//aio tent`, `//aio tdbg` and `//aio pcur` commands referenced below
-> have since been **removed** from the source (probes churn — they live in the untracked
-> `src/plugin/aiohud_probes.cpp`). The offsets/findings they produced are still valid; to recapture,
-> re-add a probe per [reverse-engineering/probes.md](../../reverse-engineering/probes.md). `//aio tlock`, `//aio tgt`
-> and `//aio sub` still exist.
+> **Removed-probe note:** the `//aio tent`, `//aio tdbg`, `//aio pcur`, `//aio tgt`, `//aio tgt2` and
+> `//aio sub` commands referenced below have since been **removed** from the source (probes churn — they
+> lived in the untracked `src/plugin/aiohud_probes.cpp`). The offsets/findings they produced are still valid;
+> to recapture, re-add a probe per [reverse-engineering/probes.md](../../reverse-engineering/probes.md). Only
+> `//aio tlock` still exists (dev probe, `aiohud_probes.cpp`).
 
 > 🔁 **Re-pinned 2026-08-12** (FFXI client patch): the anchor moved `0x57876C` → **`0x5787AC`** (+0x40),
 > and the focused-menu pointer below moved `0x5EED6C` → **`0x5EEDAC`**. Nothing INSIDE `target_t` changed —
@@ -52,7 +52,7 @@ two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.
 (the locked id is the reticle `Targets[0]`). The party widget tints the selection hand + frame **red**
 when the targeted member is locked (gold = targeted, red = locked, blue = sub). Reversed via `//aio tlock`
 (a one-shot `target_t` hexdump; run it un-targeted / targeting a member / locked on it → `+0x5C` is the
-**only** byte that flips between "targeting" and "locked"). Probe kept in `plugin/aiohud.cpp`.
+**only** byte that flips between "targeting" and "locked"). Probe kept in `plugin/aiohud_probes.cpp` (dev only).
 
 > **Correction (2026-07-05).** The lock is **bit 0** of `+0x5C`, not the whole dword. The original probe was
 > done on a MOB, where the byte cleanly read `0x00` unlocked / `0x01` locked. But a **PC / party target** carries
@@ -76,7 +76,8 @@ pointer). It follows the `<st>` cursor too, so it CANNOT tell main from sub, and
    appears 1000s of times; `target_t` can be past the 1024th hit.)
 2. `//aio sub` — per-frame change-watcher over `target_t[0..0x80]`. Open then cancel a
    `<stpc>` cursor: the dword that flips `0↔1` on open/cancel is the flag (`+0x78`).
-These probe commands live in `plugin/aiohud.cpp` (kept for re-locating after a client patch).
+Both probes are gone (see the note at the top) — after a client patch the anchor is re-derived by
+`target_root()` itself, and `//aio rva` reports it.
 
 **Party-window picker cursor (Quartermaster / Lottery / remove member / leader) — WORKING, 2026-06-28.**
 This picker is **NOT a target** — `target_t`, the LuaCore target list `*(g+0x30)`, and the targeting
@@ -113,7 +114,7 @@ is a fallback/cross-check. This is the classic FFXI entity struct:
 | **engaged flag** | `+0x170` | u32 | 0 idle → 1 on engage / in-combat (`//aio tent` A/B) |
 | **render flags (pflags)** | `+0x124` | u32 | bit `0x00800000` = the PC is IN A PARTY (game shows the name blue) |
 | **claim id** | `+0x188` | u32 | 0 = unclaimed, else the claiming player's server id |
-| **SpawnType** | `+0x1D0` | u32 | `0x01` PC / `0x02` NPC / `0x10` Mob |
+| **SpawnType** | `+0x1D0` | u32 | `0x01` PC / `0x02` NPC / `0x10` Mob — **our readers mask `& 0xFF`** (`game_mem.cpp`: "the type is ONE byte : the next one is set on self", self `0x20D` read whole → `0x0D`) |
 
 Reader constants in `game_mem.cpp` (`read_target_entity`): `ENT_INDEX_OFF 0x74` / `ENT_ID_OFF 0x78` /
 `ENT_NAME_OFF 0x7C` / `ENT_HPP_OFF 0xEC` / `ENT_STATUS_OFF 0x170` / `ENT_CLAIM_OFF 0x188` /
@@ -134,13 +135,17 @@ a PC or a mob:
   always shown (no movement gate). `% = 100·(ms/5 − 1)`, base **5.0** — exactly the reference addon
   `addons/SpeedChecker` (`100*(me.movement_speed/5-1)`, which it only ever does for *yourself*). `5.0` = 0%,
   `5.9` = +18% (feet), and **+18% is the gear cap**.
-- **MOB** — `+0x98` is a **DYNAMIC** field (~4 idle, ~10 running, lower under Gravity). `% = 100·(ms/10 − 1)`,
-  base **10**, and it is **gated on actual movement** (a position delta from `+0x04`/`+0x0C` between frames)
-  so a stationary mob reads 0% instead of a false "slow". Relative to the player's base: a running normal mob
-  = 0%, a Gravity II mob = −75%.
-- **OTHER players' `+0x98` is quantised/estimated** — only YOUR OWN reads exact. A 0-gear PC can read `5.1`
-  (+2%) and an 18% PC `6.0` (+20%, impossible from gear). It is **not** a uniform +2 (many read right:
-  0/12/18), so the fix (OTHER PCs only) is: **cap at +18% and snap `|%| < 4` to 0**. Self + mobs are untouched.
+- **MOB** — `+0x98` is the mob's real speed while it is **idle / wandering** (tiger 6.8 = +36%, normal mob
+  4.0 = −20%) but **spikes to a bogus 10–17 while it chases you**. The Target widget (`ui/target.cpp`) keeps the
+  field when it is plausible (`0.5 < ms <= 8.05`) and otherwise **holds the last good value** (`spdWindow_`,
+  reset to 5.0 = 0% on a target change); `% = 100·(held/5 − 1)`, same base **5.0** as a player.
+- **MOUNTED** (`+0x170` status 5 chocobo / 85 mount) — `% = 100·(ms/4)`.
+- **OTHER players' `+0x98`** reads quantised (a 0-gear PC can read `5.1` = +2%, an 18% PC `6.0` = +20%); the
+  widget shows it as read with the same `100·(ms/5 − 1)`. Every reading is capped at **+60%** (field 8.0 / base
+  5.0) and eased on screen. Full measurement campaign: [movement-speed-analysis.md](../player/movement-speed-analysis.md).
+
+*(Earlier revisions documented a base-10, movement-gated mob formula and a +18% cap / `|%| < 4` snap for other
+PCs; the current code does neither.)*
 
 **PC-vs-mob test = the SpawnType `0x01` bit, `spawnType & 0x01` (NOT `== 0x01`).** Your OWN character's
 SpawnType reads `0x20D` (`0x200 | 0x0D`, and `0x0D` contains the `0x01` bit); other PCs read `0x01`. A
@@ -171,14 +176,14 @@ the `//aio tent` differential probe (target the same entity in two states, diff 
 These drive the Target module's name colour (SpawnType → claim/pflags), its engaged/claim state, and its
 speed% gate — the full colour table lives in [target-module.md](../../design/target-module.md).
 
-**Probe `//aio tent`** (kept in `plugin/aiohud.cpp`, off by default): resolves `target_t` → `Targets[0]`, logs
+**Probe `//aio tent`** (removed since — see the note at the top; it was off by default): resolved `target_t` → `Targets[0]`, logs
 `sid / index / eptr / arrRes / match`, then a single SEH-guarded block-copy of the entity (0x120 bytes) dumped
 as hex + inline ASCII with two aids (longest ASCII run = NAME; every byte in 1..100 = HP% candidates). No-op
-when nothing is targeted. Re-run it to re-locate offsets after a client patch.
+when nothing is targeted. Re-locating offsets after a client patch means rewriting it from this description.
 
 **Reader:** `read_target_entity()` lives in `game_mem.cpp` right **after `read_target`**, with the offsets above
-as the single source of truth (`T0_EPTR_OFF` / `ENT_*_OFF`). It fills `GameState::target` (`TargetEntity`
-{ id, index, name, hpp, valid }) once per frame in `poll_game_state`.
+as the single source of truth (`T0_EPTR_OFF` / `ENT_*_OFF`). It fills `GameState::target` (the `TargetEntity`
+listed above) once per frame in `poll_game_state`.
 
 ## `<bt>` is not stored : the game recomputes it (reversed 2026-09-13)
 
@@ -245,6 +250,7 @@ option. The only remaining accuracy gain is reversing the **wear-off message** p
 
 ## See also
 - [Target module — the TargetBar widget & its config](../../design/target-module.md)
+- [Movement speed analysis](../player/movement-speed-analysis.md) — the `+0x98` captures behind the speed % rules.
 - [The party member ARRAY in memory](../party/party-array.md)
 - [Party cast bar — the 0x028 action packet](../party/cast-bar.md)
 - [Target debuffs — detection, wear-off, and mob-behaviour inference](target-debuffs.md)

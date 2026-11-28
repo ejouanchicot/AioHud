@@ -1,3 +1,8 @@
+---
+title: Target movement speed — analysis
+summary: In-game captures of entity+0x98 movement_speed for self, other PCs and mobs, the four root problems (bogus chase spikes, frozen self position, catch-up, noise), and the locked method the Target widget uses (players 100*(ms/5-1), mobs field-when-plausible + hold, mounted ms/4).
+source: in-game dev probes (since removed) + reference-sheets/movement-speed.md ; code in ui/target.cpp
+---
 # Analyse — Vitesse de déplacement de la cible (AioHUD)
 
 But : afficher, dans la Target box, la vitesse de mouvement de la cible en **%** (relatif à ta vitesse de base
@@ -22,7 +27,7 @@ Le champ lu : **`entity + 0x98` = `movement_speed` (float)**. `0x9C` = constante
 
 ---
 
-## 2. Données brutes captées (sondes `//aio`)
+## 2. Données brutes captées (sondes de dev, retirées depuis)
 
 ### 2a. TOI (self-target) — id 0006BD0B, type 0x20D
 | État | `ms` (0x98) | posX/posZ | Note |
@@ -146,3 +151,11 @@ Deux comportements distincts, tranchés par les données :
 - **MONTÉ** (status 5/85) → `100*(ms/4)`.  **NPC pur** → rien.
 
 **État du code = exactement ça. Méthode VERROUILLÉE** (tous les points 6 confirmés en jeu ; sonde retirée).
+Code : `ui/target.cpp` (bloc MOVEMENT SPEED) — champ plausible `0.5 < ms <= 8.05`, valeur tenue `spdWindow_`
+(remise à 5.0 au changement de cible), plafond +60 %, affichage lissé. Lecture du champ : `read_target_entity`
+(`game_mem.cpp`, `ENT_SPEED_OFF 0x98`) ; pour soi, `read_self_speed`.
+
+## See also
+- [Target & sub-target struct](../target/target-substruct.md) — the entity fields (`+0x98`, `+0x170`, SpawnType) this reads.
+- [Movement speed (wiki sheet)](../reference-sheets/movement-speed.md) — base 5.0, cap +60 %.
+- [Target module](../../design/target-module.md) — where the speed % is drawn.

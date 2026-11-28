@@ -43,7 +43,6 @@ enum FmStatic {
 unsigned    fm_rva(FmStatic s);          // the RVA in use (the seed until something better is PROVEN)
 unsigned    fm_addr(FmStatic s);         // ffximain_base() + fm_rva(s) ; 0 when the module isn't loaded
 const char* fm_name(FmStatic s);         // human label, for logs and //aio doctor
-bool        fm_healed(FmStatic s);       // re-derived this session, or restored from the cache
 bool        fm_confirmed(FmStatic s);    // the address PROVED itself (vs merely proposed from a shift)
 
 // Adopt a re-derived address : logs it, marks it, and persists the whole set. `how` names the proof

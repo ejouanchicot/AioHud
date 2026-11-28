@@ -1652,23 +1652,6 @@ void reset_boxes() {   // edit-mode Default : positions + sizes only
     request_scale_baseline_reset();   // scales went back to 1.0 -> adopt as baseline (no re-anchor)
 }
 
-// top Y (px) of the party-role zone for `count` members (its rect top drives the party box), or -1 if none.
-float guide_party_top(int count, float sh) {
-    UiConfig& c = ui_config();
-    for (int g = 0; g < c.guideGroupCount; ++g) if (c.guideGroup[g].role == count) return c.guideGroup[g].y * sh;
-    return -1.0f;
-}
-
-// ar[0..3] = {A1 top, A1 bottom, A2 top, A2 bottom} (fractions) from the alliance-role zones (7 = A1, 8 = A2).
-bool guide_alliance_refs(float* ar) {
-    UiConfig& c = ui_config(); int a1 = -1, a2 = -1;
-    for (int g = 0; g < c.guideGroupCount; ++g) { if (c.guideGroup[g].role == 7) a1 = g; else if (c.guideGroup[g].role == 8) a2 = g; }
-    if (a1 < 0 || a2 < 0) return false;
-    ar[0] = c.guideGroup[a1].y; ar[1] = c.guideGroup[a1].y + c.guideGroup[a1].h;
-    ar[2] = c.guideGroup[a2].y; ar[3] = c.guideGroup[a2].y + c.guideGroup[a2].h;
-    return true;
-}
-
 // each user-drawn ZONE rectangle in pixels (from its stored fractions). Returns the number written.
 int guide_zones(float sw, float sh, float* ox, float* oy, float* ow, float* oh, int* ogrp, int cap) {
     UiConfig& c = ui_config(); int n = 0;
@@ -1677,28 +1660,6 @@ int guide_zones(float sw, float sh, float* ox, float* oy, float* ow, float* oh, 
         ow[n] = c.guideGroup[g].w * sw; oh[n] = c.guideGroup[g].h * sh; ogrp[n] = g; ++n;
     }
     return n;
-}
-
-// P3 : if the box rect (ex,ey,ew,eh) overlaps a zone that FORBIDS `perm`, push it out by the smallest move.
-void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew, float eh) {
-    UiConfig& c = ui_config();
-    float zx[GUIDE_GROUPS_MAX], zy[GUIDE_GROUPS_MAX], zw[GUIDE_GROUPS_MAX], zh[GUIDE_GROUPS_MAX]; int zg[GUIDE_GROUPS_MAX];
-    const int nz = guide_zones(sw, sh, zx, zy, zw, zh, zg, GUIDE_GROUPS_MAX);
-    for (int it = 0; it < 4; ++it) {                          // a few passes to settle overlapping zones
-        bool moved = false;
-        for (int i = 0; i < nz; ++i) {
-            if (perm >= 0 && perm < ZPERM_COUNT && c.guideGroup[zg[i]].allow[perm]) continue;   // allowed here
-            if (ex < zx[i] + zw[i] && ex + ew > zx[i] && ey < zy[i] + zh[i] && ey + eh > zy[i]) {
-                const float pL = zx[i] - (ex + ew), pR = (zx[i] + zw[i]) - ex;   // move left (neg) / right (pos)
-                const float pU = zy[i] - (ey + eh), pD = (zy[i] + zh[i]) - ey;   // move up (neg) / down (pos)
-                const float ax = ((pL < 0 ? -pL : pL) < (pR < 0 ? -pR : pR)) ? pL : pR;
-                const float ay = ((pU < 0 ? -pU : pU) < (pD < 0 ? -pD : pD)) ? pU : pD;
-                if ((ax < 0 ? -ax : ax) <= (ay < 0 ? -ay : ay)) ex += ax; else ey += ay;
-                moved = true;
-            }
-        }
-        if (!moved) break;
-    }
 }
 
 void reset_ui_config() {   // general Default : everything

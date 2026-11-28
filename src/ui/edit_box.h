@@ -16,11 +16,9 @@ namespace aio {
 enum { EDITBOX_TARGET = 0, EDITBOX_PLAYER, EDITBOX_MINIMAP, EDITBOX_PARTY, EDITBOX_ALLY1, EDITBOX_ALLY2, EDITBOX_WS, EDITBOX_SKILLCHAIN, EDITBOX_TREASURE, EDITBOX_HATE, EDITBOX_POINTWATCH, EDITBOX_GRIMOIRE, EDITBOX_ZONETRACKER, EDITBOX_TIMERS, EDITBOX_TIMERS_R, EDITBOX_EQUIP, EDITBOX_EMPYPOP, EDITBOX_DEBUFFS, EDITBOX_ABSORB, EDITBOX_PET, EDITBOX_CHAT, EDITBOX_BATTLE, EDITBOX_COUNT };   // EDITBOX_CHAT / _BATTLE : the Chat module's two boxes (hud_chat.cpp)   // EDITBOX_PET : the Pet box (BST / GEO content), hud_pet.cpp
 
 // GLOBAL box-occupancy registry (shared by both drag systems). Publish a box's screen rect each frame it is
-// drawn (`t` = f.t stamp -> a box not seen recently stops repelling). push_out shoves (ex,ey,ew,eh) out of
-// every OTHER recently-published box (minimal translation). Party/Alliance publish their cluster rect here
-// so the standalone boxes repel them and vice-versa.
+// drawn (`t` = f.t stamp -> a box not seen recently is treated as absent). The Edit Layout snap reads it ;
+// Party/Alliance publish their cluster rect here too.
 void edit_box_publish(int id, float x, float y, float w, float h, float t);
-void edit_box_push_out(int id, float curT, float& ex, float& ey, float ew, float eh);
 
 // per-box drag state : each box instance (or its file) owns one.
 struct EditBox {

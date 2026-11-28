@@ -15,7 +15,8 @@ Everything about YOU: the player struct and the chains hanging off it.
 | [key-items.md](key-items.md) | Key items kept DECODED as a flat `u8[8192]` at `*(G+0x4C)` — not as the bitfield you would expect |
 | [player-gil.md](player-gil.md) | Pointer chain for the gil amount |
 | [encumbrance-flags.md](encumbrance-flags.md) | The u32 bitfield at 0x60 of packet 0x01B: which equip slots are locked |
-| [movement-speed-analysis.md](movement-speed-analysis.md) | Target movement speed as a % of yours — the design analysis |
+| [movement-speed-analysis.md](movement-speed-analysis.md) | Target movement speed as a % of yours — the captures and the locked method |
+| [char-sheet.md](char-sheet.md) | Character sheet fields: attributes / resistances from 0x061, job levels from 0x01B, CP / JP from 0x063 order 5 |
 | [pointwatch.md](pointwatch.md) | XP / Capacity / Merit progression: packet offsets + load-time statics |
 | [gear-icons.md](gear-icons.md) | Resolving a 32x32 icon per item id: bundled seed, else a live decode |
 

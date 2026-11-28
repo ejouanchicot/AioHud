@@ -25,10 +25,6 @@ inline const char* res_weapon_name(int i) {
     static const char* N[3] = { "Slashing", "Piercing", "Blunt" };
     return (i >= 0 && i < 3) ? N[i] : "";
 }
-inline const char* res_elem_name(int i) {
-    static const char* N[8] = { "Fire", "Ice", "Wind", "Earth", "Thunder", "Water", "Light", "Dark" };
-    return (i >= 0 && i < 8) ? N[i] : "";
-}
 // elemental cell colours (Fire..Dark), from the addon's ELE_COL, as ARGB for the small element square.
 inline unsigned res_elem_color(int i) {
     static const unsigned C[8] = { 0xFFFF5A46u, 0xFF8CE1FFu, 0xFF8CE696u, 0xFFCDA55Fu,

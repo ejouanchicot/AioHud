@@ -1,7 +1,7 @@
 ---
 title: PointWatch — XP / CP / Master Level + Merits
 summary: The packet offsets and load-time FFXiMain static reads that feed the PointWatch progression bar (XP, Capacity/Job Points, Exemplar/Master Level, Merits) plus the X/h rate ring.
-source: model/party_state.cpp (on_char_stats/on_set_update/on_exp_msg), model/game_mem.cpp (read_capacity_points/read_pointwatch)
+source: model/party_state_pointwatch.cpp (on_char_stats/on_set_update/on_exp_msg), model/game_mem.cpp (read_capacity_points/read_pointwatch)
 ---
 # PointWatch — XP / CP / Master Level + Merits
 
@@ -51,13 +51,14 @@ ring → the **X/h rate**.
 | 809 / 810 | Exemplar Points (Master Level) |
 | 50 / 368 | not a gain: your merit TOTAL (only the line whose player id @0x04 is yours) |
 
-> **NOTE:** 0x029 is *also* routed to `on_029` (debuff wear-off) — `feed_packet`
-> calls **both** handlers for that id.
+> **NOTE:** 0x029 is *also* routed to `on_029` (debuff wear-off) — `model_feed_packet`
+> (party_state.cpp) calls **both** handlers for that id. The three PointWatch handlers live in
+> `model/party_state_pointwatch.cpp`; `RateReg` is declared in `party_state.h`.
 
 **Constants:** CP → next Job Point = **30000**, Limit Points → Merit = **10000**,
 max Job Points = 500 (XP caps at 55999).
 
-**X/h rate ring** (`RateReg`, party_state.cpp): stores up to 128 `(tick, gain)`
+**X/h rate ring** (`RateReg`, party_state.h / .cpp): stores up to 128 `(tick, gain)`
 samples; `rate()` sums gains within the last **600 s**, divides by the span
 (`maxAge/1000`) × 3600. Returns 0 until ~30 s of data (`maxAge ≤ 29000 ms`) so a
 single kill doesn't spike it.
@@ -98,7 +99,9 @@ Points for a job = `u16 @ entry+4` (`read_job_spent`, used by the [SCH grimoire]
 ### Exemplar + Merits + Master Level + XP — FFXiMain **static** data (`read_pointwatch`)
 These are NOT under any LuaCore `g` pointer — a full-memory scan for the packet's
 exact values pinned them in `FFXiMain.dll` static data (verified by hexdump).
-Read off `ffximain_base()`:
+Read off `ffximain_base()` — the RVAs as pinned on the 2026-08-12 client. The 2026-09-11 patch moved both
+blocks back by `-0x40` (block `0x485644`, merits `0x485826` — the seeds `ffximain_rva.cpp` ships now, and the
+only place the code holds them):
 
 | value | RVA | type |
 |---|---|---|
@@ -120,11 +123,13 @@ The merit block mirrors the 0x063 order-2 payload exactly (LP u16 @+0, count byt
 > Re-derived with **`//aio rva`**, which reads the block back DECODED (EXP 55999/56000, ML 34,
 > LimitPts 9999) — a block of bare integers can only prove itself by matching the character sheet.
 >
-> ⚠️ **These FFXiMain RVAs are CLIENT-VERSION-SPECIFIC.** Re-pin them after a
-> client patch with **`//aio pwscan`**: it arms `pw_scan_061` / `pw_scan_063`, and
-> on the next 0x061/0x063 they `scan_word_range` all memory for the packet's exact
-> values, logging module+offset to `aiohud_debug.log`. Open the Status menu (and
-> the Merit menu) to trigger the packets.
+> ⚠️ **These FFXiMain RVAs are CLIENT-VERSION-SPECIFIC** — and no longer constants in the code:
+> `read_pointwatch` reads `fm_addr(FM_PW_BLOCK)` + `0x55` (ML) / `+0x58` (Exemplar) and `fm_addr(FM_PW_MERIT)`,
+> and `model/ffximain_rva.cpp` re-pins both blocks by itself from the values 0x061 / 0x063 order 2 just
+> delivered (`fm_pw_expect` / `fm_pw_merit_expect`, called by the handlers above) — see
+> [ffximain-statics.md](../ffximain-statics.md). Open the Status menu (and the Merit menu) to trigger the packets.
+> The manual scan this note used to describe (`//aio pwscan`, `pw_scan_061` / `pw_scan_063` over
+> `scan_word_range`) is gone from the code (banner above).
 >
 > An earlier `*(g+0x3C)+0x93` guess for Master Level was WRONG — it coincidentally
 > held 15 for the ML15 reverse char but read 1 for an ML40 char. Always derive ML
@@ -135,14 +140,17 @@ Related `g`-root pointers (not read by `get_player`): merit struct base `*(g+0x4
 Pts); player/EXP struct `*(g+0x3C)`.
 
 ## Widget & config
-`Hud::draw_pointwatch` (hud.cpp) — per row a head line "label value [extra] …… rate"
+`Hud::draw_pointwatch` (`ui/hud_pointwatch.cpp`) — per row a head line "label value [extra] …… rate"
 + a thin stage-coloured progress bar (XP green / CP blue / ML orange / Merits
 purple). Center-anchored (`pwX` centre, `pwY` top), `EDITBOX_POINTWATCH`. Config
-module "PointWatch" (`pw_config.cpp`): Display (Show / Size / Progression mode /
-Rate X/h) + per-element Text (Label / Value / Rate). Lines `pw=` / `pwText%d=`.
+module "PointWatch" (`pw_config.cpp`): Display (Show / Size / Layout vertical|horizontal) · Frame ·
+Content (Progression Auto/XP/CP/ML = `pwMode`, Shows both|text only|bar only = `pwDisplay`, Show rate X/h =
+`pwRate`) · Text (per element: Label / Value / Rate). Lines
+`pw=show,scale,x,y,mode,rate,layout,display` / `pwText…` (`ui_config.cpp`).
 
 ## See also
 - [Data channels](../../architecture/data-channels.md) — why PointWatch needs both memory reads AND packets.
 - [SCH grimoire](../buffs-and-timers/grimoire-sch.md) — reuses `read_job_spent` (job_point_info +0x04).
 - [Player struct](player-struct.md) — the LuaCore `g` root and other pointer chains.
-- [Reverse-engineering recipe](../../reverse-engineering/recipe.md) — the scan/calibrate method behind `//aio pwscan`.
+- [Reverse-engineering recipe](../../reverse-engineering/recipe.md) — the scan/calibrate method behind the retired `//aio pwscan`.
+- [FFXiMain statics](../ffximain-statics.md) — how `FM_PW_BLOCK` / `FM_PW_MERIT` re-pin themselves after a client patch.

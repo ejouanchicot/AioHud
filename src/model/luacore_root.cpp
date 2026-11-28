@@ -246,7 +246,6 @@ void lc_register_checks() { selftest_add("luacore", lc_checks); }
 
 static const u32 SEED_RECAST_SPELLS = 0x238;   // 4.7.9.3 ; it was 0x234 up to 4.7.9.0
 static u32         g_rcSpells = 0;
-static const char* g_rcHow    = "seed";
 static bool        g_rcDone   = false;   // rule10-ok: same contract as g_scanned -- set only once .text has actually been walked ; every "not ready yet" path (no root, unreadable headers) returns before it
 
 // get_spell_recasts' shape : load the root, deref at X, and loop to 0x400 (the 1024-entry array). The bound
@@ -331,11 +330,11 @@ static void ensure_recast()
     // Neither binding is trusted alone : the spell array must sit exactly one dword past the ids table,
     // which is the only layout either of them describes. Disagreement means we matched something else.
     if (spells && ids && spells == ids + 4) {
-        g_rcSpells = spells; g_rcHow = "code scan";
+        g_rcSpells = spells;
         windower::debug::log("lc: recast block = g+%03X timers / g+%03X ids / g+%03X spells "
                              "(code scan, both bindings agree)", spells - 8, ids, spells);
     } else {
-        g_rcSpells = SEED_RECAST_SPELLS; g_rcHow = "seed";
+        g_rcSpells = SEED_RECAST_SPELLS;
         windower::debug::log("lc: recast block NOT derived (spell sig %03X, ability sig %03X) -- using seed "
                              "g+%03X. If the recast list shows many spells on the same timer, this is why.",
                              spells, ids, g_rcSpells);
@@ -345,6 +344,5 @@ static void ensure_recast()
 unsigned    lc_recast_spells()    { ensure_recast(); return g_rcSpells; }
 unsigned    lc_recast_ja_ids()    { ensure_recast(); return g_rcSpells - 4; }
 unsigned    lc_recast_ja_timers() { ensure_recast(); return g_rcSpells - 8; }
-const char* lc_recast_how()       { ensure_recast(); return g_rcHow; }
 
 } // namespace aio

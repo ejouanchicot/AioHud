@@ -124,3 +124,9 @@ and Marcato. The model is the one described in [song-duration.md](song-duration.
 Soul Voice / Clarion Call, Double-Up and Crooked Cards, SCH Perpetuance (main-job SCH), and gear decomposition piece by piece. The
 last one was left alone on purpose : a first attempt at changing gear lifted a GearSwap weapon lock on the character,
 which had to be restored by hand -- gear experiments need the owner at the keyboard.
+
+## See also
+- [Buffs you cast on allies](buffs-on-allies.md) — the multiplicative model these casts were measured against.
+- [Song duration](song-duration.md) — the song model of section 6.
+- [Geomancy duration](geomancy-duration.md) — the Indi- model of section 7.
+- [Timers](timers.md) — the box that draws the receiver's 0x063 timer and the caster's estimate.

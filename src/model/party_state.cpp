@@ -394,21 +394,34 @@ int RateReg::rate() const {
 //
 // Falls back to the old wall-clock formula whenever the client clock is unreadable or not yet seeded (before the
 // first 0x00A). A missing module or a bad pointer must degrade, never crash and never freeze the countdowns.
-static const u32 CLK_PTR_RVA = 0x492E10;   // -> the clock struct (single writer, static in .data, never null after init)
+//
+// THE TWO ADDRESSES MOVE WITH EVERY CLIENT PATCH. They were constants (0x492E10 / 0x4E0AF8, the July client) and the
+// November client has NO reference to either -- the timers had silently fallen back to the PC clock (2026-11-28).
+// They are now re-derived from the client's own "now" function (client_clock_rvas, native_ui.cpp) ; the seeds below
+// are the November values, used only until that resolves.
+static const u32 CLK_PTR_SEED = 0x493FC0;  // -> the clock struct (single writer, static in .data, never null after init)
 static const u32 CLK_SEC_OFF = 0x0C;       // u32 unix seconds
-static const u32 CLK_OFF_RVA = 0x4E0AF8;   // i32 server offset (Timestamp2 - Timestamp1)
+static const u32 CLK_OFF_SEED = 0x4E1CA8;  // i32 server offset (Timestamp2 - Timestamp1)
 unsigned ffxi_now_tick() {
     static unsigned s_lastMs = 0xFFFFFFFFu; static unsigned s_cached = 0;
+    static int s_logged = -1;                 // which source the log last named (rule 10 : say when the clock changes source)
     const unsigned nowMs = model_now_ms();
     if (nowMs == s_lastMs) return s_cached;   // called per row per frame -- one guarded read per ms is plenty
     unsigned out = 0;
     const u32 base = model_module_base("FFXiMain.dll");   // tape seams (model/model_io.h) : a recorded session replays this clock
     if (base) {
+        u32 ptrRva = CLK_PTR_SEED, offRva = CLK_OFF_SEED;
+        client_clock_rvas(ptrRva, offRva);                  // false = not resolved yet : the seeds stay
         u32 clk = 0, sec = 0, off = 0;
-        if (model_read_u32(base + CLK_PTR_RVA, &clk) && valid_ptr(clk) &&
-            model_read_u32(clk + CLK_SEC_OFF, &sec) && model_read_u32(base + CLK_OFF_RVA, &off) &&
+        if (model_read_u32(base + ptrRva, &clk) && valid_ptr(clk) &&
+            model_read_u32(clk + CLK_SEC_OFF, &sec) && model_read_u32(base + offRva, &off) &&
             !(sec == 0 && off == 0))                        // still zero = not yet seeded by a 0x00A
             out = (sec + off) * 60u;                        // off is negative (-EPOCH) ; u32 wrap is the intended maths
+    }
+    const int src = out ? 1 : 0;
+    if (base && src != s_logged) {   // once per change of source, not per frame
+        s_logged = src;
+        windower::debug::log(src ? "CLOCK timers on the client's own clock" : "CLOCK timers on the PC clock (client clock unreadable or not seeded yet)");
     }
     if (!out) {   // fallback : the original wall-clock derivation
         const double EPOCH = 1009810800.0, ERA = (4294967296.0 / 60.0) * 10.0;

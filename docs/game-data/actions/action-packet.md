@@ -122,5 +122,5 @@ n'existe pas.
 ## See also
 - [Party cast bar — the 0x028 action packet](../party/cast-bar.md) — the higher-level parse this bit layout underpins.
 - [Target debuffs](../target/target-debuffs.md) — another 0x028 consumer (mob-side debuff tracking).
-- [Buffs you cast on ALLIES](../buffs-and-timers/buffs-on-allies.md) — the `aoeSelf` / ally buff-line scans that still use the fixed step.
+- [Buffs you cast on ALLIES](../buffs-and-timers/buffs-on-allies.md) — the `aoeSelf` / ally buff-line readers, which read the single decoded `act_` like every other consumer.
 - [Static analysis of FFXiMain](../../reverse-engineering/static-analysis.md) — the 0x05C60000 image base and the `0x44730` correction noted above.

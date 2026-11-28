@@ -751,7 +751,6 @@ static void draw_square_case(u32 dev, float cx, float cy, float r, float fi, flo
 // a slow shimmer running through the colours, a rim of light of today's colour (the crystal's edge) ; outside, today's aura breathing, and a glass shell : a crescent reflection and a glint.
 // Rendered as a polar grid over the visible disc : each vertex's normal gives its longitude (-> its slice) and its
 // latitude, and is lit. Colour-quad state ; additive passes reset the blend. No allocation.
-static const u32 ORB_ELEM[8] = { 0xFFE0261Au, 0xFFB07A22u, 0xFF1C4FD6u, 0xFF22A83Cu, 0xFF2EC4F0u, 0xFF9A2EE0u, 0xFFF4F1E8u, 0xFF2A1446u };
 static const u32 ORB_GLOW[8] = { 0xFFFF6A3Cu, 0xFFE8B850u, 0xFF4C8CFFu, 0xFF5CE07Au, 0xFF8CE8FFu, 0xFFC878FFu, 0xFFFFF6D8u, 0xFF9A5CFFu };   // each element's LIGHT (Dark glows violet)
 // ONE LAMP for the whole instrument (the user 2026-11-25 : "think each sphere's lighting from its position") : a light
 // hanging above the dial's centre ; every sphere is lit on the side that faces it (the top-left subdial from the lower
@@ -897,22 +896,6 @@ template <class F> static void sphere_mesh_c(u32 dev, SphCache& C, const MeshKey
         }
     }
     for (int i = 0; i < NR; ++i) dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NS, C.v + i * 2 * (NS + 1), sizeof(VtxC));
-}
-template <class F> static void sphere_mesh(u32 dev, float cx, float cy, float R, F colf) {
-    const int NR = 12, NS = 56;
-    VtxC strip[2 * (NS + 1)];
-    for (int i = 0; i < NR; ++i) {
-        const float r0 = (float)i / NR, r1 = (float)(i + 1) / NR;
-        for (int j = 0; j <= NS; ++j) {
-            const float a = (float)j / NS * 6.2831853f, ca = cosf(a), sa = sinf(a);
-            for (int q = 0; q < 2; ++q) {
-                const float rr = q == 0 ? r0 : r1, u = rr * ca, v = rr * sa;
-                float zz = 1.0f - u * u - v * v; zz = zz > 0.0f ? sqrtf(zz) : 0.0f;
-                strip[2 * j + q] = { cx - 0.5f + u * R, cy - 0.5f + v * R, 0, 1, colf(u, v, zz) };
-            }
-        }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NS, strip, sizeof(VtxC));
-    }
 }
 static u32 rgb_scale(u32 c, float k) {
     u32 o = 0xFF000000u;

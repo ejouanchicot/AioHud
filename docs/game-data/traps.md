@@ -14,9 +14,11 @@ source: REFERENCE.md §9c
    `fill_self()` stored `row.name = me.name`. The rows are consumed by the
    **caller** (`Party::draw`) *after* `build_rows` returns → `me` is gone → the
    `const char* name` dangles → garbage. Other members were fine because their
-   `name` points into the **global** `g_party` (stable). **Fix:** make `me`
-   `static`. **Rule:** `Row.name` is a *non-owning* pointer — only ever assign it
-   something whose lifetime ≥ the frame (a global, a string literal, or `static`).
+   `name` points into the **global** `g_party` (stable). **Fix (then):** make `me`
+   `static`. **Today** (`ui/party.cpp`) `build_rows(outRows, gs)` takes `me` by reference from the frame
+   snapshot `gs.me` (the HUD's `GameState`, which outlives the call), so `fill_self` stores `gs.me.name`.
+   **Rule:** `Row.name` is a *non-owning* pointer — only ever assign it
+   something whose lifetime ≥ the frame (a global, a string literal, the frame snapshot, or `static`).
 
 2. **Job badge empty — read the job ID, not the job LEVEL.** `read_player` first
    read main job at `+0x98`, which is the main-job **level** (`99`); `job_abbr(99)`
@@ -28,7 +30,8 @@ source: REFERENCE.md §9c
 
 **Debugging recipe** (all via `//aio …`, plugin stays **loaded** — no unload):
 `//aio vit` logs the `player` pointer; `//aio dump <player> 200` hexdumps it;
-`//aio party` logs each member's `id` + `flags` + the resolved leaders;
+(`//aio party` once logged each member's `id` + `flags` + the resolved leaders; today the name
+belongs to the shipped demo, `//aio party N` = a baked party of N rows);
 `//aio chain` walks the alliance struct; `//aio find <hexid>` scans memory for a 32-bit
 value (how we located the member array); `//aio mjlvl` dumps each member's
 `+0x71/+0x72/+0x73/+0x74` job bytes (how we reversed the sub-level `member+0x74`). Unload is

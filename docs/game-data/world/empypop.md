@@ -87,6 +87,12 @@ memory — it renders identically on a fresh character who owns nothing.
 
 Both are probe-build only — see [The in-game RE probe toolkit](../../reverse-engineering/probes.md).
 
+What a release DOES carry is **`//aio ept`** (alias **`//aio pop`**, `src/plugin/aio_verbs.h` `V_EPT`, body in
+`aiohud.cpp`), which prints to the FFXI chat log with in-band colours: bare = toggle the box (`epShow`,
+saved), `off` / `hide` = hide it, `list` = every NM name of the table (the tracked one in yellow, the colour
+byte re-stated before each name because the game resets colour at its own word-wrap), `<name>` = a case-insensitive SUBSTRING of the key (`dynamis` → Arch Dynamis Lord): one match tracks it, several
+list the candidates, none says to try `list`.
+
 ## See also
 - [Key items](../player/key-items.md) — the `u8[8192]` read behind `owns_key_item`.
 - [Inventory](../player/inventory.md) — the 18-bag `count_item` read.

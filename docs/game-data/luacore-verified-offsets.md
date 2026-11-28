@@ -25,6 +25,10 @@ Method: `docs/architecture/ghidra-setup.md`. The registration function **`FUN_10
 > [luacore-data-root.md](luacore-data-root.md). What remains valid, and is why this page still matters, is
 > everything it establishes about the *structures* the root points at: the `0x7C` member stride, the field
 > map, the member→entity hop, the `0x900` bound. Those are the game's layout, not Windower's.
+>
+> The `PW_FM_EXP` / `PW_FM_MLVL` / `PW_FM_EXEMPLAR` / `PW_FM_MERIT` constants named in the PointWatch section
+> no longer exist: those statics are `FM_PW_BLOCK` / `FM_PW_MERIT` in `model/ffximain_rva.h`, read through
+> `fm_addr()` and re-derived at runtime — see [ffximain-statics.md](ffximain-statics.md).
 
 ## Framing: Windower's member[i] is `*(g+0x248) + i*0x7C` - AioHUD's is that MINUS 4
 
@@ -102,7 +106,10 @@ party1/2/3 count. Matches `load_from_memory` exactly.
 **SpawnType is a BITFIELD, and Windower proves it.** `in_party` and `in_alliance` are bits 2 and 3 of the very
 byte AioHUD compares with `==`. So a party PC really is `0x0D` (`0x01|0x04|0x08`) and a party trust `0x0E` -
 the in-game observation recorded in `target-substruct.md` was right, and the `sp == 0x01` / `sp == 0x10`
-equality tests in `game_mem.cpp` are wrong. Bits `0x01` = PC and `0x10` = Mob remain in-game observation only;
+equality tests `game_mem.cpp` had then were wrong. They are BIT tests now (the minimap entity walk tests
+`sp & 0x01` / `& 0x02` / `& 0x10` — the old `== 0x01` / `== 0x02` dropped every party and alliance member from the
+minimap) ; one equality remains, `spawnType == 0x10` for a hate-list row (`model/party_state_hate.cpp`), harmless
+while a mob carries no membership bit. Bits `0x01` = PC and `0x10` = Mob remain in-game observation only;
 Windower does not name them.
 
 **`status` is NOT settled.** Windower reads `+0x16C`; AioHUD reads `+0x170`, found by a clean live

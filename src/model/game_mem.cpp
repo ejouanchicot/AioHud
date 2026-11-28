@@ -67,7 +67,6 @@ using windower::safe_read;
 // Module bases are fixed after load (cached) ; the data root `g` is a heap ptr that can be 0 while
 // zoning (read each call). All return 0 -> the caller no-ops. Offsets live HERE, nowhere else. ---
 u32 ffximain_base() { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("FFXiMain.dll"); return b; }
-u32 luacore_base()  { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("LuaCore.dll");  return b; }
 // g = *(LuaCore + root rva). The RVA is NOT a constant : Windower recompiles LuaCore and updates itself
 // silently, and 4.7.9.3 slid the root from 0x1C8400 to 0x1CA420 -- which zeroed every read in this file and
 // blanked the whole HUD. lc_root_addr() derives it from LuaCore's own code (see model/luacore_root.h).

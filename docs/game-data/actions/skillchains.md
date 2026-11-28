@@ -1,7 +1,7 @@
 ---
 title: Skillchains — resonance detection from 0x028
 summary: The 0x028 action-packet bit offsets that detect a skillchain OPEN (step-1) / CLOSE (step+1), the property/combo tables, and the usable-move continuation prediction.
-source: model/party_state.cpp (on_action skillchain block), model/skillchain.{h,cpp}, model/skillchain_gen.h
+source: model/party_state.cpp (act_skillchain, a stage of on_action), model/skillchain.{h,cpp}, model/skillchain_gen.h
 ---
 # Skillchains — resonance detection from 0x028
 
@@ -11,8 +11,10 @@ source: model/party_state.cpp (on_action skillchain block), model/skillchain.{h,
 
 Detects an active skillchain window on the target and predicts which of your moves
 continue it. **Pure 0x028 bit-reads** — no memory reverse for detection (the
-continuation *prediction* reads usable-move bitmaps, below). Runs for ANY actor
-(you or your party). The block lives at the top of `PartyState::on_action`.
+continuation *prediction* reads usable-move bitmaps, below). Gated to a FRIENDLY actor
+(`is_skillchain_actor`: you / a party or alliance member / a tracked pet / a party Trust) — otherwise a
+passer-by's skillchain popped in the box. It is the `act_skillchain` stage of `PartyState::on_action`; when the
+WS popup takes the packet it returns true and the later stages do not run.
 
 ## The finish categories → skillchain resource
 The 0x028 `category` @bit 82 (4b) selects the resource table:
@@ -41,7 +43,9 @@ Requires `size*8 ≥ 309`. `size = ((hdr>>9) & 0x7F) * 4` bytes.
 | finish message | 230 | 10 | the OPEN gate (`sc_is_finish_msg`) |
 
 > These offsets share the ActionPacket layout used by the [cast bar](../party/cast-bar.md)
-> (target[0].param @bit 213 = target base 150 + 63; per-target stride 123 bits).
+> (target[0].param @bit 213 = target base 150 + 63). Only target[0] is read here; the per-target stride is
+> VARIABLE (36 bits + per action 86 + 37 if add-effect + 1|35 spike), see
+> [target-debuffs.md](../target/target-debuffs.md).
 
 ## OPEN vs CLOSE
 For a finish whose `target[0].id` is a real mob:
@@ -50,14 +54,23 @@ For a finish whose `target[0].id` is a real mob:
   carries a skillchain added effect. `prop = sc_from_add_effect_anim(getbits(272,6))`
   is the **resulting property**; `sc_close(tid, aid, res, prop, delay)` advances the
   window to step+1 (delay from the move's `SkillRow`, default 3 s).
-- **OPEN** — else `sc_is_finish_msg(getbits(230,10))`: a plain WS/spell finish opens
+- **OPEN** — else a finish message at bit 230 (10b): a plain WS/spell finish opens
   a **step-1** resonance from the move's OWN skillchain property (`sk->prop` from
-  `sc_skill_lookup(res, aid)`), via `sc_open(tid, aid, res, prop, delay)`.
+  `sc_skill_lookup(res, aid)`), via `sc_open(tid, aid, res, prop, delay)`. For **cat 3 (`SCR_WS`)
+  the gate is the strict `sc_is_weaponskill_msg` (185 only)**: cat 3 shares its id space with damage job
+  abilities (46 = Shield Bash AND Expiacion, 77 = Weapon Bash AND Ruinator, 45 Mug / Atonement, 228 Despoil /
+  Final Paradise…), and Shield Bash (110) / Jump (317) opened windows under the colliding WS (reported
+  2026-07-27). The other categories keep `sc_is_finish_msg`. Also OPENS: a SCH elemental spell (msg 2) while
+  Immanence (470) is up on the caster (`has_immanence`).
+- **Pet moves** (cat 11 from one of our pets, table delay 3): the Wait is `UiConfig::scReadyDelay`
+  (`petMoveDelayMs_`, default 4.0 s, clamped 3–8 s) — measured with `//aio sclog` 2026-10-29.
+- `//aio sclog` logs one `SCAPT` line per finish: the fields read, the window before, and the decision.
 
 Message-id sets (`skillchain.h`):
 ```
 sc_is_skillchain_msg : [288..301] ∪ [385..397] ∪ [767..770]   // CLOSE add-effect
-sc_is_finish_msg     : {110, 185, 187, 317, 802}               // OPEN "uses <WS>"
+sc_is_finish_msg     : {110, 185, 187, 317, 802}               // OPEN, cats 4/6/11/13-15
+sc_is_weaponskill_msg: {185}                                   // OPEN, cat 3 (and the WS popup)
 ```
 `sc_from_add_effect_anim`: animation 1..16 → Light, Darkness, Gravitation,
 Fragmentation, Distortion, Fusion, Compression, Liquefaction, Induration,
@@ -71,8 +84,8 @@ Reverberation, Transfixion, Scission, Detonation, Impaction, Radiance, Umbra.
   props continue the active chain, and to what level/result).
 - `src/model/skillchain_gen.h` — **generated** (`scripts/gen_skillchain.py`, don't
   hand-edit): per-action `SkillRow {id, prop[3], delay, aeonic}`, binary-searched by
-  `sc_skill_lookup(resource, id)`. **814 rows**: WS 215, spells 105, monster
-  abilities 408, job abilities 78, elements 8.
+  `sc_skill_lookup(resource, id)`. **924 rows**: WS 215, spells 105, monster
+  abilities 511, job abilities 85, elements 8 (+ 16 Aeonic weapon items, `SC_AEONIC_ITEMS`).
 
 The skillchain that FORMS is read from the 0x028 add-effect (no table lookup), so it
 works for ANY move; only the OPEN (step-1 property) and the prediction consult the
@@ -98,10 +111,14 @@ has the mob targeted, a party member's often does not. `draw_skillchains` picks 
 in priority order:
 
 1. **your current target `<t>`** — if it has a live window. **Always shown**, regardless of `scNearby`.
-2. **your battle target `<bt>`** — the mob you're *engaged* with, held even after you
-   drop the reticle (`target_t + 0x7C`, u32 ServerId; reversed 2026-07-10 via `//aio bt`,
-   self-calibrating: stays set when `<t>` is cleared, clears to 0 on disengage → read in
-   `read_target` → `GameState::battleTargetId`);
+2. **your battle target `<bt>`** — the first mob claimed by you or your party, as the GAME
+   resolves it → `GameState::battleTargetId`. `<bt>` is **not stored** in memory: `read_battle_target`
+   (`game_mem.cpp`, rule in `model/battle_target.h`, reversed 2026-09-13 from FFXiMain's `<bt>` resolver)
+   walks the entity array in index order for the first entity with an actor loaded (`+0xA0 != 0`), claimed
+   (`+0x188`) by you or a party member (not the alliance), and not dead (`+0x170` not 2/3).
+   *History:* it used to be `target_t + 0x7C` (taken 2026-07-10 via `//aio bt`); measured in combat on
+   2026-09-13, `+0x7C` follows the RETICLE target (Windower `<bt>` = a claimed Sand Hare while `+0x7C` held
+   the Goblin Mugger under the cursor), so it is no longer read;
 3. **the newest LIVE chain on any nearby mob** (`party().skillchain_newest_live()`) —
    covers a **healer / support / observer** who is *not engaged* and *not targeting* the mob.
 
@@ -113,7 +130,7 @@ can't linger on a mob you targeted away from. Config panel: "Skillchains → Dis
 party/nearby chains".
 
 ## Widget & config
-`Hud::draw_skillchains` (hud.cpp, WS-popup pattern) — dark box + gold border, lines
+`Hud::draw_skillchains` (`ui/hud_skillchains.cpp`, WS-popup pattern) — dark box + gold border, lines
 title / timer (Wait · Go! · Burst) / "Step: N > closing move" / "[prop] (elements)"
 multi-colour. Center-anchored, `EDITBOX_SKILLCHAIN`. Config module "Skillchains"
 (`sc_config.cpp`): Size + per-line Elements toggles + per-element Text

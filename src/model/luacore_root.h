@@ -46,6 +46,5 @@ void        lc_register_checks();   // the watcher : a root that stops answering
 unsigned    lc_recast_ja_timers();   // *(g+off) -> int32[32], remaining recast in 1/60 s
 unsigned    lc_recast_ja_ids();      // *(g+off) -> stride-8 entries, byte[0] = that slot's recast_id
 unsigned    lc_recast_spells();      // *(g+off) -> ushort[1024], indexed directly by recast_id
-const char* lc_recast_how();         // "code scan" / "seed" -- same rule : state where the number came from
 
 } // namespace aio

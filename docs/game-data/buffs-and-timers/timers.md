@@ -1,7 +1,7 @@
 ---
 title: Timers — self buff durations + ability/spell recasts
 summary: The 0x063 order-9 self buff-timer packet (absolute FFXI ticks), the client recast tables (offsets DERIVED at runtime — they moved in Windower 4.7.9.3), the buff-caster self-cast filter, the shared-recast_id name-collision disambiguation, and the curated addon icon set (why ROM/119/57.DAT can't supply menu icons).
-source: model/party_state.cpp (on_set_update order 9 / on_action buff-caster / ffxi_now_tick), model/game_mem.cpp (read_recasts)
+source: model/party_state_pointwatch.cpp (on_set_update order 9), model/party_state.cpp (on_action buff-caster / ffxi_now_tick / match_cast), model/timers_build.cpp (row build, abil_name_by_recast), model/game_mem.cpp (read_recasts)
 ---
 # Timers — self buff durations + ability/spell recasts
 
@@ -16,7 +16,7 @@ spell cooldowns read from the client recast tables. Sorted soonest-first, colour
 
 ## Duration column — self buff timers (packet 0x063 order-9)
 
-`PartyState::on_set_update` (party_state.cpp:756) dispatches 0x063 on **Order @0x04** (u16).
+`PartyState::on_set_update` (`party_state_pointwatch.cpp`) dispatches 0x063 on **Order @0x04** (u16).
 **Order 9** is a **full-refresh, self-only** buff-timer block (there is **NO owner field** — it
 is always *your* buffs):
 
@@ -26,12 +26,14 @@ is always *your* buffs):
 | Buffs | 0x08 | u16[32] | status id per slot; `0`, `0xFF`, `0xFFFF` = empty |
 | Expiry | 0x48 | u32[32] | absolute FFXI tick when the buff ends |
 
-Each refresh clears `buffTimerN_` and repacks the non-empty slots into `buffTimers_[]`. This
-covers **gear / merits / Composure / song duration — nothing is estimated** (party_state.h:168).
+Each refresh clears `buffTimerN_` and repacks the non-empty slots into `buffTimers_[]` (a runt shorter
+than 0xC8 bytes is dropped before the clear). This covers **gear / merits / Composure / song duration —
+nothing is estimated**.
 
-### The FFXI tick epoch (`ffxi_now_tick`, party_state.cpp:752)
+### The FFXI tick epoch (`ffxi_now_tick`, party_state.cpp)
 Expiry is an absolute count of **1/60-second ticks**. Remaining seconds =
-`(int)(expiry − ffxi_now_tick()) / 60` — the **signed** diff handles the 32-bit wrap.
+`ticks_to_sec_ceil((int)(expiry − ffxi_now_tick()))` (party_state.h: `(d + 59) / 60`, 0 when `d <= 0`) —
+**ceil'd like the client**, and the **signed** diff handles the 32-bit wrap.
 
 ```
 EPOCH = 1009810800.0
@@ -39,7 +41,8 @@ ERA   = (4294967296.0 / 60.0) * 10.0        // 2^32/60 ticks per era, ×10 eras
 now   = (unsigned)(((double)time(0) - EPOCH - ERA) * 60.0)
 ```
 
-`draw_timers` drops any row with `rem <= 0` or `rem > 6*3600` (6 h sanity cap).
+The row build (`timers_build.cpp` / `timers_rules.h`) drops any row with `rem <= 0` or `rem > 6*3600`
+(6 h sanity cap) — **except self-carried area buffs** (San d'Oria base Signet = 13 h).
 
 ### Buff-source filter and PER-TIMER caster attribution (0x028)
 
@@ -115,10 +118,11 @@ row tag; `self_buff_spell_ranked(...)` for the row name and the hide/focus keys.
 single lambda (`srcKeeps`) shared by the row emit **and** the focus monitor — they disagreed before, so a
 buff the column hid could still fire a red OUT alert.
 
-## Recast column — ability & spell cooldowns (`read_recasts`, game_mem.cpp:675)
+## Recast column — ability & spell cooldowns (`read_recasts`, game_mem.cpp)
 
-Snapshotted **once/frame** into `GameState.recasts[40]` (`RecastEntry {recastId, kind, sec}`,
-gamestate.h:58). Two client tables off the LuaCore `g` root:
+Snapshotted **once/frame** into `GameState.recasts[40]` (`RecastEntry {recastId, kind, sec, ticks}`,
+gamestate.h — `ticks` = the raw 1/60 s countdown `sec` was ceil'd from; the list sorts on it so two recasts
+one second apart keep a stable order). Two client tables off the LuaCore `g` root:
 
 These three offsets are **derived at runtime, not constants** — Windower 4.7.9.3 slid the whole block by
 `+4` and the plugin read the neighbouring table without noticing. Always go through the accessors; see
@@ -139,14 +143,15 @@ These three offsets are **derived at runtime, not constants** — Windower 4.7.9
 | JA ids | `0x230` | `0x234` |
 | Spells | `0x234` | `0x238` |
 
-Seconds are **ceil'd**: `sec = (v + 59) / 60`. (`spell_recast_sec(recast_id)`, game_mem.cpp:700,
+Seconds are **ceil'd**: `sec = (v + 59) / 60`. (`spell_recast_sec(recast_id)`, game_mem.cpp,
 does the single-entry version for the action-menu "Next".)
 
-Each row's icon/name is joined by `recast_id`:
-`ic = (kind==0) ? ja_recast_icon(rid) : spell_recast_icon(rid)` and
-`nm = abil_name_by_recast(rid) / spell_name_by_recast(rid)`. A row with neither is skipped.
+Each row's name is joined by `recast_id` (no icon — see below):
+`nm = (kind==0) ? abil_name_by_recast(rid, jaBits, jaOk) : spell_name_by_recast(rid)`. A row with no name is
+skipped. SCH stratagems (rc 231) are rewritten from the grimoire poller as "Stratagem [n]" counting down to
+the next charge.
 
-### Recast name-collision disambiguation (`abil_name_by_recast`, hud.cpp:1776)
+### Recast name-collision disambiguation (`abil_name_by_recast`, timers_build.cpp)
 
 Many job abilities **share one `recast_id`**, so a linear scan of `ABILS` for that id could pick the wrong
 label. Two collision shapes:
@@ -157,7 +162,7 @@ label. Two collision shapes:
   Sambas **216**, Jigs **218**, Flourishes **221/222/226**, stratagems **231**, … Here MANY are usable at
   once, and the wanted label is the **family header** (the first table row).
 
-Rule: read the **usable-JA bitmap** once/frame (`read_usable_bits`, game_mem.cpp:653 -- WS + JA bitmaps in one read — the get_abilities
+Rule: read the **usable-JA bitmap** once/frame (`read_usable_bits`, game_mem.cpp -- WS + JA bitmaps in one read — the get_abilities
 **"block 0xAC"**, JA bits at **+0x44**, exactly **128 bytes** = 1024 ids). Then:
 
 ```
@@ -182,7 +187,7 @@ Player / Party boxes.
 
 Earlier revisions of this page described a `recast_icons_gen.h` / `gen_recast_icons.py` /
 `assets/action_icons.raw` pipeline mapping `recast_id → icon index`. **None of the three exists**, and
-nothing in `src/` references them — `hud_timers.cpp` says so itself at the emit site: *"recasts are
+nothing in `src/` references them — `timers_build.cpp` says so itself at the emit site: *"recasts are
 TEXT-only (no menu-icon set exists)"*.
 
 That is a design decision, not a gap to fill: a menu-icon set covering every ability and spell was never

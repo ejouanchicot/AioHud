@@ -107,8 +107,8 @@ get_spell_recasts   @ rva 071950      get_ability_recasts @ rva 0719D0
 Note the four unrelated instructions between the load and the deref in `get_spell_recasts`: the first
 version of this scan required them to be adjacent, matched **nothing**, and still looked healthy because
 the fallback seed happened to be the right number. A derivation that silently degrades to a constant is
-worse than a constant — it claims to be self-healing. That is what `lc_recast_how()` reporting `"seed"` vs
-`"code scan"` exists to expose, and what the offline test asserts.
+worse than a constant — it claims to be self-healing. That is what the `lc: data root = ...`
+(code scan) vs seed lines in `aiohud_debug.log` exist to expose (`luacore_root.cpp`).
 
 ## Re-deriving it by hand
 

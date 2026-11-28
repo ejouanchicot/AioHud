@@ -82,6 +82,15 @@ so anything else means somebody put their own art there. An overlay-only test lo
 a pack copied over the game files is exactly the case this machine turned out to be running, and that player
 would have been shown the bundled sheet instead of the HD icons they installed on purpose.
 
+That order is the **Auto** choice. The player can also pick one sheet by name in **config > Interface >
+Status icons** (`IconPackKind` / `IconPack`, `model/icon_dat.h`): Auto, the bundled sheet, their own sheet, the
+game's ROM file (overlays ignored), one XIPivot overlay by folder name (enabled or not), or a folder dropped in
+**`plugins\AioHud\icons\packs\<name>\`** (inside: `57.DAT`, `ROM\119\57.DAT` or `status_atlas.raw`, first found
+wins; under `icons\`, never `assets\`, because deploy and the updater rewrite `assets\` wholesale). Sources that
+DECODE to the same pixels are merged into one row (a fingerprint of the produced atlas), the choice is stored by
+NAME (never an index), and a name that matches nothing any more falls back to Auto. The scan is cached and
+dropped each time the config page opens (rule 10). Untouched = `status_icons_untouched()`.
+
 `//aio doctor` and `//aio selfcheck` print which of the four is live (`atlas=1(t0,game DAT (pack))`), because
 "the icons look wrong" is a *source* question before it is anything else.
 
@@ -114,3 +123,8 @@ what the HUD draws.
 A scan of all 53 488 DATs in the install finds the same 640-record file at `ROM/0/12`, `ROM/119/57`,
 `ROM/176/107`, `ROM/178/46` and four more at `ROM/287/80..83` (named `sts_iconst00` without the `_32`). File
 id 87 is the one the client resolves and the one every icon pack replaces; the others are not read.
+
+## See also
+- [Party-member buffs — 0x076](member-buffs.md) — the status ids these cells are drawn for.
+- [Gear icons](../player/gear-icons.md) — the other icon DATs (palettised, `rotl3`-encoded).
+- [Timers](timers.md) — one of the widgets sharing the atlas.

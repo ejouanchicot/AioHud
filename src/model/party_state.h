@@ -595,11 +595,6 @@ struct PartyState {
     void zt_save_soon() { ztDirty_ = true; }
     void zt_flush_save() { if (ztDirty_) { ztDirty_ = false; zt_save(); } }
     bool zt_load(int zone);                         // restore it for `zone` -> true if a valid same-zone cache loaded (fresh plugin load)
-    // Seed a chip by hand : coffers opened BEFORE this feature existed (or before the build was deployed) cannot be
-    // recovered from anywhere -- the payout only ever arrives as a live 0x02A. `amtK` >= 5 ends the cycle, exactly
-    // as a real 5k would. Returns false on a full/invalid entry.
-    bool limbus_add_chip(int area, const char* quad, int amtK);   // quad = "SW" / "NE" / ... (Temenos : "N"/"W"/"E"/"C")
-    void limbus_clear_chips(int area) { LimbusCoffers& l = lc_[(area == 1) ? 1 : 0]; for (int i = 0; i < 4; ++i) l.slotK[i] = 0; l.bigAmt = 0; l.bigAt[0] = 0; lc_save(); }
     void lc_save() const;                           // persist the Limbus coffer chips (own file : must outlive the zone cache)
     void lc_load();                                 // restore them (any zone, any time -- no zone match required)
 
@@ -710,7 +705,6 @@ struct PartyState {
     // the SPELL that last granted each status ON YOU (set by on_action when a buff you cast hits self) -> lets
     // the self buff-timer rows show the spell name/tier (e.g. "Valor Minuet V") instead of the bare status ("Minuet").
     unsigned short selfBuffSpell_[1024] = { 0 };
-    unsigned short self_buff_spell(unsigned status) const { return status < 1024 ? selfBuffSpell_[status] : 0; }
     // ring of your recent self-cast buffs (status+spell+tick) -> lets two same-status buffs (Minuet V + IV) be told
     // apart : the self buff-timer that expires LATEST is the most-recent cast. Matched by expiry rank in self_buff_spell_ranked.
     // One recorded cast that landed a status ON US -- from ANY caster, not just ourselves. `predExp` is the expiry we

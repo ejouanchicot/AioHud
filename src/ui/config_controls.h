@@ -17,7 +17,6 @@
 namespace aio {
 
 // ---- graphite BASE palette (const : one copy per translation unit, never written) ----
-const u32 C_DIMBG    = 0xCC05080A;
 // ---- ELEVATION. Four surfaces, and each one is a REAL step above the last. ---------------------------------
 // Measured before this existed: page -> content 1.09:1, content -> card 1.12:1, card -> control 1.05:1. The
 // whole interface lived inside EIGHT levels of luma, so nothing separated from anything, and the shadows that
@@ -36,14 +35,11 @@ const u32 C_TABOFF_T = 0xC0272F38, C_TABOFF_B = 0xC01B222A;
 // was the one thing on the page that answered to nothing. Same graphite, lifted -- onto the hover step of the
 // elevation ramp above, so a hovered tab and a hovered chip are lifted by the same amount.
 const u32 C_TABHOV_T = 0xD03B4753, C_TABHOV_B = 0xD02B353F;
-const u32 C_CONTENT_T= 0xD20F161D, C_CONTENT_B= 0xD2090E13;   // slightly translucent -> the dimmed game screen shows faintly behind the controls ; DEEPER than before, to leave room above it for the card and control steps
 const u32 C_SIDEBAR  = 0xF0171C22;
 const u32 C_BORDER   = 0x2EFFFFFF, C_BORDERHI = 0x58FFFFFF;
 const u32 C_TEXT     = 0xFFE7ECF0, C_DIM = 0xFF97A2AC, C_MUTE = 0xFF8A94A0;   // C_MUTE lifted a notch : on the (now lighter) card it measured 3.9:1, under the 4.5 AA floor. 4.6:1 now.
 const u32 C_STROKE   = 0xFF000000, C_CLOSEHOV = 0xFFE0555F;
 const u32 C_ONACC    = 0xFF08110E;   // dark text drawn ON a bright accent fill (chips / Save)
-// preview gauges (party brief : HP green / MP blue / TP magenta) -- semantic, not themed
-const u32 C_HP = 0xFF5ADC5A, C_HP_D = 0xFF148C2D, C_MP = 0xFF9597FF, C_MP_D = 0xFF3A3CE0, C_TP = 0xFFCD6EFF, C_TP_D = 0xFF5A0FBE;
 const float PI_ = 3.14159265f;
 const int   NUANCE_ROWS = 3;   // lightness rows per hue (light tint / base / deep shade)
 
@@ -263,10 +259,6 @@ bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 // up wearing one borrowed colour around thirty-nine different ones.
 u32  ctl_edge_tint(u32 fill, u32 from = 0);
 void ctl_edge(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill = 0xFF101418, u32 from = 0);
-// Same edging for a surface that WELDS to what is under it -- an OPEN section bar and its card, a tab and the
-// body. Rounded on top, square at the feet, and no rim across the join: an edge drawn through a weld is a
-// seam, and the whole point of the shape is that there is not one.
-void ctl_edge_top(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill = 0xFF101418, u32 from = 0);
 // The lamp : two ramps of light running down into the surface, a wide faint haze, and a filament that
 // dissolves at both ends (gfx/draw.cpp hbar_soft -- one cosine window, so nothing ends before anything else). `k` is the only dial ; the ALLOY is the caller's: steel says "under the
 // pointer", gold says "chosen".

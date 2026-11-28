@@ -961,13 +961,4 @@ void zonetracker_help_measure(const Frame& f, int variant, float& outW, float& o
     zonetracker_draw(f, true, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, zonetracker_help_weapons(f.dev), true, &outW, &outH, variant);
 }
 
-// Help scale-to-fit for one variant : measure at scale 1 (linear in S), pick the largest scale that fits availW.
-void zonetracker_help_fit(const Frame& f, float availW, float maxScale, int variant, float& outScale, float& outH) {
-    float bw = 0.0f, bh = 0.0f;
-    zonetracker_draw(f, true, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, zonetracker_help_weapons(f.dev), true, &bw, &bh, variant);
-    float s = (bw > 1.0f) ? (availW / bw) : maxScale;
-    if (s > maxScale) s = maxScale; if (s < 0.6f) s = 0.6f;
-    outScale = s; outH = bh * s;
-}
-
 } // namespace aio

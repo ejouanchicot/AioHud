@@ -108,10 +108,12 @@ early-out (`count == 0` -> skip the bag's 80 slots).
 static snapshot; `count_item(id)` / `count_items(ids,n,out)` / `item_slot()` /
 `item_bag_info()` then answer from that snapshot with no further game-memory reads. This is deliberate
 (rule 5/6): a `safe_read` per slot would be ~1440 SEH-guarded reads per poll. A poller must call
-`refresh_items()` once per cycle; a bad pointer degrades to a no-op and every count reads 0.
+`refresh_items()` once per cycle; a bad pointer degrades to a no-op (`refresh_items()` returns `false`, the
+snapshot is marked not-ok and `item_slot()` / `item_bag_info()` return `false`) and every count reads 0. A
+one-shot caller with no snapshot yet gets one taken automatically by `count_item()`.
 Offsets live only in `game_mem.cpp` (rule 7).
 
-## Probe (kept in-tree, off by default)
+## Probe (dev only — untracked `aiohud_probes.cpp`, never in a release)
 `//aio inv` — dumps every bag (max / count / enabled / scanned, flagging any scan-vs-`count`
 mismatch), every owned id+count, and the two falsification checks (ids that fail `item_name()`,
 counts outside 1..99). `//aio inv <id>` totals one id across all bags.

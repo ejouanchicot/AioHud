@@ -211,20 +211,5 @@ void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float
 // The Help sample used to keep its OWN copy of the buff-icon atlas, with its own forget/dispose pair wired
 // into Hud::render's dev-change block. It now borrows the shared one (buff_atlas.cpp), forgotten and released
 // once from those same two blocks -- so this file no longer owns a texture at all.
-static u32 debuffs_help_atlas(u32 dev) { return buff_atlas_tex(dev); }
-
-// Help sample : the REAL Debuffs box in preview mode (config-aware), centred at (cx,cy) at scale s.
-void debuffs_help_box(const Frame& f, float cx, float cy, float s) {
-    debuffs_draw(f, true, cx, cy, s, 0.0f, 0.0f, debuffs_help_atlas(f.dev));
-}
-
-// Help scale-to-fit : measure at scale 1 (linear in S), pick the largest scale that fits availW (capped at maxScale).
-void debuffs_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH) {
-    float bw = 0.0f, bh = 0.0f;
-    debuffs_draw(f, true, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, debuffs_help_atlas(f.dev), true, &bw, &bh);
-    float s = (bw > 1.0f) ? (availW / bw) : maxScale;
-    if (s > maxScale) s = maxScale; if (s < 0.6f) s = 0.6f;
-    outScale = s; outH = bh * s;
-}
 
 } // namespace aio

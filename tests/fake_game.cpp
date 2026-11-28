@@ -17,10 +17,11 @@ using namespace aio;
 // ---- the world ------------------------------------------------------------------------------------------------
 namespace {
 
-// The FFXiMain clock the model reads (party_state.cpp : CLK_PTR_RVA / CLK_SEC_OFF / CLK_OFF_RVA). These three numbers
-// are a COPY of the model's, and a copy can drift -- which is why selfcheck() compares the tick the model actually
-// computes with the one this file intends, and fails the suite when they disagree.
-const u32 CLK_PTR_RVA = 0x492E10, CLK_SEC_OFF = 0x0C, CLK_OFF_RVA = 0x4E0AF8;
+// The FFXiMain clock the model reads (party_state.cpp : CLK_PTR_SEED / CLK_SEC_OFF / CLK_OFF_SEED -- the fake image has
+// no code for client_clock_rvas to scan, so the model stays on its seeds). These three numbers are a COPY of the
+// model's, and a copy can drift -- which is why selfcheck() compares the tick the model actually computes with the one
+// this file intends, and fails the suite when they disagree.
+const u32 CLK_PTR_RVA = 0x493FC0, CLK_SEC_OFF = 0x0C, CLK_OFF_RVA = 0x4E1CA8;
 
 struct World {
     // memory, laid out as the game lays it out
@@ -292,6 +293,7 @@ void tape_event_end() {}
 void tape_packet(int, const unsigned char*) {}
 void tape_frame(const void*, unsigned) {}
 void native_region_packet(int, const unsigned char*) {}   // Region Info's packet feed (native_ui.cpp : not in the suite)
+bool client_clock_rvas(u32&, u32&) { return false; }      // native_ui.cpp's code scan : no code in the fake image -> the seeds
 
 u32 data_root()                      { return 0; }
 u32 entity_array()                   { return W ? (u32)(uintptr_t)W->entities : 0; }

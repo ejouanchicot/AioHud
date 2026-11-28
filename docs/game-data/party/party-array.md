@@ -1,7 +1,7 @@
 ---
 title: Party Member Array in Memory
 summary: The Ashita partymember_t array (18 slots) for instant full party at load, plus allianceinfo_t leadership resolution.
-source: REFERENCE.md §9d
+source: the old monolithic REFERENCE.md (section 9d) ; code model/party_state_roster.cpp, model/game_mem.cpp (read_party_leaders)
 ---
 # The party member ARRAY in memory — instant full party at load (the real table)
 
@@ -13,7 +13,7 @@ The packet path only fills members the game *sends*; loading mid-party shows not
 until packets arrive. The fix is to read the game's own **party member array** at load.
 On **retail** this is the documented **Ashita `partymember_t`** (stride **`0x7C`**, **18
 slots**: 0..5 = your party, 6..11 / 12..17 = alliance parties 2 / 3). Verified field-by-
-field in-game (`model/party_state.cpp` `load_from_memory`).
+field in-game (`model/party_state_roster.cpp` `PartyState::load_from_memory`).
 
 **Anchor:** `g = aio::data_root()` (the RVA into LuaCore is **derived at runtime** — a Windower update
 moves it, see [luacore-data-root.md](../luacore-data-root.md)); `pp = *(g+0x248)` (points **4 bytes into**
@@ -22,8 +22,9 @@ member[0]); `member[0] = pp - 4`; `member[i] = member[0] + i*0x7C`. Self-validat
 
 > In code these chains go through the shared accessors in `model/game_mem.{h,cpp}` — **one source
 > of truth** for the offsets: `data_root()` = `g`, `party_ptr()` = `pp`, `entity_array()` = `*(g+0x24)`,
-> plus cached `luacore_base()` / `ffximain_base()`. Don't re-resolve the LuaCore root inline — and never
-> hard-code its RVA: `lc_root_addr()` is the one place that knows it.
+> `player_struct()` = `*(g+0x3C)`, `self_party_base(selfId)` (the id-validated `pp-4`, tolerating a 0/-4 shift),
+> plus the cached `ffximain_base()`. Don't re-resolve the LuaCore root inline — and never
+> hard-code its RVA: `lc_root_addr()` (`model/luacore_root.cpp`) is the one place that knows it.
 
 | member offset | field | notes |
 |---|---|---|
@@ -67,7 +68,7 @@ existing player-dump probe, so the `jlvl` handler now excludes `mjlvl`.)
 | `+0x13`/`+0x14`/`+0x15` | byte party 1/2/3 member count |
 
 A member is *party leader* iff its id == `+0x04`, *alliance leader* iff == `+0x00`.
-Read live each frame (`read_party_leaders`) → the `*`/`^` markers follow the real role
+Read live each frame (`read_party_leaders`, game_mem.cpp → `GameState::allianceLeader / partyLead1..3`) → the `*`/`^` markers follow the real role
 automatically when leadership changes. Quartermaster is the only role that lives in the
 member flag mask (`+0x3C` bit `0x10`), not here.
 

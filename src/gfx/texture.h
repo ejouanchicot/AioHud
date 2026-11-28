@@ -34,10 +34,6 @@ u32 make_bubble(u32 dev);
 u32 load_raw_texture(u32 dev, const char* path, int W, int H);
 u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H);   // + mip chain (crisp when minified)
 
-// load a 32-bpp BMP (the FFXI gearicon format : V4 header, ARGB masks, bottom-up) into a mipped texture.
-// W/H come from the header ; returns 0 on any IO/parse failure (missing icon -> no icon drawn).
-u32 load_bmp_texture(u32 dev, const char* path);
-
 // Gear-icon ROM fallback : decode item `id`'s 32x32 icon straight from the game's ROM DAT files (a port of
 // EquipViewer's icon_extractor) INTO MEMORY -- `out_px` takes 32*32 ARGB DWORDs, top-down, ready for
 // make_texture_argb_mip. Lets ANY item resolve even when it isn't in the bundled assets/gearicons/ seed
@@ -66,7 +62,7 @@ bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
 // the DECODED first n bytes (n <= 0x2BD) of id's item record, same DAT / proofs as the icon ; parse with item_text.h
 bool read_item_record_head(unsigned id, unsigned char* out, long n);
 
-// Best-effort cache of a decoded icon as the same V4 BMP load_bmp_texture reads. Atomic (temp + rename) and
+// Best-effort cache of a decoded icon as the same V4 BMP read_gear_icon_bmp reads. Atomic (temp + rename) and
 // fully checked, so a failed/partial write can never leave a corrupt BMP behind. Returns false if it couldn't
 // be written -- callers should IGNORE that : the icon is already in hand, only the next-session shortcut is lost.
 bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err = 0);

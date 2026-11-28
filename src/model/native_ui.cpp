@@ -852,16 +852,6 @@ bool mlist_res() {
     } else if (g_mlTries == 1 || g_mlTries % 12 == 0) windower::debug::log("NATIVEUI merit list NOT resolved (try %d : AOB %d)", g_mlTries, !!a);
     return g_mlOk;
 }
-// the levels spent in a category : the P entries {u16 id = 2i, u8 cost, u8 level} whose id >> 6 == cat ; -1 unreadable
-int merit_spent(int cat) {
-    if (!faith_res() || !mlist_res()) return -1;
-    u32 P = 0, lst = 0; short n = 0;
-    if (!safe_read(g_fr.pVar, &P) || !valid_ptr(P) || !rd16(P + g_mlCount, n) || n < 0 || n > 3072 || !safe_read(P + g_mlList, &lst)) return -1;
-    if (n > 0 && !valid_ptr(lst)) return -1;
-    int s = 0;
-    for (int k = 0; k < n; ++k) { u32 e = 0; if (!safe_read(lst + (u32)k * 4, &e)) return -1; if (((e & 0xFFFF) >> 6) == (u32)cat) s += (int)(e >> 24); }
-    return s;
-}
 // the list is there (cheap : its count and pointer, every frame) -- meritinf's born-parked rule
 bool merit_list_ok() {
     if (!faith_res() || !mlist_res()) return false;
@@ -5584,6 +5574,43 @@ void mon_read(NativeProfile& P) {
             }
         }
     }
+}
+// ---- the CLIENT CLOCK (ffxi_now_tick, party_state.cpp) : the client's own "now" is one tiny function
+//   E8 <getter> 03 05 <OFF> C3                 now = sec() + *OFF          (FFXiMain+0x103910 June, +0x103B30 Nov)
+// its getter is a CALL x ; JMP y stub whose target is  A1 <PTR> 8B 40 0C C3   sec = (*PTR)->+0x0C
+// and its float twin right after adds the same <OFF> again. The two addresses were COMPILE-TIME constants from the
+// 2026-07-20 client : 0 references to either in the November client (Ghidra 2026-11-28), so for months the timers ran
+// on the PC clock again, silently. Found by this signature instead -- unique in the June AND November dumps, decoding
+// the old constants from June and 0x493FC0 / 0x4E1CA8 from November -- adopted only when the stub and the getter have
+// their exact shape and both <OFF> operands agree. Bounded retry (every 5 s), logged at the first try and every minute.
+static u32 g_clkPtrRva = 0, g_clkOffRva = 0; static bool g_clkOk = false; static int g_clkTries = 0; static DWORD g_clkNext = 0;
+bool client_clock_rvas(u32& ptrRva, u32& offRva) {
+    if (!g_clkOk) {
+        const DWORD now = GetTickCount();
+        if (g_clkTries && (int)(now - g_clkNext) < 0) return false;
+        ++g_clkTries; g_clkNext = now + 5000;
+        const u32 a = aob_masked("E8 ?? ?? ?? ?? 03 05 ?? ?? ?? ?? C3 90 90 90 90 83 EC 08 E8 ?? ?? ?? ?? 89 44 24 00 C7 44 24 04 00 00 00 00 "
+                                 "DF 6C 24 00 D8 0D ?? ?? ?? ?? D8 05 ?? ?? ?? ?? E8 ?? ?? ?? ?? 03 05 ?? ?? ?? ?? 83 C4 08 C3");
+        const u32 base = ffximain_base();
+        u32 off1 = 0, off2 = 0, rel1 = 0, rel2 = 0, ptr = 0; unsigned char s0 = 0, s5 = 0, g[9] = { 0 }; bool gOk = true;
+        if (a && base && safe_read(a + 7, &off1) && safe_read(a + 0x3B, &off2) && off1 == off2 && off1 > base && safe_read(a + 1, &rel1)) {
+            const u32 t1 = a + 5 + rel1;                                    // the getter stub : CALL x ; JMP y
+            if (rd8(t1, s0) && s0 == 0xE8 && rd8(t1 + 5, s5) && s5 == 0xE9 && safe_read(t1 + 6, &rel2)) {
+                const u32 t2 = t1 + 10 + rel2;                              // mov eax,[PTR] ; mov eax,[eax+0C] ; ret
+                for (int i = 0; i < 9 && gOk; ++i) gOk = rd8(t2 + (u32)i, g[i]);
+                if (gOk && g[0] == 0xA1 && g[5] == 0x8B && g[6] == 0x40 && g[7] == 0x0C && g[8] == 0xC3) {
+                    memcpy(&ptr, g + 1, 4);
+                    if (ptr > base) { g_clkPtrRva = ptr - base; g_clkOffRva = off1 - base; g_clkOk = true; }
+                }
+            }
+        }
+        if (g_clkOk)
+            windower::debug::log("CLOCK client clock resolved (try %d) : clock ptr FFXiMain+%X, server offset FFXiMain+%X", g_clkTries, g_clkPtrRva, g_clkOffRva);
+        else if (g_clkTries == 1 || g_clkTries % 12 == 0)
+            windower::debug::log("CLOCK client clock NOT resolved (try %d : fn %d off 0x%X/0x%X) -- the built-in seeds stay in use", g_clkTries, !!a, off1, off2);
+        if (!g_clkOk) return false;
+    }
+    ptrRva = g_clkPtrRva; offRva = g_clkOffRva; return true;
 }
 // ---- ENCUMBRANCE : the u32 the client's 0x01B handler (FUN_05430A80) stores from packet +0x60, in the same player
 // object as the mentor byte (Ghidra 2026-11-28, docs/game-data/player/encumbrance-flags.md). The handler's own bytes :

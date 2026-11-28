@@ -85,7 +85,6 @@ public:
     LiquidBars* bars()  { return bars_; }   // the HP/MP/TP fioles (may be null before layout)
     // switch the FFXI window skin (0-based index into window_theme_name) ; reloaded next frame.
     void set_skin(int idx);
-    int  skin_index() const { return skinIdx_; }
     ConfigPage& config() { return config_; }   // the //aio config overlay
     void set_peek(bool on) { peekHide_ = on; }  // hold-End "peek" : hide the ENTIRE HUD while held, restore on release
     float screenW() const { return screenW_; }   // resolution detected at RENDER time (reliable)

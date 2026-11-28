@@ -121,12 +121,13 @@ whether the measurement matches the table.
 ## Textures & widget
 `assets/grimoire_light.raw` + `grimoire_dark.raw` = the addon's `Grimoire-*-HD.png`
 downscaled to **512×342 BGRA** (`scripts/gen_grimoire.py`), loaded via
-`load_raw_texture(dev, path, 512, 342)`. `Hud::draw_grimoire` draws the book quad +
+`load_raw_texture(dev, path, 512, 342)`. `Hud::draw_grimoire` (`ui/hud_grimoire.cpp`) draws the book quad +
 a pulsing Addendum aura (additive `rrect_glow`, gold `#FFD766` light / purple
 `#B98CFF` dark, 2.8 s breathe) + two pastille number tokens (charge @17%/78%, timer
 @81%/78%). Center-anchored (`grimX` centre, `grimY` top), `EDITBOX_GRIMOIRE`.
-Config module "Grimoire (SCH)" (`grim_config.cpp`): Display (Show / Size / Preview
-art) + per-element Text (Charge / Timer). Lines `grim=` / `grimText%d=`.
+Config module "Grimoire (SCH)" (`grim_config.cpp`): Display (Show / Size / Preview image,
+config only: Light Arts / Dark Arts / Addendum: White / Addendum: Black) + per-element Text (Charge / Timer).
+Lines `grim=show,scale,x,y,art` / `grimText…`.
 
 ## See also
 - [PointWatch](../player/pointwatch.md) — shares `read_job_spent` (job_point_info +0x04 = spent JP).

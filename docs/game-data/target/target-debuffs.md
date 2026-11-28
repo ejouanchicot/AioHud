@@ -1,7 +1,7 @@
 ---
 title: Target debuffs — detection, wear-off, and mob-behaviour inference
 summary: How the Target module tracks debuffs ON a mob from the 0x028/0x029 packets by SPELL id, learns wear-offs, and infers sleep/crowd-control removal from the mob's own broadcast actions.
-source: split from cast-bar.md (REFERENCE.md §9f)
+source: split from cast-bar.md (the old REFERENCE.md, section 9f)
 ---
 # Target debuffs — detection, wear-off, and mob-behaviour inference
 
@@ -46,7 +46,7 @@ Unlike the caster-level fields, a cat-4 spell **finish carries a usable per-targ
 `@ bit 44` of each action block (10b), its param `@ bit 27` (17b). **The message is the verdict** — the spell
 table only says which status a cast *can* land, never whether it did.
 
-The **failure family** — all eight mean *nothing was applied*, so `on_action` `continue`s without recording or
+The **failure family** — every id below means *nothing was applied*, so `on_action` `continue`s without recording or
 refreshing:
 
 | ids | text |
@@ -55,6 +55,13 @@ refreshing:
 | **85 / 284** | **`<target> resists the spell.`** / `<target> resists the effects of the spell!` |
 | 653 / 654 | `<target> resists the spell.` + `Immunobreak!` |
 | 655 / 656 | `<target> completely resists the spell.` |
+| 31 | absorbed by a shadow (added from a live capture: recorded as a land when nothing had landed) |
+| 84 | the caster is paralyzed — nothing was cast (same capture) |
+
+The set lives in `model/debuff_rules.h` (`debuff_no_land_msg`, pinned by the test suite) — ten ids now, not
+eight. Deliberately NOT in it: **7** ("recovers N HP", a Dia healing a light-absorbing mob) — whether the
+status still applies there was never observed. An always-on probe at the call site reports any message in
+NEITHER land set, so the list grows from observation.
 
 > **This is the bug that shipped.** The gate was written against **75 alone**, so a **resisted Distract** and an
 > **Elegy on an earth elemental** (msg **85**) were recorded as if they had landed. 75 also covers "the target
@@ -63,7 +70,8 @@ refreshing:
 
 **Landing** messages, by what `param` then means — `2 / 252 / 264 / 265` = damage (`param` = DAMAGE, so a rider
 like Dia/Bio/Burn is invisible and the table's status is all we have), and `82 / 236 / 237 / 268 / 271` (+ the
-no-actor echo forms an AoE uses for targets 2..N) = `param` is THE STATUS ID.
+no-actor echo forms an AoE uses for targets 2..N: `203 205 230 266 267 269 270 272 277 278 279 280`) = `param`
+is THE STATUS ID (`is_damage_land_msg` / `is_status_land_msg`, party_state.cpp).
 
 Those two land sets are **diagnostic only** — they log once per `(spell, msg)` and record anyway. Turning them
 into a whitelist is the fail-closed shape this code wants, but neither is measured: the echo ids are inferred
@@ -76,7 +84,7 @@ from message *text*, and `param == table status` is not safe either, because `re
 (The *caster-level* `0x028` message reads `0`, which is why detection is driven by the spell-id table, not a
 message — but the *per-target* result blocks do carry one.)
 
-## The `tdebuffs_[DEBUFF_SLOTS]` slot table — `DEBUFF_SLOTS = 32` (raised from 8)
+## The `tdebuffs_[DEBUFF_SLOTS]` slot table — `DEBUFF_SLOTS = 64` (8 → 32 → 64)
 
 One `DebuffSet` per live mob id, keyed by the **unique server id**. On overflow, `record_debuff` /
 `record_th` evict the **OLDEST set by `DebuffSet.touchMs`** (last time the set was updated), never an
@@ -84,7 +92,10 @@ actively-updated target.
 
 **Why it was raised from 8 → 32:** at 8 slots, an AoE / `-ga` / Horde song debuffing a whole same-name pack
 filled all 8, and extra mobs collapsed into slot 0 — so two mobs SHARED it and each recast wiped the other.
-That was the "only one mob keeps its debuff box" / ping-pong depop bug. `struct DebuffSet` still holds up to
+That was the "only one mob keeps its debuff box" / ping-pong depop bug. **32 → 64** after 32 saturated in
+Limbus (`CAP.SATURATED`, 2026-11-10/11, Temenos and Apollyon: AoE debuffs dozens of mobs within ten minutes).
+The table is emptied on zone-out (`targets_clear`), and a tracked mob seen dead in the hate list drops its set
+(`clear_debuffs`). `struct DebuffSet` still holds up to
 **16 status entries** per mob (`ids[16]`), plus `th` (Treasure Hunter level) and `lastHpp` (death / recycled-id
 detection).
 
@@ -143,7 +154,8 @@ caster's debuffs): **a DoT and a sleep cannot coexist on a mob.**
 that wore off, and **`target @ 0x08` (u32) = the mob's server id** — a REAL id (`0x011060F3`), unlike the
 garbage `0x028` target id @152. Captured cleanly on a Stun (msg=204, param=10, target=011060F3).
 `PartyState::on_029()` removes that exact status from `tdebuffs_[target]` (inverse of `record_debuff`),
-dispatched from `feed_packet` beside 0x028/0x076 — the icon drops the instant the debuff wears. It ALSO
+dispatched from `model_feed_packet` (party_state.cpp) beside 0x028/0x076 — the same 0x029 also goes to
+`on_exp_msg` (PointWatch) — the icon drops the instant the debuff wears. It ALSO
 **LEARNS the real duration**: `life = now − startMs` is stored into `learnedMs_[status]` (keeping the longest,
 so the unresisted full duration wins) to sharpen future countdowns; the per-cast base (`debuff_base_ms`) stays
 only as a fallback if a wear-off message is missed (out of range).

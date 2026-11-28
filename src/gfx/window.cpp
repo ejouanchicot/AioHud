@@ -45,7 +45,6 @@ static const int TEX_N = (int)(sizeof(THEMES) / sizeof(THEMES[0]));
 // renders ANY hue in its own look (base tint + decoration + border/relief). Always DARK -> the party
 // text (light + outlined) stays readable. kind = decoration (0 flat,1 vignette,2 top-bar,3 sheen,
 // 4 glow-border,5 left-bar) ; bstyle = border (0 flat,1 relief,2 engraved,3 double,4 glossy). ----
-struct ProcTheme { u32 top, bot, border, accent; int kind; int bstyle; };
 
 static const char* BOX_FAMILIES[] = { "FFXI", "Modern", "Medieval", "Heroic", "Neon", "Frost", "Royal" };
 static const int BOX_FAM_N  = (int)(sizeof(BOX_FAMILIES) / sizeof(BOX_FAMILIES[0]));

@@ -118,14 +118,14 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 
 ## Asset tools (`.ps1` / `.sh`)
 
-These bake binaries the plugin loads at runtime, from sources kept in `assets/*_src/` (`research/art_src/` only for the retired `gen_flow.ps1`).
+These bake binaries the plugin loads at runtime, from sources kept in `assets/*_src/` (`_local/research_2026-06/art_src/`, local only, for the retired `gen_flow.ps1`).
 
 | Script | Reads | Produces | Needs |
 |---|---|---|---|
 | `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (9 themes × 4 ; retired skins live in `assets/window_src/_retired/`, outside the loop) | python + ImageMagick |
 | `conv_caps.ps1` | `assets/caps_src/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
 | `gen_buff_atlas.ps1` · `gen_gil_icon.ps1` · `gen_th_icon.ps1` · `patch_buff_icon.ps1` | icon sources | `assets/*.raw` | — |
-| `gen_flow.ps1` *(script retire du depot)* | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
+| `gen_flow.ps1` *(script retire du depot)* | *(32 `Flow0_*.png`, **not in this repo**)* | `_local/research_2026-06/art_src/FlowX_00..95.png` (local only) | — |
 
 `gen_flow.ps1` is a **historical** art tool: nothing loads its frames today (the fiole liquid is drawn
 procedurally), and its 32 input frames lived in an old Windower addon folder that no longer exists. It is kept

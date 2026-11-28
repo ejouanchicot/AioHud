@@ -12,7 +12,7 @@ source: LuaCore get_info (FUN_10070120) + FFXIDB.dll marker/transform/map-DAT de
 Phase-0 research to place the player dot on a zone map. Reversed from LuaCore get_info (zone id), the
 FFXIDB minimap plugin (plugins/FFXIDB.dll, imported in the Ghidra project - it reads the CLIENT own
 map subsystem), and FFXiMain.dll (the map-info table static). Every read is SEH-guarded off
-g = aio::data_root(), the usual data root (its LuaCore RVA is derived at runtime — luacore-data-root.md).
+g = aio::data_root(), the usual data root (its LuaCore RVA is derived at runtime — [luacore-data-root.md](../luacore-data-root.md)).
 
 Confidence tags: [decomp] read straight from a decompiled binding; [decomp-ffxidb] read from FFXIDB
 use of the client structs (cross-checked against our known offsets); [inferred] derived / needs a
@@ -288,8 +288,8 @@ SAME entity field:
 
     heading = float @ entity+0x18      // radians
 
-Reach the self entity as read_self_speed does: pp=*(g+0x248), base=pp-4, self entity index at
-base+0x20, entity = entity_array[idx] (entity_array = *(g+0x24)), then +0x18. Draw the arrow rotated
+Reach the self entity as `self_entity()` does (`game_mem.cpp`, shared by read_self_speed): pp=*(g+0x248),
+base=pp-4 (id-validated by `self_party_base`, tolerating base=pp), self entity index at base+0x20, entity = entity_array[idx] (entity_array = *(g+0x24)), then +0x18. Draw the arrow rotated
 by this angle. CONFIRMED 2026-09-30 in game : heading 0 = east, clockwise seen from above, so the compass bearing
 you face = heading + 90 deg (north = 0). Measured twice : straight runs whose displacement bearing matched
 heading + 90 within 5 deg (N, S and a WSW diagonal, so neither axis is mirrored), and the dev-only `//aio facing`
@@ -305,14 +305,17 @@ character; confirm it sweeps 0..2*pi and note which world direction is 0.
 ---
 ## 6. Config options (the Minimap panel)   [implemented]
 
-The minimap has a settings panel (`//aio config` → "Minimap" / "Minicarte", `src/ui/minimap_config.cpp`),
-split into three sub-sections. It writes the `mm*` fields of `UiConfig` (`src/model/ui_config.h`); the
-`Minimap` widget (`src/ui/minimap.cpp`) reads them each frame. What is user-configurable:
+The minimap has a settings panel (`//aio config` → "Minimap" / "Minicarte", `src/ui/minimap_config.cpp` :
+`draw_minimap_v2` = the redesigned page, `draw_minimap_config` = the old one). The old page has four
+sub-sections — Display, Shape & Frame, Clock, Markers. It writes the `mm*` fields of `UiConfig`
+(`src/model/ui_config.h`, clamped in `config_rules.h`); the `Minimap` widget (`src/ui/minimap.cpp`) reads them
+each frame. The main user-configurable fields:
 
 - **Display**
   - **Show minimap** (`mmShow`) — on/off.
-  - **Size** (`mmScale`, 0.50..2.00, 5% steps) — the size multiplier on the 220px square footprint;
-    also wheel-resizable in edit mode.
+  - **Size** (`mmScale`, 0.50..2.00, 5% steps) — the box size multiplier; also wheel-resizable in edit mode.
+  - **Map size** (`mmMapSize`, 0.50..1.60) — the map diameter, `220px * mmScale * mmMapSize`, independent
+    of the box.
   - **Zoom** (`mmZoom`, 1.0x..24.0x) — player-centred zoom (1x = the whole 512px map fits, higher =
     zoomed in). Also mouse-wheel adjustable when the cursor is over the map outside edit mode
     (exponential, `powf(1.18, wheel)`).
@@ -325,10 +328,16 @@ split into three sub-sections. It writes the `mm*` fields of `UiConfig` (`src/mo
   - **Frame** (`mmFrame`) — **None** (0) / **Box Theme** (1, follows the party/alliance `skinTheme` via
     procedural hue or the FFXI skin border) / **Custom** (2). Round frame is an additive halo ring
     (`disc_glow`, blend reset after per rule 3); square frame is `rrect_stroke`.
-  - **Colour** (`mmFrameColor`, only shown when Frame = Custom) — a swatch + R/G/B sliders (channels at
+  - **Colour** (`mmFrameColor`, only shown when Frame = Custom) — a colour picker (channels at
     shifts 16/8/0, alpha forced opaque).
+  - Round: **Bezel ring** (`mmBezel`) + **Bezel width** / **Cardinal size** (`mmBezelW` / `mmCardSz`);
+    square + Custom frame: **Border width** (`mmSqBorder`).
+- **Clock** — **Layout** (`mmLayout`, 2 = the Dial), **Day dial** (`mmDayDial`), clock header / position
+  (`mmClock`, `mmClockPos` / `mmClkBand`), elemental day / moon phase / weather (`mmClkDay`, `mmClkMoon`,
+  `mmWxShow`).
 - **Markers**
-  - **Marker Size** (`mmMarkerScale`, 0.50..2.00) — entity/player marker size multiplier.
+  - **Marker style** (`mmMarkStyle`) and **Marker Size** (`mmMarkerScale`, 0.50..2.00) — entity/player
+    marker style and size multiplier.
   - **Players (PC)** (`mmPC`), **NPCs** (`mmNPC`), **Monsters** (`mmMob`) — per-entity-type visibility
     toggles. Marker colours follow the Target box name-colour convention (mm_ent_color: NPC green, mob
     unclaimed gold / your-or-party claim or engaged red / other-claim magenta, PC party cyan / other-party
@@ -378,8 +387,9 @@ were fine.
 
 ## See also
 - [Config panels](../../architecture/config-panels.md) — the Minimap settings page (`minimap_config.cpp`).
-- Local player struct (player-struct.md) . Party array (party-array.md) - the g chains reused here.
-- Target & sub-target struct (target-substruct.md) - the same target_t FFXIDB reaches at the client
+- [Local player struct](../player/player-struct.md) . [Party array](../party/party-array.md) - the g chains reused here.
+- [Target & sub-target struct](../target/target-substruct.md) - the same target_t FFXIDB reaches at the client
   map object +0x30 (0x04000000 = nothing; entity ptr at +0x08).
-- Gear icons (gear-icons.md) - the ROM-DAT / bundle pattern recommended for the map images.
-- Reverse-engineering recipe (../reverse-engineering/recipe.md).
+- [Gear icons](../player/gear-icons.md) - the ROM-DAT / bundle pattern recommended for the map images.
+- [LuaCore data root](../luacore-data-root.md) - how `g` is derived at runtime.
+- [Reverse-engineering recipe](../../reverse-engineering/recipe.md).

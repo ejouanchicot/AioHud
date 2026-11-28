@@ -1,7 +1,7 @@
 ---
 title: Gear Icons — the Equipment Viewer's Item Icons
 summary: How the equipment viewer gets a 32x32 icon per item id — a bundled BMP seed, else a live decode from the game's ROM DAT files, else the raw id as text.
-source: Windower addons/equipviewer (2021, unchanged) + AioHUD gfx load_bmp_texture
+source: Windower addons/equipviewer (2021, unchanged) + AioHUD gfx read_gear_icon_bmp
 ---
 # Gear icons — the equipment viewer's item icons
 
@@ -14,15 +14,19 @@ live from the game's ROM DAT files; AioHUD bundles the pre-extracted result. Bot
 Three tiers, in order, per equip slot (`src/ui/player.cpp`):
 
 1. **Bundled BMP** — 1323 pre-extracted gearicons under `assets/gearicons/` (32x32 BITMAPV4,
-   straight BGRA), named `<item_id>.bmp`, loaded via `gfx load_bmp_texture` (`src/gfx/texture.cpp`):
+   straight BGRA), named `<item_id>.bmp`, read by `read_gear_icon_bmp` (`src/gfx/texture.cpp`, its own share mask) and turned into a mip texture:
    BITMAPV4 parse + vertical flip (BMP is bottom-up), file BGRA maps straight onto `A8R8G8B8`.
 2. **Live ROM-DAT decode** — `decode_gear_icon_from_rom()` (the port described below), so any item
    resolves without a pre-populated bundle.
 3. **Item-id text** (one font pass) — only when the icon is genuinely unreachable.
 
-**Cached per equip slot** (`gearTex_[16]` / `gearId_[16]`); a slot's texture is only (re)loaded when
-its equipped item id changes, and at most 2 ROM decodes run per frame (the decode is synchronous file
-IO + a mip-chain build, on the render thread).
+**Per equip slot** (`gearTex_[16]` / `gearId_[16]`, with a retry count `gearTry_` and a back-off
+`gearNextMs_` for a transient ROM failure, rule 10); a slot only looks again when its equipped item id
+changes or it still has no texture, and at most 2 ROM decodes run per frame (`MAX_GEAR_DECODES`; the decode is
+synchronous file IO + a mip-chain build, on the render thread). Behind the slots, a **64-entry LRU texture
+cache keyed by item id** (`gearCache_[GEARCACHE_N]`, `ui/player.h`): a swap-heavy job used to rebuild the
+same textures over and over, and any rebuild deferred by the 2-decode budget or refused by CreateTexture
+showed the raw item id meanwhile — re-equipping a piece already seen this session now costs nothing.
 
 > **The bundle is one player's history, not a curated set.** `assets/gearicons/` is the dev's own
 > EquipViewer cache, so its coverage mirrors a single player's jobs and gear. On the dev's machine
@@ -43,8 +47,9 @@ both the re-decode and the give-up. The load path no longer keys on existence, s
 
 `//aio geartrace` logs the whole per-slot chain (bundled hit/miss, id-range -> DAT, registry -> ROM dir,
 decode, texture, cache write) to `aiohud_debug.log`. Deliberately **not** behind `AIOHUD_PROBES`, so a
-tester's release build can produce the capture — every other `//aio` probe lives in the untracked
-`aiohud_probes.cpp` and is therefore absent from a release ([release checklist](../../architecture/release-checklist.md)).
+tester's release build can produce the capture. It is one of the SHIPPED diagnostic commands (the list is
+generated from `src/plugin/aio_verbs.h`); the probes in the untracked `aiohud_probes.cpp` are absent from a
+release ([release checklist](../../architecture/release-checklist.md)).
 
 **Verified by reproducing the tester's conditions** (2026-07-19), with an `icacls` deny on the gearicons
 folder: the trace read `DECODE OK / TEX OK / CACHE FAILED errno=13 EACCES / RESULT ICON DRAWN` — the icon
@@ -160,4 +165,4 @@ bundle is exactly this decoder's cache, pre-run.
 - [Player Equipment Viewer](../../design/player-equipment-viewer.md) — the 4x4 grid UI these icons fill (placement, config, edit).
 - [Encumbrance flags](encumbrance-flags.md) — the red cross overlaid on locked slots.
 - [Release checklist](../../architecture/release-checklist.md) — why `//aio geartrace` ships and the other probes don't, and the `deploy.bat` re-seed trap.
-- [The in-game updater and file locks](../../architecture/updater-and-file-locks.md) — the share mask `load_bmp_texture` uses for these BMPs.
+- [The in-game updater and file locks](../../architecture/updater-and-file-locks.md) — the share mask `read_gear_icon_bmp` uses for these BMPs.

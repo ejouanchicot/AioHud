@@ -10,7 +10,7 @@ source: docs/game-data/zone-tracker.md (Limbus sections, split out 2026-07-19) +
 > Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
 
 Zone Tracker **mode 6**, entered by zone id: **38 = Apollyon**, **37 = Temenos**
-(`zt_set_zone`, `party_state_zonetracker.cpp:327`). Two channels feed it and nothing is read
+(`zt_set_zone`, `party_state_zonetracker.cpp`). Two channels feed it and nothing is read
 from memory except the entity name of an award's source:
 
 - **0x075** — the generic battlefield timer/bars packet → area, level, floor, gauge.
@@ -24,7 +24,7 @@ from memory except the entity name of an award's source:
 ## 0x075 — area, level, floor, gauge
 
 Bar *n* sits at `+0x28 + n*0x14` of the packet, `{ s32 progress ; char label[16] }`, **six** of them
-(Windower's `fields.lua` documents five). `on_limbus_075` (`party_state_zonetracker.cpp:399`) matches
+(Windower's `fields.lua` documents five). `on_limbus_075` (`party_state_zonetracker.cpp`) matches
 bars **by label content, never by index** — 0x075 is multiplexed (other senders put position floats
 there), so a bar whose label matches nothing touches no field.
 
@@ -35,9 +35,9 @@ there), so a bar whose label matches nothing touches no field.
 | `<Side>_Tower_F<N>` — `North_Tower_F1`, `West_Tower_F3` | Temenos | same |
 | `Uniq_Data0` | both | **nothing** — it tracks NMs, not data collection |
 
-**Temenos had no gauge because the parser only looked for `Floor`** (`:426`). The `_Lv` bar still
+**Temenos had no gauge because the parser only looked for `Floor`**. The `_Lv` bar still
 matched, so the wing name showed while `limbusProgress` stayed -1 — exactly the reported *"Temenos
-shows the name but never a progress bar"*. Both keywords are matched now (`:430-432`).
+shows the name but never a progress bar"*. Both keywords are matched now.
 
 Temenos' `bar0` (`Temenos_Lv135`) carries `progress = -1` on **every** packet of a full run: it is a
 difficulty **label carrier**, not a gauge. The gauge is `bar1`. Same shape as Apollyon, where the
@@ -51,7 +51,7 @@ bar3..5 progress=7FFFFFFF  label=""                  <- unfilled
 ```
 
 `progress` is a **percentage 0..100** signed int (the client renderer multiplies by `0.01f`);
-sentinels (`-1`, `0x7FFFFFFF`) mean the gauge is inactive → stored as -1, nothing drawn (`:440`).
+sentinels (`-1`, `0x7FFFFFFF`) mean the gauge is inactive → stored as -1, nothing drawn.
 It fills and resets several times within one floor, and **what it counts cannot be answered from
 the binary** — the server computes it. See [zone-tracker](zone-tracker.md) for the memory mirror at
 `FFXiMain+0x480800` and the proof that the client holds nothing beyond it.
@@ -72,42 +72,44 @@ Message ids are zone-relative and drift across patches, so they are matched mask
 ### The award id keys on the WING — settled 2026-07-19
 
 Apollyon **7247** / Temenos **7239**, proven because **Apollyon-coffer == Apollyon-point-of-interest
-== 7247** while Temenos-point-of-interest == 7239 (`:488-490`). Consequence: **the id can never tell
+== 7247** while Temenos-point-of-interest == 7239. Consequence: **the id can never tell
 a coffer from a point of interest.** Only 7247 was handled before, so an entire Temenos run recorded
-nothing.
+nothing. Those two ids are now only the seeds of a per-wing message **healer** (`lbHeal_[2]`, `MsgHealer`,
+`party_state_zonetracker.cpp`, Apollyon seeded 7248 / Temenos 7240), which re-proves the award id at runtime
+when a patch shifts the table — see the 7248 / 7240 rows above.
 
 ### The source is the target ENTITY, not the id
 
 Bytes **0x18-0x19** of the 0x02A are an entity **INDEX**; **0x1A-0x1B** are the message id. Reading
-all four as one u32 is why the first captures came back `<unresolved>` (`:492-494`). The index is
-resolved by `entity_name_by_index()` (`model/game_mem.cpp:310`) — one indexed read into the entity
+all four as one u32 is why the first captures came back `<unresolved>`. The index is
+resolved by `entity_name_by_index()` (`model/game_mem.cpp`) — one indexed read into the entity
 array, SEH-guarded, no scan:
 
 - a coffer → `"Temenos Coffer #4"`,
 - a point of interest → `"???"`.
 
-The name test accepts `"Coffer"` (EN) and `"Coffre"` (FR), case-insensitively (`:504-507`). A client
+The name test accepts `"Coffer"` (EN) and `"Coffre"` (FR), case-insensitively. A client
 in another language degrades to **"not a coffer"** — a *missed* chip, which is visible — rather than
-a false one, and the miss is logged (`:514`).
+a false one, and the miss is logged.
 
 > **Dead end, verified — do not rebuild on it.** 7069/7070 cannot discriminate: a point of interest
 > grants the Code **only once per week**, so the accompanying item message is absent the rest of the
-> time (`:495-496`).
+> time.
 
 ### Units no longer come from mobs
 
 Since a recent game update, **mobs pay no units at all** — units come only from coffers, points of
-interest and floor key items (`:483-487`). The old *"~40-110 per kill"* note in these docs was stale
+interest and floor key items. The old *"~40-110 per kill"* note in these docs was stale
 and cost real time: it suggested an Odyssey-style per-kill stream and led to reading msg 372's rising
 `p1` as a running total. There is **no frequent update** in Limbus; the displayed total refreshes a
 handful of times per run.
 
-`LIMBUS_COFFER_MIN = 1000` / `LIMBUS_BIG_MIN = 5000` (`:19-20`) still separate a coffer-sized payout
+`LIMBUS_COFFER_MIN = 1000` / `LIMBUS_BIG_MIN = 5000` (top of `party_state_zonetracker.cpp`) still separate a coffer-sized payout
 from a small one, but the chip is now gated on the **entity name** as well, so a large
 point-of-interest award no longer records a false chip.
 
 `limbusRunUnits` is derived as `total - baseline`, **never** by summing `p1`: a duplicated packet
-cannot double-count and a dropped one cannot under-count (`:509-510`).
+cannot double-count and a dropped one cannot under-count.
 
 ### Weekly allowance = award id + 41
 
@@ -115,8 +117,9 @@ Captured 2026-07-19 from the **`Temenos Operator`** entity as 7280, `p1` = the c
 shifted Temenos's whole table by +1 (tape `temenos_20260922_172633` : award 7240 every floor, KI 7070 per
 floor, bulk 7071 at the end, then 7281 `p1=3` right after the final coffer). The constant 7280 went dead
 with it, silently. The allowance is therefore read at `LIMBUS_WEEK_FROM_AWARD` (41) above the wing's
-**healed** award id, so it moves when the healer re-proves the award. Apollyon's 7288 (= 7247 + 41) is
-consistent with that offset but has **never been captured**.
+**healed** award id, so it moves when the healer re-proves the award. Apollyon's **7289** (= 7248 + 41, the
+code's figure since the healer adopted 7248; 7288 = 7247 + 41 before) is consistent with that offset but has
+**never been captured**.
 
 ### Temenos run, 2026-09-22 (tape) — what the packets said
 
@@ -132,7 +135,7 @@ consistent with that offset but has **never been captured**.
 ## Towers, quadrants and the coffer row
 
 A coffer sits on the **last floor of a quadrant**, so the row is four fixed slots
-(`limbus_slot_label`, `party_state.h:227`):
+(`limbus_slot_label`, `party_state.h`):
 
 | area | slots |
 |---|---|
@@ -141,18 +144,18 @@ A coffer sits on the **last floor of a quadrant**, so the row is four fixed slot
 
 Temenos read **N7 W7 E7 C4** before 2026-07-19; that was simply wrong.
 
-**No Temenos coffer was ever recorded**, because `limbus_slot_of` (`party_state.h:236`) matched the
+**No Temenos coffer was ever recorded**, because `limbus_slot_of` (`party_state.h`) matched the
 label exactly against `"N"/"W"/"E"/"C"` while the 0x075 label spells the side out (`North`, `West`).
 Temenos now matches by **prefix** — which accepts `N`, `North` *and* `Northern` without guessing
 which form a patch uses — while Apollyon keeps the exact match (its quads are two letters and share
-initials) (`party_state.h:240-250`).
+initials).
 
 The floor tag is `%.7s #%d`, not `%.3s`: Apollyon's quads are two letters but Temenos spells its
-sides out, which used to render as `"Nor #1"` (`:30-33`).
+sides out, which used to render as `"Nor #1"`.
 
 Dots: dim = not opened, red = 3k, green = 5k. Reopening a quadrant overwrites its slot. A 5k archives
 then clears the other slots (cycle restart) and keeps its own green. **There is no weekly wipe** — the
-row is the last known payout per quadrant and self-corrects (`:539-542`).
+row is the last known payout per quadrant and self-corrects.
 
 Persisted in its **own** per-character file (`limbus_%08X.bin`), not the zone cache — see
 [per-character caches](../../architecture/per-character-caches.md).
@@ -164,7 +167,7 @@ Persisted in its **own** per-character file (`limbus_%08X.bin`), not the zone ca
 
 Owning **none** = no run in progress → counters restart. Owning some = the previous run is live and
 its totals are kept. A KI store that is not reachable yet reads -1 = *unknown* and is treated as
-**keep**, never as zero (`limbus_ki_owned`, `:37-42`).
+**keep**, never as zero (`limbus_ki_owned`, party_state_zonetracker.cpp).
 
 ## Probes
 

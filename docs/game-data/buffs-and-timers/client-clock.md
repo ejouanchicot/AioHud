@@ -96,7 +96,34 @@ affiché quelque part, il vient d'ailleurs et mérite sa propre passe.
 `src/model/party_state.cpp` — `ffxi_now_tick()` ; `src/model/party_state.h` — `ticks_to_sec_ceil()`,
 `FFXI_EXPIRY_PERMANENT`.
 
+**Les deux adresses bougent à chaque patch du client (constaté 2026-11-28).** Elles étaient des constantes
+(`0x492E10` / `0x4E0AF8`, le client de juillet) ; le client de novembre n'y fait **aucune** référence (0 occurrence
+dans `re/ffximain_dump_20261115.bin`, contre 38 et 6 dans le dump de juin) : depuis un patch, les timers étaient
+retombés en silence sur l'horloge du PC. Le portage de chaque référence du dump de juin vers celui de novembre (motif
+autour de l'instruction, adresses masquées ; témoin : le pointeur mentor `0x4DFD98` → `0x4E0F48`, 532 votes sur 532)
+donne **`0x493FC0`** (27 votes sur 27) et **`0x4E1CA8`** (4 sur 4).
+
+Elles sont désormais **retrouvées au chargement** par `client_clock_rvas()` (`model/native_ui.cpp`), depuis la petite
+fonction « maintenant » du client :
+
+```
+E8 <getter> 03 05 <OFF> C3 90 90 90 90  83 EC 08 E8 .. 89 44 24 00 C7 44 24 04 00 00 00 00
+DF 6C 24 00 D8 0D .. D8 05 .. E8 .. 03 05 <OFF> 83 C4 08 C3        (FFXiMain+0x103910 juin, +0x103B30 novembre)
+getter = stub CALL x ; JMP y  ->  A1 <PTR> 8B 40 0C C3              (sec = (*PTR)->+0x0C)
+```
+
+unique dans les deux dumps, adoptée seulement si le stub et le getter ont exactement cette forme et que les deux
+`<OFF>` concordent. `ffxi_now_tick()` (`party_state.cpp`) part des **graines** `CLK_PTR_SEED = 0x493FC0` /
+`CLK_OFF_SEED = 0x4E1CA8` tant que la recherche n'a pas abouti (retentée toutes les 5 s). Log : `CLOCK client clock
+resolved` / `NOT resolved`, puis `CLOCK timers on the client's own clock` / `on the PC clock` à **chaque changement**
+de source.
+
+Si l'horloge est illisible ou pas encore initialisée (`sec == 0 && off == 0`, avant le premier `0x00A`), elle retombe
+sur l'ancienne formule `time - EPOCH - ERA` : les décomptes restent vivants, avec le décalage de 2-3 s décrit plus
+haut. Le résultat est mis en cache une fois par milliseconde.
+
 ## See also
 - [Timers](timers.md) — the self-buff/recast countdowns that consume this clock.
 - [0x028 action packet](../actions/action-packet.md) — the sibling client-parser trace from the same 2026-07-20 Ghidra pass.
 - [Moon phases](../reference-sheets/moonphase.md) — the other Vana'diel-time readout.
+- [FFXiMain statics](../ffximain-statics.md) — the self-healing registry ; the clock heals itself by its own signature instead (client_clock_rvas).

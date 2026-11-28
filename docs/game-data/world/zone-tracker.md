@@ -1,7 +1,7 @@
 ---
 title: Zone Tracker — Dynamis / Abyssea / Omen / Nyzul / Sheol / Limbus providers
 summary: The six zone providers — 0x055 Dynamis granule bits + timer, 0x02A Abyssea lights/visitant, the slot-9 rendered-text Omen and Nyzul parsers, Sheol Mog Segments (0x034 + a per-kill 0x02A whose id re-derives itself), and the generic 0x075 battlefield timer/bars packet with its FFXiMain+0x480800 mirror; the Limbus provider itself has its own page (limbus.md).
-source: model/party_state_zonetracker.cpp (zt_set_zone/on_55/on_2a/on_omen_text/on_nyzul_text/on_034/on_00e/on_118/on_limbus_075), plugin/aiohud.cpp (routing), plugin/aiohud_probes.cpp (calibration commands)
+source: model/party_state_zonetracker.cpp (zt_set_zone/on_55/on_2a/on_omen_text/on_nyzul_text/on_034/on_00e/on_118/on_limbus_075/drain_game_text), model/party_state.cpp (model_feed_packet routing, model_frame_upkeep), plugin/aiohud_probes.cpp (calibration commands)
 ---
 # Zone Tracker — Dynamis / Abyssea / Omen / Nyzul / Sheol / Limbus providers
 
@@ -11,8 +11,8 @@ source: model/party_state_zonetracker.cpp (zt_set_zone/on_55/on_2a/on_omen_text/
 
 A dedicated box = the PointWatch **zone providers** ported from `pwcore.lua`. State
 lives in `PartyState::zt_`. `zt_set_zone(zone, zone_name(zone))` is called each
-frame from hud.cpp (after `refresh_hate`) and picks one of **six** modes — the first
-two by zone **name**, the rest by zone **id**. Transitions reset the relevant state.
+frame from `model_frame_upkeep` (`model/party_state.cpp`, after `refresh_hate` / `prune_skillchains` /
+`reconcile_treasure`) and picks one of **seven** modes — the first two by zone **name**, the rest by zone **id**. Transitions reset the relevant state.
 
 | mode | zone | detected by |
 |---|---|---|
@@ -91,8 +91,10 @@ Instead the Zone Tracker consumes the **client-rendered chat text via the plugin
 [incoming-text ABI callback — vtable slot 9](../../reference/plugin-abi.md)**.
 
 **GOTCHA:** the Omen chat mode is **673 = `161 | 0x200`** (Windower masks the 0x200
-flag). Match `(*mode & 0x1FF) == 161`. `aio_plugin_text_in` routes matching lines to
-`on_omen_text`.
+flag). Match `(*mode & 0x1FF) == 161`. The text callback (`aiohud.cpp`) does **not** parse : it copies
+masked modes 161 / 123 / 146 / 148 into a ring (`queue_game_text`) — text_in runs on its OWN thread (measured
+2026-07-20) — and `drain_game_text` (`party_state_zonetracker.cpp`) hands them to `on_omen_text` (161) /
+`on_nyzul_text` on the main thread, inside the frame poll.
 
 `on_omen_text` ports the Omen addon's 14 objective patterns (Braden/Sechs
 `addons/Omen/Omen.lua`):
@@ -375,11 +377,11 @@ enough remain. Lessons paid for in this session:
   read of the binary before brute-forcing memory.**
 
 ## Widget & config
-`Hud::draw_zonetracker` (hud.cpp) — dark box + gold stroke, header (zone name) +
+`Hud::draw_zonetracker` (`ui/hud_zonetracker.cpp`, called from hud.cpp) — dark box + gold stroke, header (zone name) +
 time bar (MM:SS, green→red ramp `zt_time_col`) + body: Dynamis = 5 KI rows;
 Abyssea = 7 vertical light bars; Omen = a dedicated mode-3 branch (floor / bonus
 timer / objective rows). Center-anchored (`ztX` centre, `ztY` top),
-`EDITBOX_ZONETRACKER`. Packets routed in aiohud.cpp: **0x02A→on_2a, 0x055→on_55,
+`EDITBOX_ZONETRACKER`. Packets routed by `aio::model_feed_packet` (`model/party_state.cpp`): **0x02A→on_2a, 0x055→on_55,
 0x075→on_limbus_075, 0x118→on_118, 0x034→on_034** (Rabao conflux menu → which Sheol) **and
 0x00E→on_00e**. The module's own code lives in `model/party_state_zonetracker.cpp` (split out of
 `party_state.cpp`); the widget is `ui/hud_zonetracker.cpp`.
@@ -403,9 +405,10 @@ loads with every row shown and every factor at 1.00.
 Migration note: outside Limbus the rows no longer read `ZT_BODY` — each reads its own
 element — so a user who had customised "Body" sees those rows fall back to defaults once.
 
-**Calibration commands:** `//aio abylog` (dump next 40 0x02A), `//aio omenlog`
-(next 24 0x017), `//aio pktall` (next 250 packet ids), `//aio textlog` (next 30
-incoming-text lines with mode).
+**Calibration commands** (none ships — see the banner): `//aio abylog` (dump next 40 0x02A), `//aio omenlog`
+(next 24 0x017), `//aio pktall` (next 250 packet ids) — all three **retired 2026-09-14**, code in
+`dev/archive/aiohud_probes_2026-09-14.cpp` — and `//aio textlog` (next 30 incoming-text lines with mode, dev
+probe). Shipped for Omen: `//aio omenparse` / `//aio omenstate`.
 
 ## See also
 - [Sortie tracker](sortie.md) — mode 7 : gallimaufry, bosses from the shards, coffers and items, four 0x02A at fixed offsets.

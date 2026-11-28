@@ -34,10 +34,6 @@ inline bool pkt_short(const unsigned char* p, int need) {
     pkt_note_reject(PKTREJ_SHORT, need, got);
     return true;
 }
-// A section INSIDE a packet that cannot be what it claims (a count that overruns the declared end, a variable
-// block that does not fit). Same counter, separate cause -- they fail for different reasons and a capture
-// wants to tell them apart.
-inline void pkt_note_bad_section(int need, int got) { pkt_note_reject(PKTREJ_SECTION, need, got); }
 
 // HATE LIST enmity tracker : record/refresh a mob->PC pair. Defined in party_state_hate.cpp ; called by
 // on_pet_status (party_state_hate.cpp) AND the hate block in on_action (party_state.cpp).

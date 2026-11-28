@@ -43,10 +43,11 @@ item struct has its id at `+0x00` and its count (`u32`) at `+0x04`, hence `items
 
 ## Confidence
 High — read the actual decompiled Windower binding and confirmed the `"gil"` dispatch
-string by byte dump. **Live-probe pending** (`//aio gil`, below) to eyeball the u32 == the
-player's real in-game gil before wiring the poller read.
+string by byte dump. **Validated 2026-07-17** out-of-process: bag 0's entry-0 count read 574,903,219 =
+the character's gil (see [Inventory](inventory.md)). **Wired:** `read_player_gil()` (`game_mem.cpp`) fills
+`GameState::meGil` once per poll (the Player Hub gil band); `false` while the container is unmapped.
 
-## Verification probe (`//aio gil`)
+## Verification probe (`//aio gil` — retired 2026-09-14, see the banner)
 Model it on `//aio jlvl`: dump the container root and the u32 so the user can compare.
 ```
 g          = aio::data_root();                 // *(LuaCore + lc_root_rva())
@@ -59,5 +60,6 @@ Span to eyeball: **`items_root + 0x00 .. +0x28`** (one 0x28-byte item slot). Con
 at `+0x04` equals the real gil, and note `+0x00` (expected `0xFFFF`, the gil pseudo-item id).
 
 ## See also
+- [Inventory](inventory.md) — the whole container behind `items_root`, gil = bag 0 entry 0.
 - [Local player struct](player-struct.md)
 - [Reverse-engineering recipe](../../reverse-engineering/recipe.md)

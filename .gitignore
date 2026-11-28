@@ -17,9 +17,6 @@
 /re/*.bin
 /re/*.dll
 /re/*.log
-
-# Bulky external reference addon (kept locally for feature comparison only)
-/research/reference/Bars/
 aio_config.txt
 aiohud_profiles/
 pol_*.png
@@ -53,6 +50,7 @@ CLAUDE.md
 # Measured audit findings (what was wrong, how it was proven). Same argument: the proof is the expensive part.
 !/docs/audits/
 !/docs/songs/
+# (the June research moved to _local/research_2026-06/ on 2026-11-28 ; kept ignored should it come back)
 /research/
 /re/
 # loose dev notes / feature docs (the analyses/audits now live under /docs/, already ignored above)

@@ -1,7 +1,7 @@
 ---
 title: Local Player Struct
 summary: Pointer chain and field offsets for reading the local player (vitals, name, jobs, buffs) from FFXI memory.
-source: REFERENCE.md §9a
+source: the old monolithic REFERENCE.md (section 9a) ; code model/game_mem.cpp (read_player, player_struct, read_player_buffs)
 ---
 # Local player struct — read from memory
 
@@ -12,7 +12,7 @@ source: REFERENCE.md §9a
 Pointer chain (this install, `LuaCore.dll 2.6.8.2`):
 ```
 G      = aio::data_root()               // data root -- *(LuaCore.dll + a DERIVED rva), see luacore-data-root.md
-player = *(G + 0x3C)                    // local player struct
+player = *(G + 0x3C)                    // local player struct -- player_struct() in game_mem.h
 ```
 **Validity gate:** read `max_hp` first; if `0` or `> 0x100000` the struct isn't
 populated yet (mid-zone) — bail and keep last good values. Right after a zone the
@@ -34,7 +34,7 @@ Field offsets (relative to `player`), all confirmed against a live hexdump
 | `+0x70` | byte | MP % (0..100) | |
 | `+0x74` | u32 | TP (0..3000) | |
 | `+0x7D..+0x92` | byte[22] | **job-level array** (WAR..RUN) | all `0x63`=99 on a maxed char — see the trap in [traps](../traps.md) |
-| `+0x94` | u32 (low byte) | **main job id** | `4`=BLM. Ids: 1 WAR…22 RUN (see `JOBS[]` in `party_state.cpp`) |
+| `+0x94` | u32 (low byte) | **main job id** | `4`=BLM. Ids: 1 WAR…22 RUN (see `JOBS[]` in `party_state_roster.cpp`) |
 | `+0x98` | u32 | main job **level** | `99` — NOT the job (cost us an afternoon, [traps](../traps.md)) |
 | `+0x9C` | u32 (low byte) | **sub job id** | `20`=SCH |
 | `+0xA0` | byte | **sub job level** (displayed/capped) | see the cap note below (reversed 2026-07-05) → `PlayerInfo.slvl` |

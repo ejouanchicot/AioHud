@@ -310,42 +310,6 @@ u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H)
     return tex;
 }
 
-// Load a 32-bpp BMP (BITMAPINFOHEADER / V4 / V5, BI_RGB or BI_BITFIELDS with the standard ARGB masks --
-// the FFXI gearicon format) into a mipped texture. Each file pixel u32 is already 0xAARRGGBB, so it maps
-// straight onto our A8R8G8B8 surface ; BMP rows are bottom-up (unless height<0) so we flip. Returns 0 on
-// any IO/parse failure (a missing gearicon just draws no icon). W/H are read from the header.
-u32 load_bmp_texture(u32 dev, const char* path)
-{
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (hf == INVALID_HANDLE_VALUE) return 0;
-    DWORD fsz = GetFileSize(hf, 0);
-    if (fsz < 54 || fsz > (1u << 20)) { CloseHandle(hf); return 0; }     // 54 = min BMP ; cap at 1 MB
-    char* file = (char*)HeapAlloc(GetProcessHeap(), 0, fsz);
-    if (!file) { CloseHandle(hf); return 0; }
-    DWORD got = 0; BOOL ok = ReadFile(hf, file, fsz, &got, 0); CloseHandle(hf);
-    if (!ok || got != fsz || file[0] != 'B' || file[1] != 'M') { HeapFree(GetProcessHeap(), 0, file); return 0; }
-    const u32 off = *(const u32*)(file + 10);                            // bfOffBits : pixel data start
-    const int W = *(const int*)(file + 18);
-    int H = *(const int*)(file + 22);
-    const unsigned short bpp = *(const unsigned short*)(file + 28);
-    const bool topDown = H < 0; if (topDown) H = -H;
-    if (bpp != 32 || W <= 0 || H <= 0 || W > 256 || H > 256 || (unsigned long long)off + (unsigned long long)W * H * 4 > fsz) {
-        HeapFree(GetProcessHeap(), 0, file); return 0;
-    }
-    u32* buf = (u32*)HeapAlloc(GetProcessHeap(), 0, (DWORD)(W * H * 4));
-    if (!buf) { HeapFree(GetProcessHeap(), 0, file); return 0; }
-    const u32* src = (const u32*)(file + off);
-    for (int y = 0; y < H; ++y) {
-        const u32* srow = src + (topDown ? y : (H - 1 - y)) * W;         // flip : BMP is bottom-up
-        u32* drow = buf + y * W;
-        for (int x = 0; x < W; ++x) drow[x] = srow[x];
-    }
-    u32 tex = make_texture_argb_mip(dev, W, H, buf);
-    HeapFree(GetProcessHeap(), 0, buf);
-    HeapFree(GetProcessHeap(), 0, file);
-    return tex;
-}
-
 static int mip_count(int w, int h) {
     int n = 1; while (w > 1 || h > 1) { w >>= 1; if (!w) w = 1; h >>= 1; if (!h) h = 1; n++; } return n;
 }
@@ -556,7 +520,7 @@ bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err)
 {
     if (out_err) *out_err = 0;
     if (!out_bmp_path || !px) return false;
-    // BMP V4 header : byte-identical to EquipViewer's output (== the bundled BMPs load_bmp_texture already reads).
+    // BMP V4 header : byte-identical to EquipViewer's output (== the bundled BMPs read_gear_icon_bmp reads).
     static const unsigned char HDR[122] = {
         'B','M', 0x7A,0x10,0,0, 0,0, 0,0, 0x7A,0,0,0,                                   // file size 0x107A, pixels @ 0x7A
         0x6C,0,0,0, 0x20,0,0,0, 0x20,0,0,0, 0x01,0, 0x20,0, 0x03,0,0,0, 0x00,0x10,0,0,   // V4, 32x32, 32bpp, BI_BITFIELDS, image 0x1000

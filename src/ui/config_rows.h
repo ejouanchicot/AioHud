@@ -71,7 +71,6 @@
 #define SIMPLE_MORE ROW_NOTE(tr("More settings (frame, text, fine sizes) : Advanced, top right.", "Plus de r\xC3\xA9""glages (cadre, texte, tailles fines) : Avanc\xC3\xA9"", en haut \xC3\xA0"" droite."))
 
 // Two-state chip rows whose labels are NOT On/Off ("Fused"/"Separate", "Standalone"/"In Player", ...).
-#define ROW_CHOICE(UID, LABEL, FIELD, ON, OFF)     { ROW_BAND(48.0f) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF)); } ROW_NEXT(48.0f)
 #define ROW_CHOICE_G(UID, LABEL, FIELD, ON, OFF, BAND, ROWH, CHIPW)     { ROW_BAND(BAND) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF), (ROWH), (CHIPW)); } ROW_NEXT(BAND)
 
 // an HSV colour-picker row (SV square + hue bar + swatch), TOP-aligned in its tall band (ROW_BAND would

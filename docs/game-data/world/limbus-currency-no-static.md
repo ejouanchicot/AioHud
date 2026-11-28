@@ -35,9 +35,11 @@ not a decoded field anyone can key on.
 ## Consequence for the tracker
 
 The HUD keeps the totals from the **0x02A award payload** (`p3` = your total, `p4` = your cap) and
-treats 0x118 as a zone-entry seed only (`on_118`, `party_state_zonetracker.cpp:445-451`:
-`+0x98` Temenos, `+0x9C` Apollyon, the same packet as Mog Segments `+0x8C`). Since the 0x02A award
-fires only a handful of times per run, the displayed total is coarse **by construction** — that is
+reads 0x118 as well (`on_118`, `party_state_zonetracker.cpp`: `+0x98` Temenos, `+0x9C` Apollyon, the same
+packet as Mog Segments `+0x8C`). The last award's total is shown in preference while you stand in the wing,
+but a 0x118 is the server's balance NOW, so when one arrives it wins (`limbusUnits = -1`) until the next award:
+units SPENT on an upgrade come with no award, and the box kept the pre-purchase total (reported 2026-11-11).
+Since both fire only a handful of times per run, the displayed total is coarse **by construction** — that is
 the ceiling, not a bug to fix.
 
 ## Methodological note — the on-disk FFXiMain is PACKED

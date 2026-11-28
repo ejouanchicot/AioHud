@@ -181,7 +181,6 @@ static void ensure_loaded() {
 
 unsigned    fm_rva(FmStatic s)       { ensure_loaded(); return (s >= 0 && s < FM_N) ? g_rva[s] : 0; }
 const char* fm_name(FmStatic s)      { return (s >= 0 && s < FM_N) ? ENTRIES[s].name : "?"; }
-bool        fm_healed(FmStatic s)    { ensure_loaded(); return (s >= 0 && s < FM_N) && g_healed[s]; }
 bool        fm_confirmed(FmStatic s) { ensure_loaded(); return (s >= 0 && s < FM_N) && g_confirmed[s]; }
 
 unsigned fm_addr(FmStatic s) {

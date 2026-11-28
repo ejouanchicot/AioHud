@@ -55,7 +55,6 @@ public:
     void self_check() const override;        // //aio selfcheck : log texture-load health
     void draw(const Frame& f) override;
     int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
-    bool  buff_on_right() const { return buffRight_; }
     float buff_reserve_w() const { return buffReserveW_; }   // last-drawn width of the left buff strip (0 for alliances) -> the preview centres the box+buffs cluster
     int  tcfg() const { return tier_ == 0 ? 0 : 1; }   // config GROUP : 0 = Party, 1 = Alliance (both alliance boxes share one config)
     u32  cursor_tex() const { return icon_tex_; }   // the loaded selection-hand texture (for the Help live sample)

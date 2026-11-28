@@ -1,3 +1,8 @@
+---
+title: Les chants du barde — comment ça marche
+summary: Plain-French, code-free explanation of BRD songs as the Timers module sees them — song slots and eviction, families, "twin" songs sharing one status, duration levers (Troubadour, gear, Song+ potency), the JAs, laggards, two bards.
+source: written while building the Timers songs support ; technical counterpart architecture/timers-songs-brd.md
+---
 # Les chants du barde — comment ça marche vraiment
 
 *Ce que j'ai compris des chants en construisant tes Timers. Version humaine : pas de code,
@@ -28,7 +33,7 @@ Trois choses à retenir :
 
 - **Tu es toujours touché toi-même.** Un chant part de toi ; tu reçois toujours ta propre
   copie du buff. (C'est important : si un chant n'est **plus** sur toi, c'est qu'il s'est
-  fait éjecter — voir §2.)
+  fait éjecter — voir la section 2.)
 - **Tout le monde touché en même temps a la même durée.** Le chant s'applique d'un coup, au
   même instant, avec la même minuterie pour tous.
 - **Trop loin = pas touché.** Quelqu'un hors du rayon quand tu chantes ne reçoit rien. S'il
@@ -66,7 +71,7 @@ Chaque famille fait un type de chose. En gros :
 | **Paeons** | Régénération de HP |
 | **Preludes** | Précision/attaque à distance (rangers) |
 | **Etudes** | Une statistique précise (STR, DEX…) — souvent **mono-cible** |
-| **Madrigals / Scherzos / Carols** | Précision, défense élémentaire, etc. |
+| **Scherzos / Carols** | Atténuation des gros coups, défense élémentaire, etc. |
 | **Threnodies, Lullabies, Elegies** | Débuffs sur les **ennemis** (pas des buffs) |
 
 Tu jongles surtout avec **2 chansons offensives + les buffs utiles** selon la party.
@@ -96,8 +101,12 @@ La durée de base d'un chant est courte (~2 minutes). Ce qui l'étire :
 
 - **Troubadour** → **double** la durée. C'est le gros levier.
 - **Ton instrument + ton stuff « song duration »** → un pourcentage en plus.
-- **Soul Voice / Marcato** → surtout de la **puissance**, mais aussi un peu de durée sur
-  certaines familles.
+- **Le stuff « Song+ » (puissance) allonge AUSSI la durée** : +10 % par point. « All songs +4 »
+  = +40 % sur tous les chants ; « Madrigal +1 » = +10 % sur les Madrigals seulement. C'est
+  cette règle qui a corrigé des mois d'estimations trop courtes (voir
+  [song-duration.md](song-duration.md)).
+- **Soul Voice / Marcato** → surtout de la **puissance**, mais aussi ×1,5 de durée sur
+  trois familles (Hymnus, Mazurka, Scherzo), plus quelques secondes de mérite pour Marcato.
 
 > À noter : **Clarion Call** et **Tenuto** ne touchent **pas** la durée. Clarion Call ajoute
 > une *place*, Tenuto *protège* un chant — mais ni l'un ni l'autre n'allonge la minuterie.
@@ -142,7 +151,7 @@ Trois situations du quotidien :
 Chaque barde entretient **ses propres** chants. Les buffs des deux **s'additionnent** sur la
 party (dans la limite des places de chacun).
 
-Le hic : si les deux posent une chanson **du même type** (les fameuses jumelles du §4), le
+Le hic : si les deux posent une chanson **du même type** (les fameuses jumelles de la section 4), le
 jeu a du mal à dire **qui** a chanté **quoi** — c'est le cas le plus délicat à suivre, et
 celui où l'affichage peut encore se tromper de propriétaire dans de rares cas.
 
@@ -162,3 +171,8 @@ celui où l'affichage peut encore se tromper de propriétaire dans de rares cas.
 
 *Document compagnon : `docs/architecture/timers-songs-brd.md` (la version technique, ce que le plugin fait pour
 chaque cas).*
+
+## See also
+- [Timers songs (BRD) — technical](../../architecture/timers-songs-brd.md) — what the plugin does in each case.
+- [Song duration](song-duration.md) — the ally-song duration model and its measurements.
+- [Timers](timers.md) — the self buff timers (0x063) and per-timer caster attribution.

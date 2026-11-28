@@ -38,7 +38,6 @@ namespace aio {
 // feed_char/backspace/enter while the name field is focused -- the hook CONSUMES those keys so the
 // game never sees them. No per-frame Win32 polling here.
 
-static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
 
 // What the Status-icons row SHOWS for a pack. Only the four built-in entries are translated -- an XIPivot pack
 // is shown under its folder name, which is how the player recognises it and what they see in XIPivot itself.
@@ -185,7 +184,6 @@ void treasure_help_fit(const Frame& f, float availW, float maxScale, float& outS
 // Zone Tracker Help sample : the REAL Zone Tracker renderer in preview mode for a forced content variant (0 Dynamis /
 // 1 Abyssea / 2 Omen / 3 Nyzul / 4 Odyssey), config-aware. Defined in hud_zonetracker.cpp.
 void zonetracker_help_box(const Frame& f, float cx, float cy, float s, int variant);
-void zonetracker_help_fit(const Frame& f, float availW, float maxScale, int variant, float& outScale, float& outH);
 void zonetracker_help_measure(const Frame& f, int variant, float& outW, float& outH);
 // EmpyPop Help sample : the REAL EmpyPop stack in preview mode (the built-in chloris chain), config-aware. Defined in hud_empypop.cpp.
 void empypop_help_box(const Frame& f, float cx, float cy, float s);
@@ -447,39 +445,6 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
         cat_fold_end(dev, ry, top3_, catH_[3], aF3_);
         }   // end category Interface (catOpen_[3])
         ry += snap(16.0f);                             // gap between category cards
-}
-void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, bool click,
-                                      float& ry, int& ri, float e,
-                                      float bandX, float bandW, float coX, float ctrlW,
-                                      float hdrX, float hdrW) {
-        // ===== category : LAYOUT (placement + the shared window skin) =====
-        // The section FOLDS (config_controls.h) : cat_fold owns the eased progress, the card grows with
-        // it, and catH_ now holds the CONTENT height rather than the card's -- the header slot is added
-        // back here, which is the one place that knows about it.
-        const float aF2_ = cat_fold(CTRL_ID, catOpen_[2]);
-        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[2], aF2_));
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Layout", "Disposition"), catOpen_[2], aF2_)) catOpen_[2] = !catOpen_[2];
-        ROW_NEXT(42.0f)
-        if (aF2_ > 0.0f) {
-        const float top2_ = ry;
-        cat_fold_clip(dev, hdrX, top2_, hdrW, catH_[2] * aF2_);
-        // Placement moved to the top-level "Edit Layout" tab (drag/resize + Zones/Rules) ; here : a pointer + global reset.
-        { ROW_BAND(44.0f)
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Move & resize boxes: the \"Edit Layout\" tab (top)", "D\xC3\xA9placer & redimensionner : onglet \"\xC3\x89""diter dispo\" (en haut)"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        }
-        ROW_NEXT(44.0f)
-        { ROW_BAND(56.0f)
-            const float bh = snap(34.0f), bw = snap(168.0f);
-            const float ty = ry + yo + (snap(40.0f) - bh) * 0.5f;   // 34px button -> recentre in the band
-            const float defX = coX + ctrlW - bw;
-            fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, tr("Reset all", "Tout r\xC3\xA9initialiser"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            if (push_btn(dev, fo, mo, click, CTRL_ID, defX, ty, bw, bh, tr("Default (all)", "D\xC3\xA9""faut (tout)"), 1)) reset_ui_config();
-        }
-        ROW_NEXT(56.0f)
-        cat_fold_end(dev, ry, top2_, catH_[2], aF2_);
-        }   // end category Layout
 }
 
 // ======== THE NEW INTERFACE PAGE (the config redesign, milestone 3) : the config menu's own font, status icons,
@@ -1235,8 +1200,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }   // structure -> steel, like the container it sits in
             pvRightX_  = pvx + previewW - snap(18.0f);
             pvBottomY_ = stageY + stageH - snap(14.0f);
-            pvCX_      = pvx + previewW * 0.5f;
-            pvCY_      = stageY + stageH * 0.5f;
             { const float ins = snap(10.0f);                     // inset the mini-map rect a touch inside the stage frame
               pvSX_ = pvx + ins; pvSY_ = stageY + ins; pvSW_ = previewW - 2.0f * ins; pvSH_ = stageH - 2.0f * ins; }
             pvOn_ = true;
@@ -1697,7 +1660,7 @@ static void edit_overlay(const Frame& f, float sw, float sh, const MouseState* m
 void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click, float sw, float sh) {
         g_fade = 1.0f;
         // ZONES : while Rules is OFF (placing boxes) draw each zone FAINTLY so you see the keep-out / allowed
-        // areas -- a box is pushed out of any zone that forbids it (see guide_push_out). Rules ON draws them
+        // areas (no box is pushed by them any more : the push-out is gone). Rules ON draws them
         // interactively further below.
         if (!editShowLines_ && !v2_) {   // (the redesign : no zones -- they no longer push any box, 2026-11-27)
             static const u32 ZC[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };
@@ -1744,8 +1707,8 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         const bool overPanel = inrect(mo, pxp, pyp, pw, ph);
 
         // ===== USER-DRAWN ZONES : drag on empty space to draw a rectangle (creates a zone). Move it by its
-        // body, resize it by its corners, name it, set which boxes may sit on it. A box is pushed OUT of any
-        // zone that forbids it (guide_push_out). Rectangular by construction. The panel is draggable. =====
+        // body, resize it by its corners, name it, set which boxes may sit on it (stored ; nothing enforces it
+        // since the push-out was removed). Rectangular by construction. The panel is draggable. =====
         {
             const bool rClick = click && editConfirm_ == 0;
             static const u32 GRP_COL[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };

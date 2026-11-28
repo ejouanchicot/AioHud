@@ -17,7 +17,8 @@ plugins before us ; an empty `modified` = a plugin blocked it, the log will not 
 from Windower : mask `& 0x1FF`.
 
 The Chat module only **copies** the line there (`chat_queue`, a 256-slot single-producer / single-consumer ring) ;
-`chat_drain` decodes and classifies it on the main thread, once per frame, into a 1024-line history.
+`chat_drain` decodes and classifies it on the main thread, once per frame, into a 16384-line history (`CHAT_HIST`, `model/chat_log.h` ; battle spam shares it — 1024 and
+then 4096 still scrolled back less far than the game, 2026-11-27).
 
 ## 2. Mode -> channel
 
@@ -59,7 +60,7 @@ filed under System. Known from other modules : 161 = Omen objectives, 123 / 146 
 **The history text is UTF-8** (since 2026-11-17 ; it was one Latin-1 byte per character, and Japanese came out as
 `???`). `col[]` is per BYTE, every byte of a character the same code. The Chat box measures, wraps and colours by
 CHARACTER (`cw_at` in `ui/hud_chat.cpp`), never by byte ; a row breaks between characters when there is no space
-(Japanese). The input line (`input_decode`) is UTF-8 too. The font draws any codepoint : 32..255 from its own
+(Japanese). The input line (`chat_input_decode`, `ui/hud_chat.cpp`) is UTF-8 too. The font draws any codepoint : 32..255 from its own
 atlas, the rest from the shared wide-glyph pages (`gfx/font.cpp`, see `reference/d3d8-rendering.md` 10i).
 
 All of it is locked by `tests/t_chat.cpp`.

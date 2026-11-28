@@ -10,7 +10,8 @@ Zones, maps, and the instanced content the Zone Tracker follows.
 | Page | Ce qu'elle contient |
 |---|---|
 | [map-system.md](map-system.md) | The minimap: live zone id, the world→map-pixel transform, DAT decoding |
-| [zone-tracker.md](zone-tracker.md) | The six zone providers (Dynamis granules, Abyssea lights, Odyssey, Limbus…) |
+| [zone-tracker.md](zone-tracker.md) | The Zone Tracker's seven modes (Dynamis granules, Abyssea lights, Omen, Nyzul, Odyssey, Limbus, Sortie) and the generic 0x075 battlefield packet |
+| [dynamis-divergence.md](dynamis-divergence.md) | Dynamis - Divergence: its own zone ids, what is known and what the box shows |
 | [limbus.md](limbus.md) | 0x075 battlefield bars (floor + gauge) and the 0x02A run economy |
 | [sortie.md](sortie.md) | Sortie : gallimaufry, bosses from the shards, coffers and items -- four 0x02A at fixed offsets from a self-proving payout |
 | [limbus-currency-no-static.md](limbus-currency-no-static.md) | Ghidra proof that the unit totals exist ONLY in the Currency menu rows — a documented dead end |

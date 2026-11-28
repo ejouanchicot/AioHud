@@ -26,13 +26,6 @@ struct GuideGroup {
 };
 static const int GUIDE_GROUPS_MAX = 48;
 
-// top Y (pixels) of the party-role zone for `count` members (its rectangle top drives the party box grow-up),
-// or -1 if there is no such zone (caller then falls back to partyRef). See party.cpp.
-float guide_party_top(int count, float sh);
-// fill ar[0..3] = {A1 top, A1 bottom, A2 top, A2 bottom} (screen fractions) from the alliance-role zones
-// (role 7 = A1, role 8 = A2). Returns true only if BOTH exist ; else the caller uses allyRefY. See party.cpp.
-bool  guide_alliance_refs(float* ar);
-
 // ---- per-element typography (global : applies to every box) ----
 enum { TE_NAME = 0, TE_HP, TE_MP, TE_TP, TE_CAST, TE_BADGE, TE_DIST, TE_UI, TE_COST, TE_COUNT };
 enum { TGT_NAME = 0, TGT_HP, TGT_TIMER, TGT_SPD, TGT_TH, TGT_RANGE, TGT_TE_COUNT };   // Target box text elements (name / HP% / debuff timer / speed% / TH level / distance labels+number)
@@ -133,9 +126,6 @@ struct UiConfig {
     int buff_group_rank(int g) const {   // where this group sits in the strip ; unknown -> last
         for (int i = 0; i < BUFF_ORDER_N; ++i) if (buffOrder[i] == g) return i;
         return BUFF_ORDER_N - 1; }
-    void buff_order_swap(int a, int b) {   // move a group one slot ; out-of-range = no-op (the arrows call this at the ends)
-        if (a < 0 || b < 0 || a >= BUFF_ORDER_N || b >= BUFF_ORDER_N) return;
-        const unsigned char t = buffOrder[a]; buffOrder[a] = buffOrder[b]; buffOrder[b] = t; }
     // Per-group VISIBILITY, one bit per BuffGroup (1 = hidden). A hidden group is dropped before the strip is
     // even measured, so it costs no width and no slot against Max Buffs -- hiding Debuffs really does buy you
     // room for the rest, which is the point. Its POSITION is kept : unhide and it returns to its own slot.
@@ -826,9 +816,8 @@ UiConfig& ui_config();         // the singleton
 
 // ---- P3 : guide ZONES = the rectangle each group forms from its rules (H rules -> top/bottom, V rules ->
 // left/right ; a missing axis spans the whole screen). Permissions (allow[ZPERM_*]) say which box may sit on
-// a zone -- a box is pushed OUT of any zone that forbids its type. ----
+// a zone (stored and edited ; nothing enforces them since the push-out was removed). ----
 int  guide_zones(float sw, float sh, float* x, float* y, float* w, float* h, int* group, int cap);   // -> count
-void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew, float eh);          // clamp a box out of forbidden zones
 
 // modifier-key state (fed by the plugin's keyboard hook -> reliable in the render thread, unlike
 // GetAsyncKeyState). Used for edit-mode axis-lock : Shift = horizontal only, Ctrl = vertical only.

@@ -478,8 +478,6 @@ bool search_value(const NativeEntryMenu& m, int e, char* out, int cap) {
     return true;
 }
 
-inline u32 dev_of(const Frame& f) { return f.dev; }
-
 // ---- ONE block : the menus' theme box, thin capsules, the party's gold glass on the picked row, the hand ----
 // `extra` : what the client shows on the right of a row (the Chat submenu : the Tell name, a shell's name, the Unity
 // leader) ; `pearl` : 513 linkshell / 514 linkpearl / 515 pearlsack drawn before it, tinted `pearlArgb`

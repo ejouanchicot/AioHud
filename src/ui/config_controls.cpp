@@ -1173,13 +1173,6 @@ void ctl_edge(u32 dev, float x, float y, float w, float h, float r, float streng
     const u32 c = (ctl_edge_tint(fill, from) & 0x00FFFFFFu) | ((u32)(235.0f * strength) << 24);
     rrect_fill(dev, x - bw, y - bw, w + 2.0f * bw, h + 2.0f * bw, r + bw, c, c);
 }
-void ctl_edge_top(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill, u32 from) {
-    if (strength <= 0.01f) return;
-    if (strength > 1.0f) strength = 1.0f;
-    const float bw = snap(2.0f);
-    const u32 c = (ctl_edge_tint(fill, from) & 0x00FFFFFFu) | ((u32)(235.0f * strength) << 24);
-    rrect_top(dev, x - bw, y - bw, w + 2.0f * bw, h + bw, r + bw, c, c);   // +bw on the top only : the feet stay open
-}
 void ctl_crown(u32 dev, float x, float y, float w, float h, float r, u32 hiRGB, u32 loRGB, float k) {
     if (k <= 0.01f) return;
     if (k > 1.0f) k = 1.0f;

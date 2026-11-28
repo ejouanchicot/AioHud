@@ -17,6 +17,10 @@ G       = aio::data_root()              // *(LuaCore.dll + a DERIVED rva) -- lua
 ki_base = *(G + 0x4C)                   // u8[0x2000] : ONE BYTE per key-item id
 has(id) = ki_base[id] != 0              // id in 0 .. 0x1FFF
 ```
+In code: `key_items_base()` = `*(G+0x4C)` and **`owns_key_item(id)`** (`model/game_mem.{h,cpp}`, false for
+`id >= 0x2000` or an unmapped base) — the one reader; callers (EmpyPop, the Limbus run baseline, the merit
+caps of the native Merit panel) never index the array themselves.
+
 `G+0x4C` is the immediate neighbour of `G+0x50` (`items_root`, see
 [player-equipment](player-equipment.md)) — and in the live process
 `ki_base + 0x2000 == items_root` **exactly**, which independently pins the array's size.
@@ -30,7 +34,7 @@ This is the one thing worth internalising: **the packet's layout is not the memo
 | grouping | tables of 512 bits (`table = id/512`, `bit = id%512`), table id at `@0x84` | **flat**, no tables — index by raw id |
 | lookup | `p[0x04 + bit/8] >> (bit%8) & 1` | `ki_base[id] != 0` |
 
-So `table = id/512` (`ny_has_ki`, `party_state_zonetracker.cpp:96`) applies **only** to the packet.
+So `table = id/512` (`ny_has_ki`, `party_state_zonetracker.cpp`) applies **only** to the packet.
 In memory there is no table index at all. The client demultiplexes every 0x055 into this array.
 
 Observed byte values are **only `0x00` and `0x01`** (histogram over all 8192 entries) — a bool array,

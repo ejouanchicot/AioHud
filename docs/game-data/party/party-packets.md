@@ -10,7 +10,9 @@ source: REFERENCE.md §9b
 > Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
 
 `packet_in` (IPlugin slot 11) gives `b` = the **decoded** inbound packet (a safe,
-fully-populated buffer). `id = *(u16*)b & 0x1FF`; size = `((hdr>>9)&0x7F)*4`.
+fully-populated buffer). `id = *(u16*)b & 0x1FF`; size = `((hdr>>9)&0x7F)*4`. The plugin hands it to
+`aio::model_feed_packet` (`model/party_state.cpp`, SEH-guarded), which routes 0x0DD → `on_dd` and 0x0DF →
+`on_df` (both in `model/party_state_roster.cpp`).
 
 **`0x0DD` — party member full update** (`PartyState::on_dd`). One member per packet:
 
@@ -35,14 +37,26 @@ job fields in the same order (`mjob@0x22, mlvl@0x23, sjob@0x24, slvl@0x25`), so 
 reads `+0x25` into `PMember.slvl`. Consistent with the [party-array `member+0x74`](party-array.md)
 value, though not independently packet-probed. Reversed 2026-07-05.
 
-**`0x0DF` — vitals refresh** (`PartyState::on_df`): `+0x04` id, `+0x08` HP,
-`+0x0C` MP, `+0x10` TP. Only updates a member already known from a `0x0DD`.
+How `on_dd` uses it (current code):
+- **Size floor `0x2C`** (through the jobs and the first name bytes). A real 0x0DD is **52 bytes (0x34)**,
+  measured 2026-09-13 ; the old floor `0x3B` rejected every real packet since the first commit. The name is
+  bounded by the declared size.
+- **Roster members only.** The roster is read from memory every frame; the server also sends 0x0DD for all
+  18 alliance members, so an id not already in the roster is ignored (the old "add while there is room"
+  is gone).
+- A **trust's** packet carries job `0` → the jobs the roster resolved from the trust table are kept.
+- `maxHp`/`maxMp` are derived from value ÷ % so a later 0x0DF can refresh the %; then
+  `sentinel_packet_member` compares the packet's identity with the memory block's.
+
+**`0x0DF` — vitals refresh** (`PartyState::on_df`, floor 0x14): `+0x04` id, `+0x08` HP,
+`+0x0C` MP, `+0x10` TP. Only updates a member already in the roster; the max tracks the highest value seen
+and the % follows value ÷ max.
 
 > Note the **same field, different offset** between sources: HP%/jobs sit at
-> different places in the packet (`+0x1E`,`+0x22`/`+0x24`) vs memory
+> different places in the packet (`+0x1D`,`+0x22`/`+0x24`) vs memory
 > (`+0x64`,`+0x94`/`+0x9C`). Don't copy one offset set onto the other.
 
-**Alt — party struct in memory** (used by `//aio chain`): `a=aio::data_root()`,
+**Alt — party struct in memory** (used by the retired `//aio chain`): `a=aio::data_root()`,
 `b=*(a+0x248)`, `party=*b` → this is the **allianceinfo_t** (leaders/counts, see [party array](party-array.md)),
 NOT a member array. Its `+0x18` pointers go to UI/menu structs, not clean member data
 (an early wrong turn). The real member array is in [party array](party-array.md).

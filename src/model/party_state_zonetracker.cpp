@@ -92,20 +92,6 @@ void PartyState::limbus_set_cap(int area, int cap) {
     lcap_.cap[area] = cap;
     lc_save();
 }
-bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
-    const int a = (area == 1) ? 1 : 0, slot = limbus_slot_of(a, quad);
-    if (slot < 0 || amtK <= 0) return false;
-    LimbusCoffers& lc = lc_[a];
-    if (amtK >= (LIMBUS_BIG_MIN / 1000)) {                 // a 5k ends the cycle, hand-seeded or not
-        for (int i = 0; i < 4; ++i) lc.prevK[i] = lc.slotK[i];   // archive first (see prevK in party_state.h)
-        for (int i = 0; i < 4; ++i) lc.slotK[i] = 0;
-        lc.bigAmt = amtK * 1000;
-        int b = 0; for (; quad[b] && b < 7; ++b) lc.bigAt[b] = quad[b]; lc.bigAt[b] = 0;
-    }
-    lc.slotK[slot] = (unsigned char)amtK;
-    lc_save();
-    return true;
-}
 void PartyState::lc_save() const {
     char path[300]; if (!char_cache_path("limbus", path, sizeof(path))) return;   // no character -> never write a shared file
     HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);

@@ -15,7 +15,6 @@ namespace aio {
 // Module bases are cached (fixed after load) ; the data root and its children are read each call (they
 // can be 0 while zoning). All return 0 -> the caller no-ops. Keeps the offsets in one place. ---
 u32 ffximain_base();   // GetModuleHandleA("FFXiMain.dll"), cached
-u32 luacore_base();    // GetModuleHandleA("LuaCore.dll"),  cached
 u32 data_root();       // g  = *(LuaCore + lc_root_rva()) -- anchor for player / party / recast chains. The
                        // RVA is DERIVED at runtime (model/luacore_root.h) : a Windower update moves it.
 u32 party_ptr();       // pp = *(g + 0x248) (= &member[0] + 4) ; base = party_ptr() - 4
@@ -237,6 +236,9 @@ bool read_persona_mem(PersonaMem& p);
 bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl);
 // The 0x01B encumbrance flags as the client stores them (native_ui.cpp enc_res) ; false = not resolved / unreadable.
 bool read_encumbrance_mem(unsigned& out);
+// The client clock's two FFXiMain RVAs, found by the code's own "now" function (native_ui.cpp) ; false = not resolved
+// yet (ffxi_now_tick then uses its seeds). A no-op scan once resolved ; retried every 5 s until then.
+bool client_clock_rvas(u32& ptrRva, u32& offRva);
 
 // Merit level (0..5) for merit id `mid` / Job-Point gift rank for gift id `gid`, from the LuaCore-mirrored
 // arrays (indexed by id>>1). Used for the caster's "Enhancing Magic Duration" merit (2320) + JP gift (338)

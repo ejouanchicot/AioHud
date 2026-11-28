@@ -84,9 +84,17 @@ stride 0x28 confirmed in the same function: `FUN_10093200(L, slot*0xca8 + *(g+0x
 ## Confidence
 High — read the actual decompiled Windower binding chain (`get_items` -> `FUN_10094410`
 equipment builder, `FUN_10093200`/`FUN_10009c10` item fields, `FUN_10009cd0` byte index).
-Live-probe pending (`//aio equip`, below) to eyeball the 16 ids against real gear.
 
-## Verification probe (`//aio equip`)
+## Reader (model) — `read_equipment` / `read_equipment_ext` (`game_mem.cpp`)
+Wired and in use (Equipment Viewer, enhancing-duration gear). `equip_index_arr()` / `equip_bag_arr()` read
+`*(g+0x54)` / `*(g+0x58)`; each slot is **bounded** (`bag < 18`, `index < 81`) before the address is
+computed — a garbage bag in the half-ready window after a zone would otherwise land on a valid but WRONG item.
+The return value means **"this read RESOLVED"** (rule 10): `true` when the inventory capacity byte
+(`items_root + 0x19500`, see [Inventory](inventory.md)) is non-zero **or** any slot resolved to a real id.
+Capacity 0 = containers not filled yet → `false`, and the caller keeps its cached icons instead of treating
+an all-empty grid as authoritative. `read_equipment_ext` adds the 24-byte extdata at `+0x0D` per slot.
+
+## Verification probe (`//aio equip` — retired 2026-09-14, see the banner)
 Model it on `//aio gil`/`//aio jlvl` (debug::log + debug::hexdump). For each slot S 0..15,
 log name / bag / index / id / count so the user can compare to real gear:
 ```
@@ -109,6 +117,7 @@ Spans to eyeball with debug::hexdump:
 
 ## See also
 - [Player gil](player-gil.md) — same `items_root = *(g+0x50)`, container stride 0xCA8 / slot 0x28.
+- [Inventory](inventory.md) — the bag table and the per-bag metadata the readiness check uses.
 - [Encumbrance flags](encumbrance-flags.md) — `0x01B` bitfield locking these same 16 slots.
 - [Gear icons](gear-icons.md) — the 32x32 icon per equipped item id.
 - [Player Equipment Viewer](../../design/player-equipment-viewer.md) — the 4x4 grid UI that renders these 16 ids (placement, config, edit).

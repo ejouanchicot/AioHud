@@ -1,7 +1,7 @@
 // edit_box.cpp -- see edit_box.h. Extracted verbatim from the Target box's drag + alignment overlay so
 // every standalone box shares one implementation.
 #include "ui/edit_box.h"
-#include "model/ui_config.h"   // guide_push_out, edit_shift/edit_ctrl, save_ui_config, ui_config().wheel, ZPERM_*
+#include "model/ui_config.h"   // edit_shift/edit_ctrl, save_ui_config, ui_config().wheel, ZPERM_*
 #include "gfx/draw.h"          // grad_quad
 #include "gfx/d3d.h"
 #include <math.h>
@@ -46,37 +46,15 @@ bool edit_over_ui_blocker(float mx, float my, float t) {
 bool edit_box_locked(int id) { return id >= 0 && id < 31 && (ui_config().edLock & (1 << id)) != 0; }
 void edit_box_set_locked(int id, bool on) { if (id < 0 || id >= 31) return; if (on) ui_config().edLock |= (1 << id); else ui_config().edLock &= ~(1 << id); save_ui_config(); }
 
-// Box-vs-box occupancy : every standalone box publishes its rect here each edit frame ; a dragged box is
-// then shoved out of the OTHERS so two boxes can't overlap (same minimal-translation resolve as the zone
-// push-out). Keyed by boxId. `t` = the frame time it last published -> a box not drawn recently (module
-// toggled off) is treated as absent and stops repelling.
+// Box occupancy : every standalone box publishes its rect here each edit frame (the Edit Layout snap reads it).
+// Keyed by boxId. `t` = the frame time it last published -> a box not drawn recently (module toggled off) is
+// treated as absent.
 struct BoxSlot { float x, y, w, h, t; bool used; };
 static BoxSlot g_boxReg[EDITBOX_COUNT] = {};
 
 void edit_box_publish(int id, float x, float y, float w, float h, float t) {
     if (id < 0 || id >= EDITBOX_COUNT) return;
     g_boxReg[id].x = x; g_boxReg[id].y = y; g_boxReg[id].w = w; g_boxReg[id].h = h; g_boxReg[id].t = t; g_boxReg[id].used = true;
-}
-// shove (ex,ey,ew,eh) out of every OTHER recently-published box (fresh within ~0.2s), minimal-translation.
-void edit_box_push_out(int id, float curT, float& ex, float& ey, float ew, float eh) {
-    for (int it = 0; it < 4; ++it) {                              // a few passes to settle against several boxes
-        bool moved = false;
-        for (int i = 0; i < EDITBOX_COUNT; ++i) {
-            if (i == id || !g_boxReg[i].used) continue;
-            float dt = curT - g_boxReg[i].t; if (dt < 0.0f) dt = -dt;   // f.t wraps -> treat as stale, not present
-            if (dt > 0.20f) continue;                            // not drawn recently -> a hidden box, ignore
-            const BoxSlot& b = g_boxReg[i];
-            if (ex < b.x + b.w && ex + ew > b.x && ey < b.y + b.h && ey + eh > b.y) {
-                const float pL = b.x - (ex + ew), pR = (b.x + b.w) - ex;   // move left (neg) / right (pos)
-                const float pU = b.y - (ey + eh), pD = (b.y + b.h) - ey;   // move up (neg) / down (pos)
-                const float ax = (fabsf(pL) < fabsf(pR)) ? pL : pR;
-                const float ay = (fabsf(pU) < fabsf(pD)) ? pU : pD;
-                if (fabsf(ax) <= fabsf(ay)) ex += ax; else ey += ay;      // push along the shallower axis
-                moved = true;
-            }
-        }
-        if (!moved) break;
-    }
 }
 
 

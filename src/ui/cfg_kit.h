@@ -61,7 +61,6 @@ void  chrome_label(Kit& K, float x, float cy, const char* s, float sz, int kind)
 float chrome_label_w(Kit& K, const char* s, float sz);
 void  chrome_field(Kit& K, float x, float y, float w, float h, float focus);
 void  chrome_medallion(Kit& K, float cx, float cy, float r, const char* s);
-void  chrome_rowplate(Kit& K, float x, float y, float w, float h, bool active, float t);
 float chrome_tag_steel(Kit& K, float x, float cy, const char* s);
 void  chrome_plaque(Kit& K, float x, float y, float w, float h, const char* s, float sz);   // a brass plate, the words in ink
 int   chrome_stepper(Kit& K, int id, float x, float y, float w, float h, float kw, const char* s, bool dim, bool housing = true);   // a key at each end that presses into its socket ; -1 / +1

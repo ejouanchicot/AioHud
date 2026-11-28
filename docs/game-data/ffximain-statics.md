@@ -17,7 +17,10 @@ Everything AioHUD reads hangs off one of two anchors:
   [luacore-data-root.md](luacore-data-root.md).
 - **A hard-coded RVA inside FFXiMain.dll** — the game's own module, **recompiled at every client patch**.
 
-Only six things live in the second group. That asymmetry is the whole story of this page: when the client
+Only six things live in the second group's self-healing registry. (The client clock heals itself OUTSIDE it: its two RVAs
+were plain constants until 2026-11-28 -- stale since a patch, the timers silently on the PC clock -- and are now
+found by the client's own "now" function, `client_clock_rvas` in `model/native_ui.cpp` ; see
+[client-clock.md](buffs-and-timers/client-clock.md).) That asymmetry is the whole story of this page: when the client
 updates, a handful of features die *while everything else keeps working perfectly*, so the failure reads
 like a widget bug rather than a patch.
 
@@ -40,6 +43,11 @@ The cost/Next box and PointWatch were dead too; nobody had noticed yet.
 | examined ABILITY id | `0x634590` | `0x6345D0` | the highlighted job ability / weapon skill |
 | PointWatch block | `0x485644` | `0x485684` | EXP, Master Level, Exemplar |
 | PointWatch merits | `0x485826` | `0x485866` | Limit Points, merit count |
+
+**The next patch, 2026-09-11, proved it.** Two regions moved by different amounts (client fingerprint
+`6A580428`): `target_t` and both PointWatch blocks by **`-0x40`** (back to `0x57876C` / `0x485644` /
+`0x485826`), the live-menu pointer and both examine caches by **`+0x32AE0`** (`0x62188C`, spell `0x667A48`,
+ability `0x6670B0`). Those are the seeds `model/ffximain_rva.cpp` ships today (`ENTRIES[]`).
 
 **The uniform `+0x40` was a coincidence of this patch**, not a rule. Statics in different sections shift by
 different amounts. Never apply a global delta without re-validating each address — which is exactly why

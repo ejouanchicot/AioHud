@@ -1,3 +1,8 @@
+---
+title: Dynamis - Divergence — zone ids, run clock
+summary: Divergence has its own zone ids (294-297) and no granules of time ; its exact remaining time is the 0x075 battlefield packet's start (@08) + duration (@0C), measured to the second on 2026-09-11.
+source: model/party_state.h (zt_is_divergence, divEndMs / divDurSec), model/party_state_zonetracker.cpp (0x075, DIV logs), ui/hud_zonetracker.cpp, plugin/aiohud.cpp (DIVTEXT)
+---
 # Dynamis - Divergence — ce qu'on sait, ce qu'on affiche
 
 ## Identification : certaine, aucune sonde nécessaire
@@ -21,9 +26,11 @@ Divergence a ses **propres ids de zone**, dans `res/zones.lua` comme dans notre 
   ne les lit plus en Divergence et la rangée de points n'est plus dessinée.
 
 Conséquence pour nous : `zt_recompute_dyn_limit` ne peut rien additionner, puisqu'il additionne des key items.
-La boîte décompte donc depuis 60 min et **passe en négatif** au-delà, affiché `+M:SS` — du temps
-supplémentaire, pas un `0:00` qu'on ne peut pas justifier. Un décompte figé à zéro pendant qu'il reste une
-demi-heure, c'est exactement le bug du timer visitant d'Abyssea.
+**Avant le premier `0x075`** de la run (`divDurSec == 0`), la boîte (`ui/hud_zonetracker.cpp`) décompte donc
+depuis 60 min et **passe en négatif** au-delà, affiché `+M:SS` — du temps supplémentaire, pas un `0:00` qu'on ne
+peut pas justifier. Un décompte figé à zéro pendant qu'il reste une demi-heure, c'est exactement le bug du timer
+visitant d'Abyssea. **Dès qu'un `0x075` est arrivé**, c'est l'horloge du serveur ci-dessous qui fait foi
+(`divEndMs` / `divDurSec`, `party_state_zonetracker.cpp`), bornée à 0, et `divDurSec` donne l'échelle de la barre.
 
 ## Ce qui manque pour un décompte exact
 
@@ -77,3 +84,11 @@ avant de conclure qu'un champ ne veut rien dire.**
 
 - 2026-09-11 — signalé : la boîte Dynamis s'affichait en Divergence (granules + décompte de 60 min).
   Corrigé le jour même (`1e4d661`), puis le chrono passé en décompte à la demande.
+
+Les sondes `DIV …` sont dans `party_state_zonetracker.cpp`, `DIVTEXT` dans `plugin/aiohud.cpp` (le chemin
+`text_in`) : toujours actives en Divergence, bornées, rien à armer.
+
+## See also
+- [Zone Tracker](zone-tracker.md) — the box this run clock feeds.
+- [Client clock](../buffs-and-timers/client-clock.md) — the `ffxi_now_tick()` epoch the 0x075 start is counted in.
+- [Chat log](../chat-log.md) — the `text_in` path `DIVTEXT` reads.

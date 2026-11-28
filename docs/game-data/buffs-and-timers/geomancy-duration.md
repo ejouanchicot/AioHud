@@ -1,7 +1,7 @@
 ---
 title: Geomancy duration (GEO Indi-) — computed aura lifetime
 summary: GEO Indi- (skill 44) is an AURA whose 0x063 status is refreshed every ~3s by the pulse, so its duration is COMPUTED ((Base + JP1362×2 + flat Indicolure gear) × (1 + "Indi. eff. dur." augment %), measured 2026-09-13), the three self/normal/Entrust cases, the 542-556/612 noise filter, and the rule that only the Indi- you carry NOW can raise a red OUT.
-source: model/geo_dur.h, model/geo_dur_gen.h (gen_geo_dur.py), party_state.cpp (on_action skill-44 branch, record_geo_aura, selfGeo_, entrustTick_), ui/hud_timers.cpp (the self aura row, the noise filter, geoReplaced)
+source: model/geo_dur.h, model/geo_dur_gen.h (gen_geo_dur.py), party_state.cpp (act_ally_buffs skill-44 branch, record_geo_aura, selfGeo_, entrustTick_), model/timers_build.cpp (the self aura row), model/timers_rules.h (the noise filter), model/focus_rules.h (focus_geo_replaced)
 ---
 # Geomancy duration (GEO Indi-)
 
@@ -23,10 +23,11 @@ Flat seconds add first, then ONE percent term multiplies the sum:
 dur = (Base + JP(1362)×2 + Σ(equipped "Indicolure ... duration +N" seconds)) × (1 + Σ "Indi. eff. dur. +N%" augments)
 ```
 
-- **Base** = res/spells.lua duration (`tb_buff_gen`, skill 44). Indi- base is **180 s** (the `//aio geodbg`
-  dump hardcodes 180 for comparison).
+- **Base** = res/spells.lua duration (`tb_buff_gen`, skill 44). Indi- base is **180 s** (the retired
+  `//aio geodbg` dump hardcoded 180 for comparison).
 - **JP gift 1362** "Indicolure Spell Effect Dur." = **+2 s per rank**, **GEO main only** (`me.mjob == 21`,
-  `read_jp_gift_rank(1362)*2`, party_state.cpp:1134).
+  `read_jp_gift_rank(1362)*2`, `geoJpSec` in party_state.cpp). The sum is `geo_dur_sec(base, jp, gear, augPct)`
+  (`geo_dur.h`).
 - **gear** = native "Indicolure … duration +N" **flat seconds**, `geo_dur_gear_sec(eids)` over the 16
   equipped ids. The table `GEO_DUR_LISTED` is **generated** by `scripts/gen_geo_dur.py` from res
   item_descriptions.lua (`geo_dur_gen.h`) — universal / future-proof.
@@ -54,15 +55,17 @@ status on an ally, so it never reaches the buffs-on-allies path.
   Indi-Barrier = **550** Defense Boost, …) + the **shared** statuses **539** Regen / **541** Refresh /
   **580** Haste. **"Colure Active" = status 612.**
 
-## Three cases (party_state.cpp:1148–1188)
+## Three cases (party_state.cpp, `act_ally_buffs`)
 
 Detected when `spell_buff(sid)->skill == 44`:
 
 1. **Indi- on YOURSELF** (`aoeSelf`, i.e. a target id == `selfId_`) → `record_geo_aura(status, spell,
-   ffxi_now_tick() + (base + JP + gear)×60)` stores the single `selfGeo_` aura you carry. The drawer emits a
-   **stable computed self row** (hud_timers.cpp, the `self_geo()` block) at `geo_aura_remaining()`, replacing the 3 s pulse.
+   ffxi_now_tick() + geo_dur_sec(base, JP, gear, augPct)×60)` stores the single `selfGeo_` aura you carry. The
+   Timers build emits a **stable computed self row** (`model/timers_build.cpp`, the `self_geo()` block) at
+   `geo_aura_remaining()`, replacing the 3 s pulse. The GEO box reads the same aura (`game_mem.cpp`,
+   `auraLeftSec`).
 2. **Normal Indi- on an ally** → **NO row.** The aura moves with you / pulses; there's no fixed buff to
-   count. The ally loop is skipped (`if (b->skill == 44 && !geoEntrust) {} else …`, party_state.cpp:1157).
+   count. The ally loop is skipped (`if (b->skill == 44 && !geoEntrust) {} else …`).
 3. **ENTRUST'd Indi- on an ally** → **a FIXED buff on that ally** (Entrust makes the Indi- stay on the
    target instead of following you). We DO record the ally row with the computed duration. Entrust is JA
    **386** (`entrustTick_`); the next skill-44 cast within **60 s** (`geoEntrust`) runs the ally loop and records the
@@ -70,19 +73,17 @@ Detected when `spell_buff(sid)->skill == 44`:
    Entrust was entrusted by the game while the 15 s window drew no row at all. Any skill-44
    cast consumes the Entrust window (`entrustTick_ = 0`).
 
-## The self-buff noise filter (hud_timers.cpp, pass 2)
+## The self-buff noise filter (`model/timers_rules.h` + `timers_build.cpp`)
 
 The Duration column hides geomancy's 3 s-looping statuses for **everyone** (your own Indi-, or one you
-merely stand in / receive):
-
-```
-if (party().geo_aura_remaining(bt[i].id) >= 0) continue;        // your carried Indi- (redrawn as the stable row)
-if ((bt[i].id >= 542 && bt[i].id <= 556) || bt[i].id == 612) continue;   // Boosts + Colure Active pulse noise
-```
+merely stand in / receive): the row rule in `timers_rules.h` refuses
+`(st >= 542 && st <= 556) || st == 612` (Boosts + Colure Active pulse noise), and a status whose
+`geo_aura_remaining()` is `>= 0` (`geoAuraTracked()`, timers_build.cpp) is your carried Indi-, redrawn as the
+stable row.
 
 The **shared** statuses **539 Regen / 541 Refresh / 580 Haste** are **left visible** — real buffs still show.
 
-## The "OUT" rule — only the Indi- you carry NOW may alert (`geoReplaced`, hud_timers.cpp)
+## The "OUT" rule — only the Indi- you carry NOW may alert (`geoReplaced` → `focus_geo_replaced`, `model/focus_rules.h`)
 
 You carry **exactly one** aura (`selfGeo_` is a single slot, not a list), so casting a **different** Indi-
 **replaces** the previous one. The old effect status therefore leaves your 0x063 buff list — and the FOCUS
@@ -106,10 +107,11 @@ deliberately chose, so it must just **depop**.
 An Indi- that simply **expires** still alerts — its status is still the one `selfGeo_` holds. `//aio oblog`
 prints `geoRepl=` + the carried aura status on every focus entry; the focus trace logs `GEOOUT … SUPPRESSED`.
 
-## `//aio geodbg`
+## `//aio geodbg` (retired 2026-09-14)
 
-Dumps the per-slot Indicolure-duration gear and the total: `base 180 + JP1362 rank×2 + gear seconds`, to
-calibrate against Timers.dll for the current set (aiohud.cpp:895).
+Dumped the per-slot Indicolure-duration gear and the total: `base 180 + JP1362 rank×2 + gear seconds`, to
+calibrate against Timers.dll for the current set. Its code is in `dev/archive/aiohud_probes_2026-09-14.cpp`
+(banner above); it predates the augment percent term.
 
 ## See also
 - [Buffs you cast on ALLIES](buffs-on-allies.md) — the umbrella feature; GEO is its skill-44 special case.

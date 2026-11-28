@@ -183,3 +183,8 @@ stats did not" against a plugin that was reporting the truth.
   packet's `0x10`, so it can never answer for maxHP/maxMP or the jobs: `CharSheet::fromPacket` says which source
   filled it, and the cross-check only asks about those two when the packet did.
 - Offline tests: `tests/t_charsheet.cpp`. In-game rules: `dev/scripts/igtest.py`.
+
+## See also
+- [PointWatch](pointwatch.md) — the other reader of `0x061` / `0x063` order 5, and of the FFXiMain mirror.
+- [Encumbrance flags](encumbrance-flags.md) — the `0x01B` `+0x60` field.
+- [Player struct](player-struct.md) — the `g` root and `*(g+0x48)`.

@@ -1,3 +1,8 @@
+---
+title: Song duration (BRD) — the ally-song model
+summary: The ally song-duration formula (Base x m1 x m2 x m3 + a3, potency IS duration), the server measurements that fixed a 22-37 % under-estimate, where the per-item numbers come from, and how to verify with //aio songdur.
+source: model/song_dur.h + song_dur_gen.h (scripts/gen_song_dur.py), model/party_state.cpp (songdur_check), measured 2026-07-25
+---
 # Song duration (BRD) — the model, and why it was wrong for months
 
 > **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
@@ -100,10 +105,10 @@ listing any item whose text says "Increases song effect duration" with no number
 ## Verifying after a change
 
 ```
-//aio songlog          then sing
+//aio songdur [sec]    then sing        (shipped ; arms the trace 10..900 s, log in aiohud_debug.log)
 ```
 
-`SONGREAL` prints, for every song that lands on you, the duration the server reports next to the model's
+`SONGDUR` lines are the model (`PartyState::set_songdur_trace` / `songdur_check`, `party_state.cpp`). `SONGREAL` prints, for every song that lands on you, the duration the server reports next to the model's
 prediction, plus the gear factor the table *should* have produced. A table error surfaces as a number instead
 of as a complaint. `SONGUSE` prints the m1 each ally row was built from.
 

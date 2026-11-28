@@ -1,7 +1,7 @@
 ---
 title: Party-Member Buffs — the 0x076 Packet
 summary: Self buffs from memory plus other members' status icons from the packed 0x076 packet, and the buff atlas.
-source: REFERENCE.md §9h
+source: the old monolithic REFERENCE.md (section 9h) ; code model/party_state.cpp (on_076), model/game_mem.cpp (read_player_buffs)
 ---
 # Party-member buffs — the `0x076` packet  (WORKING, 2026-06-28)
 
@@ -12,7 +12,10 @@ the local player, so **self** comes from memory and **everyone else** from the p
 **Self buffs — memory** (reversed from LuaCore `get_player`, `FUN_10072040`). The same
 `player = *(G + 0x3C)` struct holds a **32-entry `u16` array at `player+0x1C`**
 (`[+0x1C, +0x5C)`); `0xFF` = empty slot. `get_player` loops it and appends every
-non-`0xFF` id under the lua key `buffs`. Code: `read_player_buffs` (`game_mem.cpp`).
+non-`0xFF` id under the lua key `buffs`. Code: `read_player_buffs(out, maxN, bool* ok)` (`game_mem.cpp`) —
+`ok` says the read SUCCEEDED, so an empty list is real and not "not ready" (rule 10: the Timers lost-buff
+alert was structurally unreachable while the two looked alike). The poll stores it as
+`GameState::buffs / nbuff / buffsOk`.
 
 **Other members — packet `0x076`** (`PartyState::on_076`). `b` = decoded packet, same
 base as `0x0DD` (payload at `+0x04`). **5 member slots of 48 (`0x30`) bytes:**
@@ -62,11 +65,15 @@ The only exact ally figure available is the **AoE self-mirror** (a buff that als
 own `0x063` self timer). The static RVAs above are client-version-specific — re-run the two `re/scratch_*.py`
 scanners after a client patch to re-locate the `0x076` handler and its buffer.
 
-**Icons:** a single atlas `assets/buff_atlas.raw` (1024×640 BGRA, 32-col grid of 32px
-cells, id → cell `(id%32, id/32)`), built by `scripts/gen_buff_atlas.ps1` from
-XivParty's `assets/buffIcons/*.png`. Ids ≥ 640 (outside the atlas) are skipped.
+**Icons:** one 1024×640 BGRA atlas, 32-col grid of 32px cells, id → cell `(id%32, id/32)`; ids ≥ 640
+(outside the atlas) are skipped. Which sheet fills it is a choice now (config > Interface > Status icons,
+`model/icon_dat.h` `IconPackKind`): a custom `icons\status_atlas.raw`, a pack folder or XIPivot overlay, the
+bundled `assets/buff_atlas.raw` (built by `scripts/gen_buff_atlas.ps1` from XivParty's
+`assets/buffIcons/*.png`), or the **game's own status-icon DAT** (ROM/119/57, decoded by `load_status_icons` —
+see [status-icon-dat.md](status-icon-dat.md)). `IPK_AUTO` takes them in the order custom > installed pack >
+bundled > vanilla.
 
-**Patch one cell.** `scripts/patch_buff_icon.ps1 -Id <n>` overwrites a **single** atlas
+**Patch one cell** (of the bundled sheet). `scripts/patch_buff_icon.ps1 -Id <n>` overwrites a **single** atlas
 cell from `XivParty/assets/buffIcons/<n>.png` (SourceCopy → straight alpha, spliced at
 `col=n%32, row=n/32`) **without** rebuilding the whole atlas — handy to fix/refresh one
 icon. (The Target module reuses cell **32** as its movement-Speed detail icon.)
@@ -75,3 +82,4 @@ icon. (The Target module reuses cell **32** as its movement-Speed detail icon.)
 - [Local player struct](../player/player-struct.md)
 - [Party member packets](../party/party-packets.md)
 - [The party member ARRAY in memory](../party/party-array.md)
+- [Status icons from the game DAT](status-icon-dat.md) — the default source of the atlas

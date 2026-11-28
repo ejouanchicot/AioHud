@@ -465,18 +465,6 @@ void lightning_draw(u32 dev, const float* xs, const float* ys, int n, float w, u
     }
 }
 // a chaotic bolt from A to B, with forks
-// AN ELECTRIC WAVE (Impaction B, 2026-11-23 : the matter-ripple read as a pale jagged fog) : a ring of LIGHTNING spreading
-// out -- several thin bright arcs with gaps between them, re-jittered every frame (they crackle), fading as they go
-void arc_bolt(u32 dev, float CX, float CY, float a0, float a1, float r, float jit, float w, u32 glow, float al);   // below
-void electric_wave(u32 dev, float CX, float CY, float r, float k, float a, float seed) {
-    if (a <= 0.01f) return;
-    const int NS = 6;
-    for (int i = 0; i < NS; ++i) {
-        const float a0 = seed + i * TAU / NS + 0.25f * sinf(seed * 3.1f + i), span = 0.55f + 0.30f * (0.5f + 0.5f * sinf(seed * 1.7f + i * 2.3f));
-        arc_bolt(dev, CX, CY, a0, a0 + span, r, 3.2f * k, 0.9f * k, 0xB98CFF, a);
-    }
-    fx_end(dev);
-}
 void zap(u32 dev, float ax, float ay, float bx, float by, float disp, float w, u32 glow, float al) {
     float xs[33], ys[33]; const int n = lightning_path(xs, ys, ax, ay, bx, by, disp);
     lightning_draw(dev, xs, ys, n, w, glow, al);
@@ -487,15 +475,6 @@ void zap(u32 dev, float ax, float ay, float bx, float by, float disp, float w, u
         float fx[33], fy[33]; const int m = lightning_path(fx, fy, xs[j], ys[j], xs[j] + cosf(ang) * fl, ys[j] + sinf(ang) * fl, disp * 0.5f);
         lightning_draw(dev, fx, fy, m, w * 0.55f, glow, al * 0.85f);
     }
-}
-// an ARC of lightning crawling along the ring from a0 to a1 : jagged in and out, glow + white core
-void arc_bolt(u32 dev, float CX, float CY, float a0, float a1, float r, float jit, float w, u32 glow, float al) {
-    float xs[12], ys[12], hw[12]; u32 c[12];
-    for (int i = 0; i < 12; ++i) { const float u = i / 11.0f, a = a0 + (a1 - a0) * u, rr = r + ((i && i < 11) ? (rnd() - 0.5f) * 2.0f * jit : 0.0f);
-        xs[i] = CX + cosf(a) * rr; ys[i] = CY + sinf(a) * rr; hw[i] = w * 3.2f; c[i] = C(glow, 0.5f * al); }
-    ribbon(dev, xs, ys, 12, hw, c);
-    for (int i = 0; i < 12; ++i) { hw[i] = w; c[i] = C(0xFFFFFF, al); }
-    ribbon(dev, xs, ys, 12, hw, c);
 }
 // an arc ribbon (wind gusts, spiral arms, tendrils) : from (a0,r0) to (a1,r1), tapered, alpha rising to the head
 void arc_ribbon(u32 dev, float CX, float CY, float a0, float a1, float r0, float r1, float w, u32 rgb, float al, float wob, float t, bool add = true) {
@@ -861,31 +840,6 @@ void draw_parts(u32 dev, int P, float k) {
         fill_poly_aa(dev, pts, 6, C(0x3A2616, 0.95f * fade));
         fill_poly_aa(dev, hi, 6, C(0x8A6644, 0.8f * fade));
     }
-}
-
-// an arc of electricity hugging the sphere : from angle a0 over `span`, at radius r ; every point pushed in / out by
-// a sum of sines whose phases run with time -> a jagged line that writhes continuously (pinned at both ends)
-void live_arc(u32 dev, float CX, float CY, float a0, float span, float r, float amp, float t, float seed, float w, u32 glow, float al) {
-    float xs[33], ys[33];
-    for (int i = 0; i < 33; ++i) {
-        const float u = i / 32.0f, pin = sinf(PI * u);
-        const float d = 0.50f * sinf(i * 0.85f + t * 6.0f + seed) + 0.30f * sinf(i * 2.30f - t * 9.5f + seed * 1.7f)
-                      + 0.20f * sinf(i * 5.70f + t * 15.0f + seed * 2.9f);   // three octaves : the big bends, the zigzag, the crackle
-        const float a = a0 + span * u, rr = r + amp * d * pin;
-        xs[i] = CX + cosf(a) * rr; ys[i] = CY + sinf(a) * rr;
-    }
-    lightning_draw(dev, xs, ys, 33, w, glow, al);
-}
-// a bolt reaching OUT of the sphere along angle a, length L, writhing the same way
-void live_bolt(u32 dev, float CX, float CY, float a, float r0, float L, float t, float seed, float w, u32 glow, float al) {
-    float xs[33], ys[33];
-    const float nx = -sinf(a), ny = cosf(a);
-    for (int i = 0; i < 33; ++i) {
-        const float u = i / 32.0f, side = L * 0.18f * (0.5f * sinf(i * 0.9f + t * 5.0f + seed) + 0.3f * sinf(i * 2.6f - t * 9.0f + seed * 1.3f) + 0.2f * sinf(i * 6.1f + t * 14.0f + seed * 2.1f)) * u;
-        const float r = r0 + L * u;
-        xs[i] = CX + cosf(a) * r + nx * side; ys[i] = CY + sinf(a) * r + ny * side;
-    }
-    lightning_draw(dev, xs, ys, 33, w, glow, al);
 }
 
 // ---- credible lightning (Impaction) ----

@@ -21,7 +21,6 @@ namespace aio {
 float Kit::px(float v) const { return snap(v * u); }
 
 static const float TS_TITLE = 28.0f, TS_SECTION = 15.5f, TS_LABEL = 16.0f, TS_VALUE = 15.0f, TS_NOTE = 13.5f, TS_NAV = 16.0f;   // 2026-11-26 : -15 % ("trop gros")
-static const u32 C_FOCUS = C_METAL, C_MODIFIED = C_METAL;   // the brand gold (not the theme accent) : focus and "modified"
 
 // a disabled part draws through the page fade : one dimming for every shape and text it has
 // the page fade a Dim() dimmed -- window_face draws a disabled window at THAT opacity (dim colours, readable), not at 1.0 :
@@ -733,12 +732,6 @@ void chrome_medallion(Kit& K, float cx, float cy, float r, const char* s) {
     disc(dev, cx, cy + r * 0.04f, r * 0.72f, fa(0xFF141A22u));
     disc(dev, cx - r * 0.15f, cy - r * 0.2f, r * 0.45f, MA(0x18, 0xFFFFFFu));
     inlay_c(K.fs, dev, cx, cy, s, r * 0.95f, BRASS().lite);
-}
-// a ROW PLATE (a list entry) : dark steel, lit on hover ; the chosen one with a brass filet along its foot
-void chrome_rowplate(Kit& K, float x, float y, float w, float h, bool active, float t) {
-    Metal m = STEEL(); m.top = m_scale(m.top, active ? 0.70f : 0.58f); m.bot = m_scale(m.bot, active ? 0.66f : 0.54f);
-    plinth(K, x, y, w, h, K.px(5.0f), m, t);
-    if (active) { cs(K.dev); rrect(K.dev, x + K.px(6.0f), y + h - K.px(3.0f), w - K.px(12.0f), K.px(2.0f), 0.0f, MA(0xD0, BRASS().lite), MA(0xD0, BRASS().body)); }
 }
 // a PLAQUE : a cast brass plate, the words stamped in ink (the installed version)
 void chrome_plaque(Kit& K, float x, float y, float w, float h, const char* s, float sz) {

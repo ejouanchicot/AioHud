@@ -54,8 +54,6 @@ public:
     bool preview_anchor(float& rightX, float& bottomY) const {
         rightX = pvRightX_; bottomY = pvBottomY_; return pvOn_;
     }
-    // the live-preview stage CENTRE (for a small, self-centred widget like the Target box).
-    bool preview_center(float& cx, float& cy) const { cx = pvCX_; cy = pvCY_; return pvOn_; }
     // the live-preview stage RECT (px) -> the Target preview maps its on-screen placement into this as a mini-map.
     bool preview_rect(float& sx, float& sy, float& sw, float& sh) const { sx = pvSX_; sy = pvSY_; sw = pvSW_; sh = pvSH_; return pvOn_; }
     // Help tab : if the Player module sample slot is visible, its centre + available width (the Hud renders the REAL
@@ -238,16 +236,12 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
-    // Configuration-tab own category blocks (INTERFACE / LAYOUT), lifted out of draw() ; same row/geometry
+    // Configuration-tab own category block (INTERFACE), lifted out of draw() ; same row/geometry
     // signature as the per-module config panels (config_page.cpp ; byte-identical).
     void draw_interface_category(u32 dev, Font* fo, const MouseState* mo, bool click,
                                  float& ry, int& ri, float e,
                                  float bandX, float bandW, float coX, float ctrlW,
                                  float hdrX, float hdrW);
-    void draw_layout_category(u32 dev, Font* fo, const MouseState* mo, bool click,
-                              float& ry, int& ri, float e,
-                              float bandX, float bandW, float coX, float ctrlW,
-                              float hdrX, float hdrW);
     // shared "box appearance" rows (Box/Transparency/Theme/Hue/Luminosity) operating on any module's BoxStyle.
     // The FRAME rows (theme / colour / luminosity + transparency / border), in the two-column grammar.
     // Callable MORE THAN ONCE per panel -- every control hangs off ctrl_uid_i(CTRL_ID, group), so the two
@@ -316,10 +310,6 @@ private:
     int   cfgZtTextElem_ = 0;    // which Zone Tracker text element the typography sub-section edits (ZT_HEADER / ZT_BODY)
     int   cfgEpTextElem_ = 0;    // which EmpyPop text element the typography sub-section edits (EP_TITLE / EP_POP / EP_FROM / EP_COLL)
     int   cfgTmTextElem_ = 0;    // which Timers text element the typography sub-section edits (TM_HEADER / TM_BODY)
-    int   cfgDbTextElem_ = 0;    // which Debuffs text element the typography sub-section edits (DB_HEADER / DB_NAME / DB_TIMER)
-    int   trkJob_ = 0;           // Timers "track per job" : MAIN job whose checklist is shown (0 = follow current main job)
-    int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
-    int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
     // Party panel, in the order it reads : Frame / Party / Alliance / Text / Buffs. Party reuses catOpen_[1],
     // Alliance catOpen_[7], Text catOpen_[0] ; these are the sections the grammar added.
@@ -387,7 +377,6 @@ private:
     float helpPlayerCx_ = 0.0f, helpPlayerCy_ = 0.0f, helpPlayerW_ = 0.0f, helpPlayerH_ = 0.0f;
     float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
-    bool  relOlder_    = false;
     int   relOpenIdx_  = 0;       // Update (redesign) : the ONE release open (accordion, no per-release array : no cap at 500 releases)
     int   relSeriesOpen_ = -1;    // Update : the archive series unfolded (index in first-appearance order), -1 none
     int   relNewN_     = -1;
@@ -409,7 +398,6 @@ private:
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
     float pvRightX_    = 0.0f, pvBottomY_ = 0.0f;
-    float pvCX_        = 0.0f, pvCY_ = 0.0f;   // live-preview stage centre (for the Target box preview)
     float pvSX_ = 0.0f, pvSY_ = 0.0f, pvSW_ = 0.0f, pvSH_ = 0.0f;   // live-preview stage rect (px)
     float pvStageX_ = 0.0f, pvStageY_ = 0.0f, pvStageW_ = 0.0f, pvStageH_ = 0.0f;   // full preview stage rect -> the opaque page bg leaves a HOLE here so the real game shows (transparent preview)
     // edit-layout : "Rules" toggle + the destructive-action confirmation modal

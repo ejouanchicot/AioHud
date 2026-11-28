@@ -53,6 +53,7 @@ what they actually feed rather than by title alone.
 | [regen-duration.md](regen-duration.md) | Regen's own duration gear — `regen_dur_gen.h` |
 | [movement-speed.md](movement-speed.md) | The movement-speed stat — background for [movement-speed-analysis.md](../player/movement-speed-analysis.md) |
 | [moonphase.md](moonphase.md) | Moon phase ids ↔ names and percentages |
+| [helix.md](helix.md) | SCH Helix (FR memo): a DoT ticking every 10 s, +2 s skillchain / burst windows under Immanence — background for Helix (status 186) in the DoT set of [target-debuffs.md](../target/target-debuffs.md) |
 
 > `enhancing-magic-wiki.md` and `fili-attire-set-brd.md` used to sit beside these. The first was
 > byte-identical to `enhancing-magic.md`, the second a strict subset of `fili-attire-set.md`. Both deleted.
