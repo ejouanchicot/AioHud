@@ -636,8 +636,8 @@ static const ChangeLine CL_82[] = {
 static const ChangeLine CL_81[] = {
     { "*A buff you re-cast shows up again.* Take a row off with */aio out*, then cast that buff again on someone who STILL has it -- Haste, Refresh and Regen overwrite themselves and never lapse -- and the row used to stay hidden for as long as you kept the buff up. A removed line is now tied to that ONE cast : a newer cast on that person brings it back, with its number and its real remaining time. A cast that does not land (no effect, resisted) leaves it off, since nothing changed on them.",
       "*Un buff relanc\xC3\xA9 se r\xC3\xA9""affiche.* Retire une ligne avec */aio out*, puis relance ce buff sur quelqu'un qui l'a TOUJOURS -- Haste, Refresh et Regen s'\xC3\xA9""crasent eux-m\xC3\xAAmes et ne tombent jamais -- et la ligne restait cach\xC3\xA9""e aussi longtemps que tu maintenais le buff. Une ligne retir\xC3\xA9""e ne vaut plus que pour CE cast-l\xC3\xA0 : un cast plus r\xC3\xA9""cent sur cette personne la ram\xC3\xA8ne, avec son num\xC3\xA9ro et son temps restant r\xC3\xA9""el. Un cast qui ne prend pas (sans effet, r\xC3\xA9sist\xC3\xA9) la laisse retir\xC3\xA9""e, puisque rien n'a chang\xC3\xA9 sur la cible.", CK_FIXED, "Timers", "Timers" },
-    { "*Two new ways to tidy the Timers box.* */aio out alerts* takes off only the RED rows -- the buffs that have just run out -- and leaves every running timer alone ; */aio out all* still clears the lot. And */aio in* puts back everything you removed, or just the one you name (*/aio in 3*, */aio in gab*).",
-      "*Deux nouvelles fa\xC3\xA7ons de ranger la bo\xC3\xAEte Timers.* */aio out alertes* ne retire que les lignes ROUGES -- les buffs qui viennent d'expirer -- et laisse tourner tous les minuteurs ; */aio out all* efface toujours tout. Et */aio in* remet ce que tu as retir\xC3\xA9, ou seulement la ligne que tu nommes (*/aio in 3*, */aio in gab*).", CK_NEW, "Timers", "Timers" },
+    { "*Two new ways to tidy the Timers box.* */aio out alerts* takes off only the RED rows -- the buffs that have just run out -- and leaves every running timer alone ; */aio out all* still clears the lot. And */aio in* puts back everything you removed, or just the one you name (*/aio in 3*, */aio in haste*).",
+      "*Deux nouvelles fa\xC3\xA7ons de ranger la bo\xC3\xAEte Timers.* */aio out alertes* ne retire que les lignes ROUGES -- les buffs qui viennent d'expirer -- et laisse tourner tous les minuteurs ; */aio out all* efface toujours tout. Et */aio in* remet ce que tu as retir\xC3\xA9, ou seulement la ligne que tu nommes (*/aio in 3*, */aio in haste*).", CK_NEW, "Timers", "Timers" },
     { "*Duration: show is finally obeyed.* A row about an ally forced icon + name whatever you had picked, while a grouped row followed the setting -- and a buff moves between those two forms as you re-cast, so the presentation changed on its own. The person is now held apart from the spell : *Icon* is icon + person, *Name* is person + spell, *Both* is all three. A row about someone else always names them.",
       "*Duration : afficher est enfin respect\xC3\xA9.* Une ligne qui concerne un alli\xC3\xA9 for\xC3\xA7""ait ic\xC3\xB4ne + nom quel que soit ton choix, alors qu'une ligne group\xC3\xA9""e, elle, suivait le r\xC3\xA9glage -- et un buff passe de l'une \xC3\xA0 l'autre au fil des recasts, donc la pr\xC3\xA9sentation changeait d'elle-m\xC3\xAAme. La personne est d\xC3\xA9sormais s\xC3\xA9par\xC3\xA9""e du sort : *Ic\xC3\xB4ne* donne ic\xC3\xB4ne + personne, *Nom* personne + sort, *Les deux* les trois. Une ligne qui concerne quelqu'un d'autre le nomme toujours.", CK_FIXED, "Timers", "Timers" },
     { "*Chat and console messages follow the language you picked.* Every line the plugin prints was a fixed mix of English and French : command feedback, the eleven diagnostic commands, */aio doctor* and its remedies, and the updater's own messages. They all follow the FR/EN switch in the config now -- one setting, not two.",
@@ -684,6 +684,25 @@ static const ChangeLine CL_88[] = {
       "//aio doctor signale aussi une minimap qui ne se charge pas et des ic\xC3\xB4nes d'\xC3\xA9quipement qui ne correspondent pas aux fichiers du jeu, au lieu de l'\xC3\xA9""crire seulement dans le journal.", CK_IMPROVED, "HUD", "HUD" },
     { "*Red OUT alerts keep the names of who lost the buff.* When several people lost a buff you had cast on them one by one -- Haste, Phalanx, Regen -- the alerts folded into a single nameless \"(AoE N)\" line. Only a real area cast (a song, Protectra, a spell under Accession) groups now ; everything else keeps one alert per person.",
       "*Les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lanc\xC3\xA9 un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne.", CK_FIXED, "Timers", "Timers" },
+};
+
+static const ChangeLine CL_115[] = {
+    { "*Timers follow the game's own clock again* : since a game update they had fallen back on the PC's clock (a 2-3 s gap was possible). AioHUD now finds the game's clock by itself, at every version of the game.",
+      "*Les timers suivent de nouveau l'horloge du jeu* : depuis une mise \xC3\xA0 jour du jeu, ils \xC3\xA9taient retomb\xC3\xA9s sur l'horloge du PC (jusqu'\xC3\xA0 2-3 s d'\xC3\xA9""cart). AioHUD retrouve maintenant l'horloge du jeu tout seul, \xC3\xA0 chaque version du jeu.", CK_FIXED, "Timers", "Timers" },
+    { "*Chat channel colours* : the name and the message now share one colour. Chat > Text > Channel colours : AioHUD's (each channel's colour adjustable) or the game's (your Font Colors).",
+      "*Couleurs des canaux du chat* : le nom et le message ont maintenant la m\xC3\xAAme couleur. Chat > Texte > Couleurs des canaux : celles d'AioHUD (la couleur de chaque canal r\xC3\xA9glable) ou celles du jeu (vos Font Colors).", CK_NEW, "Chat", "Chat" },
+    { "*The highlighted line of the open log stays on its message* when new text comes in -- it used to move by itself.",
+      "*La ligne en surbrillance du log ouvert reste sur son message* quand du texte arrive -- elle se d\xC3\xA9pla\xC3\xA7""ait toute seule.", CK_FIXED, "Chat", "Chat" },
+    { "*Status > Skills, Crafts, Job Levels, Merit Points and Profile* at the same text size as the other menus : the long names (String Instrument...) are no longer shrunk.",
+      "*Statut > Skills, Artisanat, Niveaux de job, Merit Points et Profil* \xC3\xA0 la m\xC3\xAAme taille de texte que les autres menus : les noms longs (String Instrument...) ne sont plus r\xC3\xA9tr\xC3\xA9""cis.", CK_FIXED, "Game UI", "Interface du jeu" },
+    { "*The locked equipment slots (red crosses) show right after a reload* of AioHUD, without waiting for a job change.",
+      "*Les emplacements d'\xC3\xA9quipement bloqu\xC3\xA9s (croix rouges) s'affichent d\xC3\xA8s le rechargement* d'AioHUD, sans attendre un changement de job.", CK_FIXED, "Player", "Joueur" },
+    { "*Config* : the Debuff box frame section no longer opens and closes with the other pages' Behaviour sections ; the Chat page shows Behaviour before History.",
+      "*Config* : la section Cadre de la bo\xC3\xAEte des debuffs ne s'ouvre et ne se ferme plus avec les sections Comportement des autres pages ; la page Chat montre Comportement avant Historique.", CK_FIXED, "Config", "Config" },
+    { "*A lighter download* : 2 MB of window skins that were no longer offered are gone from the package.",
+      "*Un t\xC3\xA9l\xC3\xA9""chargement plus l\xC3\xA9ger* : 2 Mo de skins de fen\xC3\xAAtre qui n'\xC3\xA9taient plus propos\xC3\xA9s ont quitt\xC3\xA9 le paquet.", CK_IMPROVED, "Update", "Mise \xC3\xA0 jour" },
+    { "*More precise diagnostics* : //aio report now says why the menu font or the redrawn Casting Time / HP-MP-TP gauges are not applied.",
+      "*Diagnostic plus pr\xC3\xA9""cis* : //aio report dit maintenant pourquoi la police des menus ou les jauges Casting Time / HP-MP-TP redessin\xC3\xA9""es ne s'appliquent pas.", CK_IMPROVED, "Game UI", "Interface du jeu" },
 };
 
 static const ChangeLine CL_114[] = {
@@ -1036,6 +1055,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.1.5", CL_115, (int)(sizeof(CL_115) / sizeof(CL_115[0])), "2026-11-28" },
     { "1.1.4", CL_114, (int)(sizeof(CL_114) / sizeof(CL_114[0])), "2026-11-28" },
     { "1.1.3", CL_113, (int)(sizeof(CL_113) / sizeof(CL_113[0])), "2026-11-28" },
     { "1.1.2", CL_112, (int)(sizeof(CL_112) / sizeof(CL_112[0])), "2026-11-28" },
