@@ -2621,7 +2621,8 @@ void persona_draw(const Frame& f) {
         if (bh < 60.0f * S) bh = snap(60.0f * S);
         bw += 2.0f * k.bi; bh += 2.0f * k.bi;                                  // the client's rect + the frame border
         lh = (bh - 2.0f * pad - 7.0f * S) / 5.0f;
-        if (tz > lh * 0.92f) tz = lh * 0.92f;
+        // the text sets the rows (2026-11-28, the uniform pass) : it used to be capped to the client's rows instead
+        { const float lhTxt = snap(tz * 1.5f); if (lhTxt > lh) { lh = lhTxt; bh = snap(5.0f * lh + 2.0f * pad + 7.0f * S); } }
         w = fo->measure(ml, tz); { const float w2[4] = { fo->measure(lEp, tz), fo->measure(ep, tz), fo->measure(lNx, tz), fo->measure(nx, tz) }; for (int i = 0; i < 4; ++i) if (w2[i] > w) w = w2[i]; }
         if (w + 2.0f * pad > bw) bw = snap(w + 2.0f * pad);
         s_mlW = bw; s_mlMs = now;                                             // its own width : the stats above take it when wider
@@ -2684,9 +2685,15 @@ void jobs_draw(const Frame& f) {
     const float S = k.S;
     const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
     const int rowsN = (n + 1) / 2;
-    float bw = snap(252.0f * sx) + 2.0f * k.bi, bh = snap(((float)rowsN * 14.0f + 22.0f) * sy) + 2.0f * k.bi;   // the client's size + the frame border
-    const float vpad = snap(6.0f * S) + k.bi, lh = (bh - 2.0f * vpad) / (float)rowsN;
-    float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+    // THE TEXT SETS THE SIZE (2026-11-28, the uniform pass) : drawn at k.tz, the panel grows to the longest job name +
+    // its value, the rows to the text ; never smaller than the client's rect (it used to cap the text to its 14 px rows).
+    const float tz = k.tz, ip = snap(10.0f * S);
+    float nameW = 0.0f; for (int i = 0; i < n; ++i) { const float w = f.font->measure(JOB_FULL[ids[i]], tz); if (w > nameW) nameW = w; }   // f.font checked above
+    const float colNeed = snap(2.0f * ip + nameW + 12.0f * S + f.font->measure("000", tz)), colCli = snap(252.0f * sx) * 0.5f;
+    const float vpad = snap(6.0f * S) + k.bi;
+    const float lhCli = ((float)rowsN * 14.0f + 22.0f) * sy / (float)rowsN, lhTxt = snap(tz * 1.5f);
+    const float lh = lhTxt > lhCli ? lhTxt : lhCli;
+    float bw = snap(2.0f * (colNeed > colCli ? colNeed : colCli)) + 2.0f * k.bi, bh = snap((float)rowsN * lh) + 2.0f * vpad;
     float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
     if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
@@ -2703,7 +2710,7 @@ void jobs_draw(const Frame& f) {
     rrect(dev, snap(bx + bw * 0.5f), by + vpad, 1.0f, bh - 2.0f * vpad, 0.0f, with_alpha(0x24C8D6EAu, A), with_alpha(0x24C8D6EAu, A));
     const u32 sh = with_alpha(0xC8000000u, A);
     fo->begin(dev);
-    const float colW = (bw - 2.0f * k.bi) * 0.5f, ip = snap(10.0f * S);   // the two columns, inside the frame border
+    const float colW = (bw - 2.0f * k.bi) * 0.5f;   // the two columns, inside the frame border
     for (int i = 0; i < n; ++i) {
         const int j = ids[i], col = i & 1, row = i >> 1;
         const float cx = bx + k.bi + (float)col * colW, cy = snap(by + vpad + (float)row * lh + lh * 0.5f);
@@ -2745,9 +2752,19 @@ void skills_draw(const Frame& f) {
     const float S = k.S;
     const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
     const int rowsN = (n + 1) / 2;
-    const float bw = snap(252.0f * sx) + 2.0f * k.bi, bh = snap(((float)rowsN * 14.0f + 22.0f) * sy) + 2.0f * k.bi;   // the client's size + the frame border
-    const float vpad = snap(6.0f * S) + k.bi, lh = (bh - 2.0f * vpad) / (float)rowsN;
-    float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+    // THE TEXT SETS THE SIZE (2026-11-28, the uniform pass, the user : "String Instrument ... ecrits tout petits") : the
+    // panel was the client's rect (252 x rows*14), and the text was CAPPED to those 14 px rows and long names SHRUNK to
+    // fit a column -- the one Status screen still below the menus' text size. Now every name is drawn at k.tz and the
+    // panel grows to hold the longest name + its value ; never smaller than the client's own rect.
+    const float tz = k.tz, ip = snap(10.0f * S);
+    float nameW = 0.0f; for (int i = 0; i < n; ++i) { const float w = f.font->measure(SKILL_EN[ids[i]], tz); if (w > nameW) nameW = w; }   // f.font checked above
+    const float colNeed = snap(2.0f * ip + nameW + 12.0f * S + f.font->measure("000", tz));
+    const float colCli = snap(252.0f * sx) * 0.5f;
+    const float colW0 = colNeed > colCli ? colNeed : colCli;
+    const float vpad = snap(6.0f * S) + k.bi;
+    const float lhCli = ((float)rowsN * 14.0f + 22.0f) * sy / (float)rowsN, lhTxt = snap(tz * 1.5f);
+    const float lh = lhTxt > lhCli ? lhTxt : lhCli;
+    const float bw = snap(2.0f * colW0) + 2.0f * k.bi, bh = snap((float)rowsN * lh) + 2.0f * vpad;
     float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
     if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
@@ -2761,16 +2778,13 @@ void skills_draw(const Frame& f) {
     rrect(dev, snap(bx + bw * 0.5f), by + vpad, 1.0f, bh - 2.0f * vpad, 0.0f, with_alpha(0x24C8D6EAu, A), with_alpha(0x24C8D6EAu, A));
     const u32 sh = with_alpha(0xC8000000u, A);
     fo->begin(dev);
-    const float colW = (bw - 2.0f * k.bi) * 0.5f, ip = snap(10.0f * S);   // the two columns, inside the frame border
+    const float colW = (bw - 2.0f * k.bi) * 0.5f;   // the two columns, inside the frame border
     for (int i = 0; i < n; ++i) {
         const int id = ids[i], col = i & 1, row = i >> 1;
         const float cx = bx + k.bi + (float)col * colW, cy = snap(by + vpad + (float)row * lh + lh * 0.5f);
         const bool capped = (lastK.v[id] & 0x8000) != 0;
         char v[8]; sprintf(v, "%d", (int)(lastK.v[id] & 0x7FFF));
-        // a long name in a narrow column : a touch smaller rather than over its value
-        float nz = tz; const float room = colW - 2.0f * ip - fo->measure("000", tz) - 6.0f * S;
-        const float nw = fo->measure(SKILL_EN[id], nz); if (nw > room && nw > 0.0f) nz = tz * room / nw;
-        fo->draw_lc(dev, snap(cx + ip), cy, SKILL_EN[id], nz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+        fo->draw_lc(dev, snap(cx + ip), cy, SKILL_EN[id], tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);   // the column fits the longest name
         fo->draw_lc(dev, snap(cx + colW - ip - fo->measure(v, tz)), cy, v, tz, with_alpha(capped ? 0xFF6FB4FFu : 0xFFF2F5FAu, A), sh, k.ow);
     }
 }
@@ -2806,9 +2820,25 @@ void crafts_draw(const Frame& f) {
             for (int id = 48; id <= 57; ++id) if (lastK.v[id] != 0xFFFF) ids[n++] = id;
             if (n) {
                 const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
-                const float bw = snap(252.0f * sx) + 2.0f * k.bi, bh = snap(((float)n * 14.0f + 22.0f) * sy) + 2.0f * k.bi;   // the client's size + the frame border
-                const float lh = (bh - 2.0f * vpad) / (float)n;
-                float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+                // THE TEXT SETS THE SIZE (2026-11-28, the uniform pass) : k.tz, the rows and the three columns grow to it ;
+                // never smaller than the client's rect (the text used to be capped to its 14 px rows)
+                const float tz = k.tz;
+                float wN = 0.0f, wR = 0.0f, wL = 0.0f;
+                for (int i = 0; i < n; ++i) {
+                    const unsigned v = lastK.v[ids[i]]; const int rank = (int)(v & 0x1F), lvl = (int)((v >> 5) & 0x3FF);
+                    char rk[16], lv[16]; if (rank <= 10) sprintf(rk, "%s", RANK_EN[rank]); else sprintf(rk, "Rank %d", rank); sprintf(lv, "(%d)", lvl);
+                    float w = fo->measure(CRAFT_EN[ids[i] - 48], tz); if (w > wN) wN = w;
+                    w = fo->measure(rk, tz); if (w > wR) wR = w;
+                    w = fo->measure(lv, tz); if (w > wL) wL = w;
+                }
+                const float gap = snap(14.0f * S);
+                const float rkCol = ip + wN + gap;                                                 // where the rank column starts, from the box edge
+                const float need = snap(rkCol + wR + gap + wL + ip), cli = snap(252.0f * sx) + 2.0f * k.bi;
+                const float bw = need > cli ? need : cli;
+                const float lhCli = ((float)n * 14.0f + 22.0f) * sy / (float)n, lhTxt = snap(tz * 1.5f);
+                const float lh = lhTxt > lhCli ? lhTxt : lhCli;
+                const float bh = snap((float)n * lh) + 2.0f * vpad;
+                const float rkX = need > cli ? rkCol : (bw - 2.0f * k.bi) * 0.44f + k.bi;          // the client's 44 % split when it is wide enough
                 float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
                 if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
                 if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
@@ -2828,7 +2858,7 @@ void crafts_draw(const Frame& f) {
                         sprintf(lv, "(%d)", lvl);
                         const float cy = snap(by + vpad + (float)i * lh + lh * 0.5f);
                         fo->draw_lc(dev, snap(bx + ip), cy, CRAFT_EN[ids[i] - 48], tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
-                        fo->draw_lc(dev, snap(bx + k.bi + (bw - 2.0f * k.bi) * 0.44f), cy, rk, tz, with_alpha(capped ? 0xFF6FB4FFu : 0xFFF2F5FAu, A), sh, k.ow);
+                        fo->draw_lc(dev, snap(bx + rkX), cy, rk, tz, with_alpha(capped ? 0xFF6FB4FFu : 0xFFF2F5FAu, A), sh, k.ow);
                         fo->draw_lc(dev, snap(bx + bw - ip - fo->measure(lv, tz)), cy, lv, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
                     }
                 }
@@ -2843,9 +2873,15 @@ void crafts_draw(const Frame& f) {
         if (on) { lastM = M; lastW = W; }
         if (block_ease(g_lmB, on, now, dt) && lastM.ok && lastW.uiW > 0) {
             const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
-            const float bw = snap((float)(lastW.rx1 - lastW.rx0) * sx) + 2.0f * k.bi, bh = snap((float)(lastW.ry1 - lastW.ry0) * sy) + 2.0f * k.bi;   // + the frame border
-            const float lh = (bh - 2.0f * vpad) / 4.0f;
-            float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+            // THE TEXT SETS THE SIZE (2026-11-28, the uniform pass) : k.tz, four rows of it ; never smaller than the client's rect
+            const float tz = k.tz;
+            char a[24], b[24]; sprintf(a, "%d/10000", lastM.lp); sprintf(b, "%d/%d P", lastM.merits, lastM.maxMerits);
+            const char* t[4] = { gtr("Limit Points", "Limit Points"), a, gtr("Merit Points", "Points de m\xC3\xA9rite"), b };
+            float wMax = 0.0f; for (int i = 0; i < 4; ++i) { const float w = fo->measure(t[i], tz); if (w > wMax) wMax = w; }
+            const float cliW = snap((float)(lastW.rx1 - lastW.rx0) * sx) + 2.0f * k.bi, cliH = snap((float)(lastW.ry1 - lastW.ry0) * sy) + 2.0f * k.bi;
+            const float needW = snap(2.0f * ip + wMax), lhTxt = snap(tz * 1.5f), lhCli = (cliH - 2.0f * vpad) / 4.0f;
+            const float lh = lhTxt > lhCli ? lhTxt : lhCli;
+            const float bw = needW > cliW ? needW : cliW, bh = snap(4.0f * lh) + 2.0f * vpad;
             float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
             // where the M.Level box was : right under the stats (2026-11-27 : at the client's place it covered the stats' bottom)
             if (g_persRw > 0.0f && GetTickCount() - g_persAtMs < 250u) { bx = g_persRx; by = snap(g_persRy + g_persRh + 3.0f * S); }
@@ -2859,10 +2895,8 @@ void crafts_draw(const Frame& f) {
                 g_frameJoin = jm;
                 draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
                 const u32 sh = with_alpha(0xC8000000u, A);
-                char a[24], b[24]; sprintf(a, "%d/10000", lastM.lp); sprintf(b, "%d/%d P", lastM.merits, lastM.maxMerits);
                 const bool full = lastM.maxMerits > 0 && lastM.merits >= lastM.maxMerits;
                 fo->begin(dev);
-                const char* t[4] = { gtr("Limit Points", "Limit Points"), a, gtr("Merit Points", "Points de m\xC3\xA9rite"), b };
                 for (int i = 0; i < 4; ++i) {
                     const float cy = snap(by + vpad + (float)i * lh + lh * 0.5f);
                     const bool num = (i & 1) != 0;
@@ -8443,8 +8477,11 @@ void profile_draw(const Frame& f) {
     bh += 2.0f * k.bi;                                                       // the client's height + the frame border
     const int nLines = 7 + (mon ? 3 : 0);                                    // header, 6 rows, [header, 2 rows]
     float tz = k.tz;
-    const float lh = (bh - 2.0f * vpad - (mon ? 4.0f * S : 0.0f)) / (float)nLines, headH = lh;
-    if (tz > lh * 0.92f) tz = lh * 0.92f;
+    // the text sets the rows (2026-11-28, the uniform pass -- it was capped to the client's rows, the one Status panel
+    // below the menus' text size) : the panel grows when the client's height cannot hold nLines of k.tz
+    float lh = (bh - 2.0f * vpad - (mon ? 4.0f * S : 0.0f)) / (float)nLines;
+    { const float lhTxt = snap(tz * 1.5f); if (lhTxt > lh) { lh = lhTxt; bh = snap((float)nLines * lh) + 2.0f * vpad + (mon ? 4.0f * S : 0.0f); } }
+    const float headH = lh;
     // THE CLIENT'S LAYOUT (the user's reading of it, 2026-11-18) : a "Profile" section --
     //   Nation : [flag] name / Race / Home Point / Rank : n  .. "Rank Points" with its bar under it /
     //   Mastery Rank : n  .. Mentor : [flag]
