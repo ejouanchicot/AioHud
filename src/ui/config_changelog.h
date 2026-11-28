@@ -686,6 +686,15 @@ static const ChangeLine CL_88[] = {
       "*Les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lanc\xC3\xA9 un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne.", CK_FIXED, "Timers", "Timers" },
 };
 
+static const ChangeLine CL_114[] = {
+    { "*Reloading AioHUD no longer costs memory* : two icon atlases (status, names over the characters) stayed in memory at every //unload, 2.7 MB each time -- the game could run out of memory after many reloads. Now nothing stays.",
+      "*Recharger AioHUD ne co\xC3\xBBte plus de m\xC3\xA9moire* : deux atlas d'ic\xC3\xB4nes (\xC3\xA9tats, noms au-dessus des persos) restaient en m\xC3\xA9moire \xC3\xA0 chaque //unload, 2,7 Mo \xC3\xA0 chaque fois -- le jeu pouvait manquer de m\xC3\xA9moire apr\xC3\xA8s beaucoup de rechargements. Plus rien ne reste.", CK_FIXED, "Performance", "Performances" },
+    { "*The fonts shipped with AioHUD are released at the unload* too.",
+      "*Les polices fournies avec AioHUD sont aussi lib\xC3\xA9r\xC3\xA9""es au d\xC3\xA9""chargement.*", CK_FIXED, "Performance", "Performances" },
+    { "*Yes / No confirms side by side again* (Log Out, Shut Down...) : Yes on the left, No on the right, as in the game.",
+      "*Les confirmations Oui / Non de nouveau c\xC3\xB4te \xC3\xA0 c\xC3\xB4te* (Log Out, Shut Down...) : Oui \xC3\xA0 gauche, Non \xC3\xA0 droite, comme dans le jeu.", CK_FIXED, "Game UI", "Interface du jeu" },
+};
+
 static const ChangeLine CL_113[] = {
     { "*Config > Log Settings, Font Colors and Windows redrawn* : each Log Settings row shows its ON / OFF, each Font Colors row its colour, the RGB editor opens beside the list ; every caption in the menus' font.",
       "*Config > Log Settings, Font Colors et Windows redessin\xC3\xA9s* : chaque ligne de Log Settings montre son ON / OFF, chaque ligne de Font Colors sa couleur, l'\xC3\xA9""diteur RVB s'ouvre \xC3\xA0 c\xC3\xB4t\xC3\xA9 de la liste ; toutes les l\xC3\xA9gendes dans la police des menus.", CK_NEW, "Game UI", "Interface du jeu" },
@@ -1027,6 +1036,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.1.4", CL_114, (int)(sizeof(CL_114) / sizeof(CL_114[0])), "2026-11-28" },
     { "1.1.3", CL_113, (int)(sizeof(CL_113) / sizeof(CL_113[0])), "2026-11-28" },
     { "1.1.2", CL_112, (int)(sizeof(CL_112) / sizeof(CL_112[0])), "2026-11-28" },
     { "1.1.1", CL_111, (int)(sizeof(CL_111) / sizeof(CL_111[0])), "2026-11-27" },
