@@ -4568,6 +4568,13 @@ static void gauges_poll(bool on, u32 mgr) {
         }
     }
     if (!G.cast) G.castPct = 0;
+    // the DECISION, once per change (2026-11-28, Gab : the client's gauges hidden, ours never drawn -- and no "gauges" line
+    // in his whole session) : is the poll on at all, does the manager give a UI size, is either window there
+    {   static int s_st = -1;
+        const int st = !on ? 0 : !mgr ? 1 : !(G.uiW >= 320 && G.uiH >= 240 && G.uiW <= 8000 && G.uiH <= 8000) ? 2 : 3;
+        if (st != s_st) { s_st = st;
+            static const char* W[4] = { "off (Game UI : the party box is not AioHUD's, or nothing to do)", "on, NO window manager", "on, the UI size is out of range", "on, watching 'casttime' / 'gaugewin'" };
+            windower::debug::log("NATIVEUI gauges poll : %s (ui %dx%d)", W[st], (int)G.uiW, (int)G.uiH); } }
     static bool wasC = false, wasG = false;
     if (G.cast != wasC || G.gauge != wasG) { wasC = G.cast; wasG = G.gauge; windower::debug::log("NATIVEUI gauges : cast %d (%d pct), HP/MP/TP %d -- AioHUD draws them", G.cast ? 1 : 0, G.castPct, G.gauge ? 1 : 0); }
     g_gauges = G;
