@@ -40,9 +40,10 @@ if errorlevel 1 ( echo [package] build\release\AioHud.dll could not be copied & 
 
 REM 4) runtime assets : the whole assets\ tree EXCEPT any *_src\ (job/window/icon regeneration sources).
 REM    Also EXCEPT themes\ : the trial theme kits (theme_kit.cpp, untracked) are not in a release, and a CI checkout
-REM    never has them -- a package built on the dev machine must not differ from the one CI builds.
+REM    never has them -- a package built on the dev machine must not differ from the one CI builds. Same for
+REM    sky_frames.raw (untracked : the minimap's painted scenes, behind a dev TUNE that a release compiles off).
 REM    robocopy exit codes 0-7 = success ; 8+ = real error (don't treat <8 as failure).
-robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src themes /NFL /NDL /NJH /NJS /NP >nul
+robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src themes /XF sky_frames.raw /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 ( echo [package] asset copy failed & exit /b 1 )
 
 REM 5) the default box layout (positions/toggles) the plugin reads at startup.

@@ -36,7 +36,7 @@ static u32 border_from_bg(const char* bgRawPath) {
 // folder names under assets/window (converted from the game DDS by scripts/gen_window_skin.sh).
 // _Bis = the user's modified variants. //aio menu N selects the N-th (1-based).
 static const char* THEMES[] = {
-    "14", "15", "16", "17", "19", "19_Bis", "20", "20_Bis", "21",   // 18 + 18_Bis + 21_Bis removed (bugged)
+    "14", "15", "16", "17", "19", "19_Bis", "20", "20_Bis", "21",   // 18 + 18_Bis + 21_Bis removed (bugged) ; their sources in assets/window_src/_retired/, not shipped
 };
 static const int TEX_N = (int)(sizeof(THEMES) / sizeof(THEMES[0]));
 

@@ -79,9 +79,42 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 | `gen_trusts.py` | `src/model/trusts_gen.h` | yes |
 | `gen_weapon_icons.py` | `assets/weapon_icons.raw` |  |
 | `gen_ws.py` | `src/model/weapon_skills_gen.h` | yes |
+| `gen_astral.py` | the ASTRAL COMPASS kit (assets/astral_src/<palette>/*.png, manifest.json) -> the runtime textures assets/astral/<palette>_<piece>.raw (straight-alpha … | see its header |
+| `gen_bst_icons.py` | Convert the BST box's icons into the RUNTIME folder, never into the repo (as the pet art: scripts/gen_bst_pet_art.py) | see its header |
+| `gen_bst_pet_art.py` | Convert pet art for the BST content of the Pet box (src/ui/hud_bst.cpp) | see its header |
+| `gen_bst_pets.py` | Generate src/model/bst_pets_gen.h from addons/BST_JUG_PETS_DATABASE.md : every jug pet (NQ and HQ names) with its Ready moves, for the BST box's PREVI… | see its header |
+| `gen_currencies.py` | src/model/currencies_gen.h : the client's own row order and labels of Status -> Currencies (mode 1, packet 0x113, 99 rows) and Currencies 2 (mode 2, p… | see its header |
+| `gen_edit_icons.py` | the Edit Layout drawer's icons (eye shown / hidden, padlock locked / open) | see its header |
+| `gen_geo_icons.py` | Convert the GEO content's images (the Pet box, src/ui/hud_geo.cpp) into the repo's assets\geo\, shipped by deploy.bat / package.bat | see its header |
+| `gen_geo_spells.py` | generate src/model/geo_spells_gen.h from res/spells.lua : every Geomancy spell named "Geo-X" or "Indi-X", with its id, its name, its element and the S… | see its header |
+| `gen_job_icons.py` | Build assets/job_icons.raw -- the job-emblem atlas the party and player badges sample | see its header |
+| `gen_logo.py` | bake the AioHUD lockup into the raw BGRA the plugin loads, plus the metrics the header needs | see its header |
+| `gen_map_markers.py` | the minimap MARKER atlas from the v3 sheets (assets/markers_src/v3_sheet1..3.png, transparent background) -> assets/map_markers.raw : a 512x256 straig… | see its header |
+| `gen_metal_grain.py` | the Dial's METAL MATERIAL (the user 2026-11-25 : "now the quality of the metal's texture") : a tileable 256 x 256 detail layer laid over the flat meta… | see its header |
+| `gen_moon_dial.py` | the moon-phase dial's face : assets/moon_dial_src/moon_dial.png (a parchment disc, a continuous midnight-blue band with the eight golden phases on it … | see its header |
+| `gen_moon_phases.py` | the moon pod's eight phase icons, cut UPRIGHT out of the starry dial plate assets/moon_dial_src/moon_dial.png (its moons on one circle, new at the bot… | see its header |
+| `gen_mounts.py` | src/model/mounts_gen.h from Windower res/mounts.lua : mount id -> English name | see its header |
+| `gen_net_icons.py` | the CONNECTION BOX icons : assets/net_icons_src/net_icons.png (row 1 : the FILLS -- envelope, speech bubble, bag, sword, the 8-dot spinner ; row 2 : t… | see its header |
+| `gen_plate_icons.py` | the NAME PLATE icons (the glyphs FFXI draws before a name over a character : status, linkshell, bazaar, Mentor, nations | see its header |
+| `gen_pointers.py` | builds assets/pointers.raw : the selectable cursor styles (Party > Cursor style) | see its header |
+| `gen_ready_moves.py` | Generate src/model/ready_moves_gen.h from the BST-HUD addon's addons/BST-HUD/ready_move_mappings.lua and scripts/ready_move_icons.txt | see its header |
+| `gen_sky_frames.py` | the SKY MODULE's twelve scenes (the minimap's sky wheel, src/ui/minimap.cpp) : assets/sky_frames_src/sky_frames.png (one hand-inked sheet on papyrus, … | see its header |
+| `gen_smn_art.py` | Convert the player's avatar and spirit pictures (the SMN content of the Pet box, src/ui/hud_smn.cpp) into the repo's assets\smn\, shipped by deploy.ba… | see its header |
+| `gen_smn_avatars.py` | generate src/model/smn_avatars_gen.h : every avatar and elemental spirit a Summoner calls, with its element, its picture (assets\smn\<img>.raw, script… | see its header |
+| `gen_spell_elem.py` | generate src/model/spell_elem_gen.h from Windower res/spells.lua : the ELEMENT of every spell that has one of the eight (0 Fire 1 Ice 2 Wind 3 Earth 4… | see its header |
+| `gen_status_icons.py` | the PlayOnline status icons, redrawn in HD (assets/status_icons_src/status_icons_grid.png, a 3 x 3 grid on a transparent background, made from the cli… | see its header |
+| `gen_weather_icons.py` | the WEATHER's 8 element icons, in HD, for the minimap's weather orbs ONLY (the user 2026-11-25 : "specific to the weather" ; every other element icon … | see its header |
 
 `gen_grimoire.py` emits no table of its own — it prints the SCH grimoire interval/charge figures used to fill
 `docs/game-data/buffs-and-timers/grimoire-sch.md` by hand.
+
+## Build and repo tools
+
+| Script | What it does |
+|---|---|
+| `build_inc.py` | INCREMENTAL build of build\AioHud.dll : one .obj per source, recompiled only when the source, a project header it includes (/showIncludes), the flags … |
+| `check_repo.py` | the static checks a commit should not be able to lose |
+| `shipped_commands.py` | The //aio commands that SHIP, read from the one table that dispatches them (src/plugin/aio_verbs.h) |
 
 ## Asset tools (`.ps1` / `.sh`)
 
@@ -89,7 +122,7 @@ These bake binaries the plugin loads at runtime, from sources kept in `assets/*_
 
 | Script | Reads | Produces | Needs |
 |---|---|---|---|
-| `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (12 themes × 4) | python + ImageMagick |
+| `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (9 themes × 4 ; retired skins live in `assets/window_src/_retired/`, outside the loop) | python + ImageMagick |
 | `conv_caps.ps1` | `assets/caps_src/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
 | `gen_buff_atlas.ps1` · `gen_gil_icon.ps1` · `gen_th_icon.ps1` · `patch_buff_icon.ps1` | icon sources | `assets/*.raw` | — |
 | `gen_flow.ps1` *(script retire du depot)* | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
