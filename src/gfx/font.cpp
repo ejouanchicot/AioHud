@@ -317,8 +317,19 @@ void font_set_bake_budget(int n) { g_fontBakeBudget = n; }
 // HUD's handler is explicitly built to absorb faults that repeat every frame, so this is not a corner case.
 void font_reset_batch() { g_gn = 0; }
 
+// ANIMATED text (the skillchain spheres zoom : 11 * k, 25 * k ... a NEW pixel size every frame, each one a ~10 ms GDI
+// bake -- measured 2026-11-28 : 20 ms frames while a sphere forms) : while bucketing is on, a size picks the atlas of
+// its BUCKET (~12 % apart) and the glyphs scale to the exact size -- smooth, no bake per frame
+static bool g_fontBucket = false;
+void font_bucket_sizes(bool on) { g_fontBucket = on; }
+static int em_bucket(int em) {
+    static const int B[] = { 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 27, 30, 34, 38, 43, 48, 54, 60, 66, 72 };
+    int best = B[0]; for (int b : B) if (iabs(b - em) < iabs(best - em)) best = b;
+    return best;
+}
 int Font::pick(u32 dev, float size) {
     int em = (int)(size + 0.5f); if (em < 7) em = 7; if (em > 72) em = 72;
+    if (g_fontBucket) em = em_bucket(em);
     const unsigned clk = ++useClock_;
     for (int i = 0; i < nslot_; ++i) if (slot_[i].em == em) { slot_[i].used = clk; return slot_[i].tex ? i : -1; }
     // want a NEW size : bake it only if the frame's bake budget allows AND we have a fallback to show meanwhile.
@@ -351,6 +362,7 @@ int Font::pick(u32 dev, float size) {
 
 int Font::pickC(float size) const {
     int em = (int)(size + 0.5f); if (em < 7) em = 7; if (em > 72) em = 72;
+    if (g_fontBucket) em = em_bucket(em);
     int best = -1, bd = 99999;
     for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) {
         if (slot_[i].em == em) return i;
@@ -566,10 +578,10 @@ void Font::passes(u32 dev, const Slot& S, float x, float y, const char* s, float
     static const float dy[8] = {  0, 0, -1, 1, -1,  1, -1, 1 };
     const bool stroke = (outline >> 24) && ow > 0.0f;
     dSetTex(dev, 0, S.tex);                                   // bind the atlas ONCE for its passes
-    if (stroke) {
-        for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 0);
-        gbuf_flush(dev);                                      // all 8 offsets -> ONE draw, wholly behind the glyphs
-    }
+    // the stroke (8 offsets) THEN the fill, in ONE draw : the same atlas and state, and a draw rasterises its triangles
+    // in order -- the fill still lands wholly over the stroke. Two draws per string before (2026-11-28, Edit Layout :
+    // 1221 text draws a frame)
+    if (stroke) for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 0);
     emit(dev, S, x, y, s, scale, color, gap, prev, 0);
     gbuf_flush(dev);
     // the wide glyphs : bake what is missing FIRST (a full page starts over once, then they are all there)
@@ -590,10 +602,7 @@ void Font::passes(u32 dev, const Slot& S, float x, float y, const char* s, float
             }
             if (P->tex) {
                 dSetTex(dev, 0, P->tex);
-                if (stroke) {
-                    for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 1);
-                    gbuf_flush(dev);
-                }
+                if (stroke) for (int k = 0; k < 8; ++k) emit(dev, S, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev, 1);
                 emit(dev, S, x, y, s, scale, color, gap, prev, 1);
                 gbuf_flush(dev);
             }

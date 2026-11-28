@@ -85,6 +85,7 @@ struct MenuGroup {
 bool menu_group_lookup(float x, float y, float w, float h, MenuGroup& g);
 void topbar_draw(const Frame& f);     // hud_actmenu.cpp : the client's top bar (menu name + help), AioHUD's style (NU_HELP)
 void buffbar_draw(const Frame& f);    // hud_actmenu.cpp : your buff icons under the top bar, the party's icon set (NU_BUFF)
+void scfx_gen_tick(u32 dev);       // hud_scfx.cpp : the spheres' generated textures, a few rows a frame
 void gauges_draw(const Frame& f);    // hud_actmenu.cpp : the client's casttime / gaugewin, AioHUD's style
 void rgbedit_draw(const Frame& f);   // hud_actmenu.cpp : Font Colors' RGB editor (textcol3)
 void dialog_draw(const Frame& f);     // hud_actmenu.cpp : the client's Yes / No confirms, AioHUD's style (NU_DIALOG)

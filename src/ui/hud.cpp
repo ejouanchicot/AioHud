@@ -419,6 +419,7 @@ void Hud::render(u32 dev) {
     // first frames.
     static u32 s_frame = 0; ++s_frame;
     font_set_bake_budget(s_frame < 180 ? 2 : (1 << 30));   // throttle only the first ~3s (the load) ; unlimited after
+    font_bucket_sizes(false);                              // (a fault mid-skillchain must not leave the whole next frame bucketed)
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets
     // (text/prims) are auto-rendered by Windower outside this block -- harmless here.
@@ -490,8 +491,11 @@ void Hud::render(u32 dev) {
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); actmenu_set_hand_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
             if (!mapUp) {
+            scfx_gen_tick(f.dev);                    // the spheres' textures computed in slices from the load (no 15 ms stall at the first chain)
+            font_bucket_sizes(true);                // the spheres zoom their text : bucketed sizes, no atlas bake per frame
             PERF_BEGIN("scfx.demo");   scfx_draw(f, (float)screenW_, (float)screenH_); PERF_END("scfx.demo");   // //aio scfx : the resonance-circle demo (off unless asked)
             PERF_BEGIN("skillchains"); draw_skillchains(f);    PERF_END("skillchains");  // skillchains box -- its spheres are their own nested row (sc_circle_draw)
+            font_bucket_sizes(false);
             PERF_BEGIN("treasure");    draw_treasure_pool(f);  PERF_END("treasure");     // treasure pool box (lottery items) -- placed via //aio edit
             PERF_BEGIN("hatelist");    draw_hate_list(f);      PERF_END("hatelist");     // hate list box (mobs aggro'd on the party) -- placed via //aio edit
             PERF_BEGIN("absorb");      draw_absorb(f);         PERF_END("absorb");       // Absorb-TP box (party casts of Absorb-TP) -- placed via //aio edit

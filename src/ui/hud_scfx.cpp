@@ -234,25 +234,33 @@ void fx_end(u32 dev) {
     blend(dev, false); cqs(dev);
 }
 
-void ensure_gen(u32 dev) {
-    if ((sx_noise && sx_soft && sx_atlas && sx_noiseS && sx_caus) || sx_genTries >= 8) return;
-    if (sx_genNext && (int)(GetTickCount() - sx_genNext) < 0) return;
-    static u32 px[128 * 128];
-    if (!sx_noise) {
-        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+// THE GENERATED TEXTURES, IN SLICES (2026-11-28, measured : made at the first sphere they cost 15.6 ms in ONE frame --
+// the first skillchain of a session stuttered). Their pixels are computed a few rows per frame from the load on
+// (scfx_gen_tick, ~0.5 ms a frame for about a second) and KEPT (a device change only re-uploads them) ; a sphere drawn
+// before the end finishes them at once (ensure_gen), as before. Same maths, row by row.
+namespace {
+const int GEN_N = 5;                                  // 0 noise, 1 caustics, 2 noiseS, 3 soft, 4 atlas
+const int GEN_W[GEN_N] = { 128, 128, 128, 64, 256 }, GEN_H[GEN_N] = { 128, 128, 128, 64, 32 };
+u32  g_genPx0[128 * 128], g_genPx1[128 * 128], g_genPx2[128 * 128], g_genPx3[64 * 64], g_genPx4[256 * 32];
+u32* const GEN_PX[GEN_N] = { g_genPx0, g_genPx1, g_genPx2, g_genPx3, g_genPx4 };
+int  g_genRow[GEN_N] = { 0, 0, 0, 0, 0 };             // rows computed so far (== H : the pixels are ready)
+u32& gen_tex(int st) { return st == 0 ? sx_noise : st == 1 ? sx_caus : st == 2 ? sx_noiseS : st == 3 ? sx_soft : sx_atlas; }
+void gen_row(int st, int y) {
+    u32* px = GEN_PX[st];
+    if (st == 0) {
+        for (int x = 0; x < 128; ++x) {
             const float n = fbm(x / 128.0f, y / 128.0f), m = fbm(x / 128.0f + 0.37f, y / 128.0f + 0.71f);
             float r = 1.0f - fabsf(2.0f * n - 1.0f); r = r * r * r;
             float v = 0.18f + 0.62f * r + 0.35f * m * m; if (v > 1.0f) v = 1.0f;
             const u32 g = (u32)(v * 255.0f); px[y * 128 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
         }
-        sx_noise = make_texture_argb(dev, 128, 128, px);
-    }
-    if (!sx_caus) {   // CAUSTICS : a jittered 5x5 cell web (F2 - F1 edges), the domain bent by periodic sines (curved lines), the line
-                      // width varying -- tileable on both axes (the cells wrap, the bends are whole periods)
-        const int G = 5; float pxs[G][G], pys[G][G];
-        auto hh = [](int i, int j, float s2) { const float v = sinf(i * 127.1f + j * 311.7f + s2 * 74.7f) * 43758.5453f; return v - floorf(v); };
-        for (int i = 0; i < G; ++i) for (int j = 0; j < G; ++j) { pxs[i][j] = (i + 0.15f + 0.7f * hh(i, j, 1.0f)) / G; pys[i][j] = (j + 0.15f + 0.7f * hh(i, j, 2.0f)) / G; }
-        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+    } else if (st == 1) {   // CAUSTICS : a jittered 5x5 cell web (F2 - F1 edges), the domain bent by periodic sines (curved lines), the line
+                            // width varying -- tileable on both axes (the cells wrap, the bends are whole periods)
+        const int G = 5; static float pxs[G][G], pys[G][G]; static bool init = false;
+        if (!init) { init = true;
+            auto hh = [](int i, int j, float s2) { const float v = sinf(i * 127.1f + j * 311.7f + s2 * 74.7f) * 43758.5453f; return v - floorf(v); };
+            for (int i = 0; i < G; ++i) for (int j = 0; j < G; ++j) { pxs[i][j] = (i + 0.15f + 0.7f * hh(i, j, 1.0f)) / G; pys[i][j] = (j + 0.15f + 0.7f * hh(i, j, 2.0f)) / G; } }
+        for (int x = 0; x < 128; ++x) {
             const float u0 = (x + 0.5f) / 128.0f, v0 = (y + 0.5f) / 128.0f;
             float u = u0 + 0.045f * sinf(TAU * (2.0f * v0 + 0.3f)) + 0.025f * sinf(TAU * (3.0f * v0 + u0 + 0.7f));
             float v = v0 + 0.045f * sinf(TAU * (2.0f * u0 + 0.1f)) + 0.025f * sinf(TAU * (3.0f * u0 - v0 + 0.4f));
@@ -269,31 +277,24 @@ void ensure_gen(u32 dev) {
             if (val > 1.0f) val = 1.0f;
             const u32 g = (u32)(val * 255.0f); px[y * 128 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
         }
-        sx_caus = make_texture_argb(dev, 128, 128, px);
-    }
-    if (!sx_noiseS) {   // WATER's body : broad smooth swells, no filaments
-        for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+    } else if (st == 2) {   // WATER's body : broad smooth swells, no filaments
+        for (int x = 0; x < 128; ++x) {
             const float n = fbm(x / 128.0f + 0.13f, y / 128.0f + 0.41f), m = fbm(x / 128.0f + 0.57f, y / 128.0f + 0.29f);
             float v = 0.22f + 0.55f * n + 0.30f * m * m; if (v > 1.0f) v = 1.0f; if (v < 0.0f) v = 0.0f;
             const u32 g = (u32)(v * 255.0f); px[y * 128 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
         }
-        sx_noiseS = make_texture_argb(dev, 128, 128, px);
-    }
-    if (!sx_soft) {
-        for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x) {
+    } else if (st == 3) {
+        for (int x = 0; x < 64; ++x) {
             const float dx = (x + 0.5f) / 32.0f - 1.0f, dy = (y + 0.5f) / 32.0f - 1.0f, d = sqrtf(dx * dx + dy * dy);
             float v = d >= 1.0f ? 0.0f : expf(-d * d * 4.5f) * (1.0f - d) + 0.55f * expf(-d * d * 40.0f);
             if (v > 1.0f) v = 1.0f; const u32 g = (u32)(v * 255.0f); px[y * 64 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
         }
-        sx_soft = make_texture_argb(dev, 64, 64, px);
-    }
-    if (!sx_atlas) {   // 8 cells of 32x32 : the shape lives in the RGB (grey), like every sprite here
-        static u32 at[256 * 32];
-        auto segd = [](float px, float py, float ax, float ay, float bx, float by) {   // distance to a segment
-            const float vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay, l2 = vx * vx + vy * vy;
+    } else {   // 8 cells of 32x32 : the shape lives in the RGB (grey), like every sprite here -- row y of every cell
+        auto segd = [](float qx, float qy, float ax, float ay, float bx, float by) {   // distance to a segment
+            const float vx = bx - ax, vy = by - ay, wx = qx - ax, wy = qy - ay, l2 = vx * vx + vy * vy;
             float u = l2 > 0.0f ? (wx * vx + wy * vy) / l2 : 0.0f; if (u < 0.0f) u = 0.0f; if (u > 1.0f) u = 1.0f;
-            const float dx = px - (ax + vx * u), dy = py - (ay + vy * u); return sqrtf(dx * dx + dy * dy); };
-        for (int c = 0; c < 8; ++c) for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) {
+            const float dx = qx - (ax + vx * u), dy = qy - (ay + vy * u); return sqrtf(dx * dx + dy * dy); };
+        for (int c = 0; c < 8; ++c) for (int x = 0; x < 32; ++x) {
             const float X = (x + 0.5f) / 16.0f - 1.0f, Y = (y + 0.5f) / 16.0f - 1.0f, d = sqrtf(X * X + Y * Y), th = atan2f(Y, X);
             float v = 0.0f;
             switch (c) {
@@ -314,10 +315,31 @@ void ensure_gen(u32 dev) {
             default: v = expf(-d * d * 2.5f) * (1.0f - d) * (0.45f + 0.7f * fbm(x / 32.0f * 2.0f + 0.3f, y / 32.0f * 2.0f)); break;   // SMOKE : a ragged puff
             }
             if (d >= 1.0f) v = 0.0f; if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-            const u32 g = (u32)(v * 255.0f); at[y * 256 + c * 32 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
+            const u32 g = (u32)(v * 255.0f); px[y * 256 + c * 32 + x] = 0xFF000000u | (g << 16) | (g << 8) | g;
         }
-        sx_atlas = make_texture_argb(dev, 256, 32, at);
     }
+}
+// computes up to `rows` rows (across the textures, in order) ; uploads each texture whose pixels are ready and that has
+// none (a device change forgot it : re-uploaded, not recomputed)
+void gen_advance(u32 dev, int rows) {
+    for (int st = 0; st < GEN_N; ++st) {
+        while (g_genRow[st] < GEN_H[st] && rows > 0) { gen_row(st, g_genRow[st]); ++g_genRow[st]; --rows; }
+        if (g_genRow[st] < GEN_H[st]) return;                          // the budget is spent mid-texture
+        u32& t = gen_tex(st);
+        if (!t && dev) t = make_texture_argb(dev, GEN_W[st], GEN_H[st], GEN_PX[st]);
+    }
+}
+}  // namespace
+// once a frame (the HUD) : a few rows, until all five are made
+void gen_tick_impl(u32 dev) {
+    if (sx_noise && sx_soft && sx_atlas && sx_noiseS && sx_caus) return;
+    if (sx_genTries >= 8) return;
+    gen_advance(dev, 12);
+}
+void ensure_gen(u32 dev) {
+    if ((sx_noise && sx_soft && sx_atlas && sx_noiseS && sx_caus) || sx_genTries >= 8) return;
+    if (sx_genNext && (int)(GetTickCount() - sx_genNext) < 0) return;
+    gen_advance(dev, 1 << 20);                                         // whatever is left, at once (a sphere is drawn now)
     // Rule 10 : the success AND the give-up are said. Before, a miss right after a zone-in left the spheres textureless
     // for the session with no line at all (8 tries 300 ms apart, then silence ; only a device change re-arms it).
     if (!sx_noise || !sx_soft || !sx_atlas || !sx_noiseS || !sx_caus) {
@@ -2857,8 +2879,13 @@ void circle_core(const Frame& f, const CircleIn& in) {
     const bool anim = U.scAnim != 0;
     sx_clock = t; sx_bt = bt;
     const float titleOff = (U.scTitleOff < -120.0f ? -120.0f : (U.scTitleOff > 80.0f ? 80.0f : U.scTitleOff)) * k;   // > 0 higher ; < 0 lower, over the sphere if wanted
+    static int s_prof = 0; LARGE_INTEGER q0 = {}, q1 = {}, q2 = {}, qf = {}; if (s_prof < 4) { QueryPerformanceFrequency(&qf); QueryPerformanceCounter(&q0); }   // SCPROF (dev, 2026-11-28)
     ensure_raw_tex(dev, sx_elem, sx_elemR, plugin_path_r("assets\\element_icons.raw"), 256, 32);
+    if (s_prof < 4) QueryPerformanceCounter(&q1);
     ensure_gen(dev);
+    if (s_prof < 4) { QueryPerformanceCounter(&q2); ++s_prof;
+        windower::debug::log("SCPROF circle_core #%d : element icons %d us, generated textures %d us", s_prof,
+            (int)((q1.QuadPart - q0.QuadPart) * 1000000 / qf.QuadPart), (int)((q2.QuadPart - q1.QuadPart) * 1000000 / qf.QuadPart)); }
     Font* fT = te_font(f, U.scText[SC_TITLE]); Font* fM = te_font(f, U.scText[SC_TIMER]);
     if (!fT || !fM) return;
     const u32 GREY = 0x7D8696, RED = 0xFF6B5F, GREEN = 0x58E08A, GOLD = 0xFFD76A;
@@ -3114,6 +3141,9 @@ void scfx_draw(const Frame& f, float screenW, float screenH) {
     LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
     sx_pDraw = sx_pVtx = 0; sx_fs = 0;   // the rest of the HUD drew in between : nothing is known
     scfx_draw_inner(f, screenW, screenH);
+    {   LARGE_INTEGER c, fq; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&fq);   // SCPROF (dev) : the slow frames, which scene
+        const int us = (int)((c.QuadPart - a.QuadPart) * 1000000 / fq.QuadPart); static int big = 0;
+        if (us > 4000 && big < 12) { ++big; windower::debug::log("SCPROF slow scfx frame %d us (scene %d)", us, sx_scene); } }
     if (sx_shotN > 0 && sx_shotI < sx_shotN) {   // //aio scfx shot : the next photo when it is due
         const unsigned due = sx_shotT0 + (unsigned)(sx_shotSpan * 1000.0f * sx_shotI / sx_shotN);
         if ((int)(GetTickCount() - due) >= 0) {
@@ -3283,4 +3313,6 @@ void sc_circle_idle() {
     if (sx_dTex && !sx_on && GetTickCount() - sx_cUse > 5000u) dist_release();
 }
 
+// the HUD's per-frame tick (the generator lives in this file's anonymous namespace)
+void scfx_gen_tick(u32 dev) { gen_tick_impl(dev); }
 } // namespace aio
