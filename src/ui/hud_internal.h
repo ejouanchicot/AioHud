@@ -107,6 +107,7 @@ void macro_edit_draw(const Frame& f);
 void equip_sets_draw(const Frame& f);
 void map_screen_draw(const Frame& f);   // hud_actmenu.cpp : the map (mapframe's whole-screen draw), under the HUD's widgets (NU_MAIN)
 void map_screen_forget();
+void map_screen_dispose();   // hud_actmenu.cpp : the map / icon atlases RELEASED (the unload)
 bool map_screen_up();                  // ... shown this frame (the HUD's modules depop while it is)
 void map_screen_hud(const Frame& f);
 void plates_draw(const Frame& f);

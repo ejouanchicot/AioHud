@@ -124,6 +124,7 @@ private:
 void font_set_bake_budget(int n);
 // a font AioHUD ships (assets\fonts : its label, "Open Sans") -- available on every PC, whatever Windows has
 bool font_bundled(const char* label);
+void font_bundle_release();   // the bundled faces unregistered (FontManager::dispose : the unload)
 // animated text : sizes snap to a few baked atlases and scale (on while the skillchain spheres draw)
 void font_bucket_sizes(bool on);
 // Discard a half-built glyph batch (see the note at the definition). Call it when a draw pass was ABORTED --

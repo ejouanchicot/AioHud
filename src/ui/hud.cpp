@@ -1027,6 +1027,7 @@ void Hud::dispose() {
     for (int i = 0; i < 3; ++i) if (bstEco_[i]) { release_texture(bstEco_[i]); bstEco_[i] = 0; }   // BST box : the family icons
     for (int i = 0; i < GEO_TEX_N; ++i) if (geoTex_[i]) { release_texture(geoTex_[i]); geoTex_[i] = 0; }   // GEO content : its images
     if (smnArt_)    { release_texture(smnArt_);    smnArt_ = 0; }      // SMN content : the avatar picture
+    map_screen_dispose();         // the map image, the marker / status / name-plate icon atlases, the HD pearls (only FORGOTTEN before : 2.7 MB a //unload)
     zonetracker_help_dispose(); treasure_help_dispose(); chat_icons_dispose(); npc_card_dispose(); scfx_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload

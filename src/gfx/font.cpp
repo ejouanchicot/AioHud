@@ -453,6 +453,9 @@ void FontManager::set_default(const char* face, int weight) {
 // FAMILY name inside it (GDI's : name id 1 -- some static cuts name their 400 "Montserrat Thin") and its weight (OS/2)
 struct BundledFace { char label[40]; char family[64]; int weight; };
 static BundledFace g_bf[96]; static int g_bfN = 0;
+// every file registered, to UNREGISTER at the unload (2026-11-28, measured : 20 load / Edit / unload cycles = +2.5 MB each,
+// the 46 bundled files added again at every load and never removed -- the process kept every copy)
+static wchar_t g_bfPath[96][MAX_PATH]; static int g_bfPathN = 0;
 static void bf_label(const wchar_t* fn, char* out, int cap) {
     int o = 0; wchar_t prev = 0;
     for (int i = 0; fn[i] && fn[i] != L'-' && fn[i] != L'.' && o < cap - 2; ++i) {
@@ -513,7 +516,9 @@ static void register_bundled_fonts_once() {
             const wchar_t* ext = fd.cFileName + L - 4;
             if (!lstrcmpiW(ext, L".ttf") || !lstrcmpiW(ext, L".otf") || !lstrcmpiW(ext, L".ttc")) {
                 wchar_t path[600]; wsprintfW(path, L"%s%s", dir, fd.cFileName);
-                if (AddFontResourceExW(path, FR_PRIVATE, 0) > 0 && g_bfN < 96) {
+                const bool added = AddFontResourceExW(path, FR_PRIVATE, 0) > 0;
+                if (added && g_bfPathN < 96) lstrcpynW(g_bfPath[g_bfPathN++], path, MAX_PATH);
+                if (added && g_bfN < 96) {
                     BundledFace& e = g_bf[g_bfN];
                     bf_label(fd.cFileName, e.label, sizeof(e.label));
                     if (bf_read(path, e.family, sizeof(e.family), &e.weight)) ++g_bfN;
@@ -546,7 +551,13 @@ Font* FontManager::get(const char* face, int weight, bool italic) {
 }
 void FontManager::ensure_all(u32 dev)   { for (int i = 0; i < n_; ++i) f_[i].ensure(dev); }
 void FontManager::on_device_lost()      { for (int i = 0; i < n_; ++i) f_[i].on_device_lost(); font_wide_forget(); }
-void FontManager::dispose()             { for (int i = 0; i < n_; ++i) f_[i].dispose(); font_wide_dispose(); }
+void FontManager::dispose()             { for (int i = 0; i < n_; ++i) f_[i].dispose(); font_wide_dispose(); font_bundle_release(); }
+// the bundled faces OUT of the process again (the unload) : what AddFontResourceEx put in, RemoveFontResourceEx takes back
+void font_bundle_release() {
+    int n = 0; for (int i = 0; i < g_bfPathN; ++i) if (RemoveFontResourceExW(g_bfPath[i], FR_PRIVATE, 0)) ++n;
+    if (g_bfPathN) windower::debug::log("FONTS bundled : %d of %d file(s) unregistered", n, g_bfPathN);
+    g_bfPathN = 0; g_bfN = 0;
+}
 
 // ---- render ----
 void Font::begin(u32 dev) {

@@ -9959,6 +9959,14 @@ struct PearlHd { u32 rgb, tex; unsigned char tries; unsigned nextMs; };   // the
 PearlHd g_phd[8]; int g_phdNext = 0; unsigned char g_phdSrc[128 * 128 * 4]; int g_phdSrcOk = 0;   // its source (assets/pearl_hd.raw) : 0 unread, 1 ok, -n failed reads   // the name plates' icons, HD (assets/plate_icons.raw)   // the PlayOnline status icons, HD (assets/status_icons.raw, scripts/gen_status_icons.py) : 4 x 4 cells of 128   // the minimap's marker atlas, a copy of our own (device-owned)
 }
 bool map_screen_up() { return g_mapA > 0.0f; }
+// RELEASE them at the unload (2026-11-28, measured : TEXLIVE "2 texture(s) alive after unload, 512x512, creator
+// load_raw_texture_mip" -- the status / name-plate icon atlases, 2.7 MB each //unload ; only a FORGET existed)
+void map_screen_dispose() {
+    u32* T[4] = { &g_mapTex, &g_mkAtlas, &g_stIco, &g_plIco };
+    for (u32* t : T) if (*t) { release_texture(*t); *t = 0; }
+    for (PearlHd& P : g_phd) if (P.tex) { release_texture(P.tex); P.tex = 0; }
+    map_screen_forget();
+}
 void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; g_stIco = 0; g_stIcoR = TexRetry{}; g_plIco = 0; g_plIcoR = TexRetry{};
                            for (PearlHd& P : g_phd) P = PearlHd(); }
 // the linkshell pearl in an LS's colour (0xRRGGBB), HD : its LIGHTING MAP (a smooth dome, soft top-left light, a broad soft
