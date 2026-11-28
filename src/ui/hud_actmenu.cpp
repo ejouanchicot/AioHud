@@ -10527,7 +10527,7 @@ static void plates_pass(unsigned dev, const NativePlates& P) {
     const u32 tok = dCreateSB(dev, D3DSBT_ALL);                         // the client's frame goes on after us : its state, back exactly
     plates_paint(f, P, true);
     dSetTex(dev, 0, 0);
-    if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); } else dStateForget();
+    if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); } else { shape_pre(dev); dStateForget(); }
     native_plates_drawn();
 }
 // the config's PREVIEW (Game UI -> Names over the characters) : sample plates in the stage, through the same painter --

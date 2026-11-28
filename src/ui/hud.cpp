@@ -623,6 +623,7 @@ void Hud::render(u32 dev) {
         windower::debug::log("CreateStateBlock recovered after %u frame(s) without save/restore", sbMiss);
         sbMiss = 0;
     }
+    shape_pre(dev);                   // the pending shapes drawn in OUR state, before the game's comes back
     PERF_BEGIN("stateblock.apply");   // ApplyStateBlock + DeleteStateBlock
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
     PERF_END("stateblock.apply");

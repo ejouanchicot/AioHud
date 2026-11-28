@@ -18,7 +18,9 @@
 
 using namespace aio;
 using fakedev::device;
-using fakedev::reset;
+// (2026-11-28) the untextured shapes are BATCHED (d3d.h : pending until the next real device change / the frame's end) :
+// a test reads the device after flushing them as the frame does, and starts each section from an empty batch
+static void reset() { g_shPend = 0; fakedev::reset(); }
 
 // Is `v` on the half-pixel grid the D3D8 rule demands (rule 1)? Colour quads shift by exactly -0.5, so a
 // coordinate that started whole lands on N + 0.5. Anything else means the caller skipped snap().
@@ -125,6 +127,7 @@ void test_render() {
         dColorQuadState(dev);
         const float X = 200.5f, Y = 120.5f, W = 160.0f, H = 48.0f, F = 1.2f;
         rrect(dev, snap(X), snap(Y), W, H, 10.0f, 0xFF404040, 0xFF202020, F);
+        shape_pre(dev);                            // the frame's flush
         float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
         for (int i = 0; i < fakedev::verts(); ++i) {
             const fakedev::Vertex& v = fakedev::vertex(i);
@@ -150,12 +153,12 @@ void test_render() {
         dColorQuadState(dev);
         rrect(dev, snap(40.0f), snap(40.0f), snap(120.0f), snap(30.0f), snap(6.0f), 0xFF884422, 0xFF221108, 1.2f);
         grad_quad(dev, snap(40.0f), snap(40.0f), snap(120.0f), snap(30.0f), 0xFF00FF88, 0xFF0088FF, 0xFF884400, 0xFF000000);
-        fakedev::trace(a, sizeof(a));
+        shape_pre(dev); fakedev::trace(a, sizeof(a));
         reset();
         dColorQuadState(dev);
         rrect(dev, snap(40.0f), snap(40.0f), snap(120.0f), snap(30.0f), snap(6.0f), 0xFF884422, 0xFF221108, 1.2f);
         grad_quad(dev, snap(40.0f), snap(40.0f), snap(120.0f), snap(30.0f), 0xFF00FF88, 0xFF0088FF, 0xFF884400, 0xFF000000);
-        fakedev::trace(b, sizeof(b));
+        shape_pre(dev); fakedev::trace(b, sizeof(b));
         CHECK_STR(a, b);
         CHECK(a[0] != 0);                          // and it is not trivially empty
     }

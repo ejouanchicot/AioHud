@@ -110,9 +110,10 @@ Acc run(int s, bool masked) {
     Acc A = { 2166136261u, 2166136261u, 0, 0 };
     const u32 dev = fakedev::device();
     for (int p = 0; p < 2; ++p) for (int z = 0; z < 5; ++z) for (int r = 0; r < 8; ++r) for (int f = 0; f < 3; ++f) {
-        fakedev::reset();
+        g_shPend = 0; fakedev::reset();
         dStateForget();                // a fresh device as far as the shadow knows (P4) : each case starts like a frame
         draw_one(s, dev, POS[p][0], POS[p][1], SIZE[z][0], SIZE[z][1], RAD[r], FEATHER[f]);
+        shape_pre(dev);                // the batched shapes drawn, as the frame's end does (2026-11-28)
         fold(A);
     }
     fakedev::g_fakeTexture = 0; corner_mask_forget();

@@ -136,11 +136,12 @@ void test_perf() {
         dColorQuadState(dev);                  // the caller's own
         const int c1 = fakedev::log().nCall;
         rrect(dev, 10.0f, 10.0f, 200.0f, 60.0f, 6.0f, 0xE0101418u, 0xE0080A0Cu);
+        shape_pre(dev);                        // (2026-11-28) rrect BATCHES : its triangles are drawn by the flush, under gfx.shapes
         const int c2 = fakedev::log().nCall;
         disc(dev, 100.0f, 100.0f, 4.0f, 0xFFFFFFFFu);
         const int c3 = fakedev::log().nCall;
         perf::end(ia);
-        const int ir = perf::find("gfx.rrect"), id = perf::find("gfx.disc");
+        const int ir = perf::find("gfx.shapes"), id = perf::find("gfx.disc");   // (the rrect's draws : the batch's flush)
         CHECK(ir >= 2); CHECK(id >= 2);
         check_entry(P.e[ia], seen(c0, c1));
         if (ir >= 0) check_entry(P.e[ir], seen(c1, c2));

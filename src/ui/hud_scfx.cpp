@@ -1898,6 +1898,7 @@ bool distort(u32 dev, float CX, float CY, float R, float k, float t, const Warp&
     int x0 = (int)CX - TS / 2, y0 = (int)CY - TS / 2;
     if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x0 > W - TS) x0 = W - TS; if (y0 > H - TS) y0 = H - TS;
     RECT rc = { x0, y0, x0 + TS, y0 + TS }; POINT pt = { 0, 0 };
+    shape_pre(dev);                                                    // (the pending shapes are ON the screen before it is copied)
     auto cr = vmethod<long(__stdcall*)(u32, u32, const RECT*, u32, u32, const POINT*)>(dev, 28);   // CopyRects
     const long hr = cr ? cr(dev, rt, &rc, 1, sx_dSurf, &pt) : -1;
     d_rel(rt);
@@ -3108,6 +3109,7 @@ bool shot_one(u32 dev, int idx) {
     u32 img = 0; long hr = cis ? cis(dev, (u32)w, (u32)h, fmt, &img) : -1;
     if (hr < 0 || !valid_ptr(img)) { d_rel(srf); windower::debug::log("SCFXSHOT %d : CreateImageSurface %08X", idx, (unsigned)hr); return false; }
     RECT rc = { x0, y0, x0 + w, y0 + h }; POINT pt = { 0, 0 };
+    shape_pre(dev);                                                    // (the pending shapes are ON the screen before it is copied)
     auto cr = vmethod<long(__stdcall*)(u32, u32, const RECT*, u32, u32, const POINT*)>(dev, 28);   // CopyRects
     hr = cr ? cr(dev, srf, &rc, 1, img, &pt) : -1;
     d_rel(srf);

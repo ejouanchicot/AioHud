@@ -293,17 +293,34 @@ static const float PI_ = 3.14159265f;
 // tests/t_shapes.cpp holds that, every triangle of every shape hashed against the code from before the merge.
 // The batch is FLUSHED before any state change (the masked paths switch to a texture between their rects and their
 // corners), so the order of states and draws is the one the old code had. A shape too big for it flushes and goes on.
+// the pending untextured triangles (see d3d.h) : appended by TriBatch, drawn as ONE list by shape_flush
+static VtxC g_shBuf[3 * 4096]; static u32 g_shDev = 0;
+void shape_flush(u32 d) {
+    if (!g_shPend) return;
+    PERF_SCOPE("gfx.shapes");   // //aio perf : the batched shapes' draws (rrect & co add their triangles, this draws them)
+    const int n = g_shPend; g_shPend = 0;                               // (first : the draw below must not flush again)
+    if (n >= 3) dDrawUP(g_shDev ? g_shDev : d, D3DPT_TRIANGLELIST, (u32)(n / 3), g_shBuf, sizeof(VtxC));
+}
+static void shape_append(u32 dev, const VtxC* v, int n) {
+    if (g_shPend && g_shDev != dev) shape_flush(g_shDev);
+    if (g_shPend + n > (int)(sizeof(g_shBuf) / sizeof(g_shBuf[0]))) shape_flush(dev);
+    if (n > (int)(sizeof(g_shBuf) / sizeof(g_shBuf[0]))) { dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(VtxC)); return; }
+    memcpy(g_shBuf + g_shPend, v, sizeof(VtxC) * (size_t)n); g_shPend += n; g_shDev = dev;
+}
 template <class V> struct TriBatchT {
     static const int CAP = 3 * 360;                  // the biggest shape here (rrect, 24-segment corners) is 302 triangles
     V v[CAP]; int n; u32 dev;
     explicit TriBatchT(u32 d) : n(0), dev(d) {}
     ~TriBatchT() { flush(); }
     TriBatchT(const TriBatchT&) = delete; TriBatchT& operator=(const TriBatchT&) = delete;
-    void flush() { if (n >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(V)); n = 0; }
+    void flush() { if (n >= 3) submit(); n = 0; }
+    void submit();                                   // untextured : into the pending list ; textured : drawn now
     void tri(const V& a, const V& b, const V& c) { if (n + 3 > CAP) flush(); v[n++] = a; v[n++] = b; v[n++] = c; }
     void strip(const V* q, int prims) { for (int k = 0; k < prims; ++k) { if (k & 1) tri(q[k], q[k + 2], q[k + 1]); else tri(q[k], q[k + 1], q[k + 2]); } }
     void fan(const V* q, int prims)   { for (int k = 0; k < prims; ++k) tri(q[0], q[k + 1], q[k + 2]); }
 };
+template <> inline void TriBatchT<VtxC>::submit() { shape_append(dev, v, n - n % 3); }
+template <> inline void TriBatchT<Vtx>::submit()  { dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(Vtx)); }
 typedef TriBatchT<VtxC> TriBatch;
 typedef TriBatchT<Vtx>  TriBatchTex;
 
