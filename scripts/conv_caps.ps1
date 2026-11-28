@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $SrcDir) { $SrcDir = Join-Path $root 'research\art_src\out3_capuchon' }
+if (-not $SrcDir) { $SrcDir = Join-Path $root 'assets\caps_src' }
 if (-not $DstDir) { $DstDir = Join-Path $root 'assets' }
 $src = (Join-Path $SrcDir '')
 $dst = (Join-Path $DstDir '')

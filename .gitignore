@@ -97,4 +97,9 @@ __pycache__/
 /*.png
 /*.jpg
 # The trial theme kits (theme_kit.cpp / frame_bake.cpp, dev-only) : not shipped (package.bat skips them), not tracked.
+# build.bat compiles them only when present (AIOHUD_THEMEKIT) ; without them the tracked call sites get no-op stubs.
 /assets/themes/
+/assets/sky_frames.raw
+/src/ui/theme_kit.cpp
+/src/ui/frame_bake.cpp
+/src/ui/frame_bake.h

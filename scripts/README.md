@@ -85,12 +85,12 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 
 ## Asset tools (`.ps1` / `.sh`)
 
-These bake binaries the plugin loads at runtime, from sources kept in `assets/*_src/` or `research/art_src/`.
+These bake binaries the plugin loads at runtime, from sources kept in `assets/*_src/` (`research/art_src/` only for the retired `gen_flow.ps1`).
 
 | Script | Reads | Produces | Needs |
 |---|---|---|---|
 | `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (12 themes × 4) | python + ImageMagick |
-| `conv_caps.ps1` | `research/art_src/out3_capuchon/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
+| `conv_caps.ps1` | `assets/caps_src/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
 | `gen_buff_atlas.ps1` · `gen_gil_icon.ps1` · `gen_th_icon.ps1` · `patch_buff_icon.ps1` | icon sources | `assets/*.raw` | — |
 | `gen_flow.ps1` *(script retire du depot)* | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
 
