@@ -34,6 +34,10 @@ static const unsigned MK_RETRY_MS = 2500;
 #include <time.h>
 
 namespace aio {
+// the Dial's DAY subdial in effect : the globe and the carousel sit in the case's CORNERS -- a round map leaves them room,
+// a SQUARE one covers them (Gab 2026-11-27 : "les infos passent derriere la carte") ; a square map takes the disc and its
+// plinth, which is laid out for it
+static inline int day_dial(const UiConfig& c) { return c.mmShape == 0 ? 2 : c.mmDayDial; }
 
 // ---- the harness : a map that will not load, said where someone looks ----------------------------------------
 // A zone whose map fails to load used to leave one MAP FAIL line in aiohud_debug.log and an empty panel -- nothing
@@ -2131,7 +2135,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         };
         PERF_BEGIN("mm.tl");
         // ---- TL : the map square (the POSITION POD replaces it in the modules style, round) ----
-        if (c.mmGrid && !(c.mmDayDial == 2)) {
+        if (c.mmGrid && !(day_dial(c) == 2)) {
             const float x = cx - off, y = cy - off;
             const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
@@ -2175,7 +2179,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         //      blue, an orange dawn, a clear noon, dusk) ; the SUN (a gold disc with its rays) and a crescent MOON ride an arc,
         //      setting below its lower edge ; a glass dome over it. The weather (*(g+0x40)+0x04, verified live) : its
         //      element in small glass ORBS at the bottom, overlapping the rim -- one for a single weather, two for a double ----
-        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && c.mmDayDial == 2)) {   // (the SKY MODULE replaces it)
+        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && day_dial(c) == 2)) {   // (the SKY MODULE replaces it)
             const float x = cx + off, y = cy - off;
             bezel(x, y, 0xFF0E1830u);
             const float t = (float)v.hh + (float)v.mm / 60.0f;
@@ -2280,8 +2284,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // the POSITION in the band (the user 2026-11-25 : "lower, between the moon and the time") : a third compartment at
         // the centre, under the S, sized to the grid square -- in the modules style (round)
         char posTxt[12] = ""; bool posBand = false;
-        if (c.mmGrid && c.mmDayDial == 2 && s_noMap) { strcpy(posTxt, "\x02H-9"); posBand = true; }   // (no map : the capsule shut, at its usual size)
-        else if (c.mmGrid && c.mmDayDial == 2 && g.map.valid) {
+        if (c.mmGrid && day_dial(c) == 2 && s_noMap) { strcpy(posTxt, "\x02H-9"); posBand = true; }   // (no map : the capsule shut, at its usual size)
+        else if (c.mmGrid && day_dial(c) == 2 && g.map.valid) {
             int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
             mm_demo_square(gc, gr);
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // ONE wheel for the whole square (), as the game writes it : "H-9"
@@ -2294,7 +2298,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // Bastokan clock's foot -- and its three windows are lit from within by CRYSTAL light, two cut crystal shards
         // between them. The windows sit on ONE row : the room under the ring only grows toward the sides, nothing can
         // overflow. Moon (left) | grid square (centre, under the S) | hour (right). (Round, modules style.)
-        const bool foot = c.mmDayDial == 2;
+        const bool foot = day_dial(c) == 2;
         float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 }, cwHH = 0.0f;
         if (foot && (bandMoon || bandDay || posBand)) {
             const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(TUNE("mm.foot_gap", 15.0f) * S);   // the windows apart : three instruments, not one strip
@@ -2427,7 +2431,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             };
             const float filR = TUNE("mm.dial_fillet", 12.0f) * S;
             for (int k = 0; k < 2; ++k) {                                                        // the dark : subdial rims + fillet rims
-                if (k == 0 ? !bandMoon : (!bandDay || (c.mmDayDial == 2))) continue;
+                if (k == 0 ? !bandMoon : (!bandDay || (day_dial(c) == 2))) continue;
                 const float sx2 = k == 0 ? cx - off : cx + off, sy2 = cy + off;
                 rrect_glow(dev, sx2 - sr - 2.0f * S, sy2 - sr - 1.0f * S, 2.0f * sr + 4.0f * S, 2.0f * sr + 4.0f * S, sr + 2.0f * S, 0x80000000u, snap(3.0f * S));
                 color_state(dev);
@@ -2438,7 +2442,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             rrect(dev, bx0, by0, bx1 - bx0, bandH, rad, g_dm.top, g_dm.bot);
             grad_quad(dev, bx0 + rad, by0 + 1.0f, bx1 - bx0 - 2.0f * rad, 1.0f, MA(0x90, g_dm.glint), MA(0x90, g_dm.glint), MA(0x90, g_dm.glint), MA(0x90, g_dm.glint));
             for (int k = 0; k < 2; ++k) {                                                        // the brass fillets, over the band's top
-                if (k == 0 ? !bandMoon : (!bandDay || (c.mmDayDial == 2))) continue;
+                if (k == 0 ? !bandMoon : (!bandDay || (day_dial(c) == 2))) continue;
                 fillet(k == 0 ? cx - off : cx + off, cy + off, sr + 1.6f * S, by0, filR, g_dm.body);
             }
             grad_quad(dev, bx0 + rad, by0 + bandH - 1.0f, bx1 - bx0 - 2.0f * rad, 1.0f, MA(0x70, g_dm.shade), MA(0x70, g_dm.shade), MA(0x70, g_dm.shade), MA(0x70, g_dm.shade));
@@ -2581,7 +2585,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const float x = cx + off, y = cy + off;
             char tb[16]; tb[0] = 0; if (c.mmClkTime) sprintf(tb, "%02d:%02d", v.hh, v.mm);
             const float ty = bmid;
-            const bool pod = c.mmDayDial == 2;                                     // the day POD (round only) replaces this subdial
+            const bool pod = day_dial(c) == 2;                                     // the day POD (round only) replaces this subdial
             if (!pod) bezel(x, y, 0xFF0E1218u, true);
             if (c.mmClkDay && !pod) {
                 // the DAY SPHERE in a water-filled dial : the face a deep teal, the ball floating in it, a glass gleam over all
@@ -2589,7 +2593,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float ri = sr * 0.70f;                                                  // (the needle's tip reaches it)
                 color_state(dev);
                 rrect(dev, x - sr, y - sr, 2.0f * sr, 2.0f * sr, sr, 0xFF16303Au, 0xFF0A161Eu);   // the water, darker deep down
-                if (wxTex && c.mmDayDial != 0) draw_day_carousel(dev, x, y, sr, di, frac, wxTex);   // Minimap > Clock > Day dial : the icons' carousel
+                if (wxTex && day_dial(c) != 0) draw_day_carousel(dev, x, y, sr, di, frac, wxTex);   // Minimap > Clock > Day dial : the icons' carousel
                 else       draw_day_sphere(dev, x, y, sr, di, frac, f.t);                     // (the enamel globe while the HD atlas loads)
                 color_state(dev);
                 // the NEEDLE : a pointer fixed at 12 o'clock, from above the case's rim down into the ring, in the theme's metal
@@ -2619,7 +2623,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
     {   // the weather module, on the FACE (pass 1)
         const float sr = snap(r * TUNE("mm.dial_sub_k", 0.165f)), rr = r + sr + TUNE("mm.dial_sub_gap", 1.5f) * S;
         const float off = sq ? r - (r - rc) * 0.5f : 0.7071f * rr, x = cx + off, y = cy - off;
-        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && c.mmDayDial == 2)) {   // (the SKY MODULE replaces the capsules)
+        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && day_dial(c) == 2)) {   // (the SKY MODULE replaces the capsules)
             // THE WEATHER MODULE (the user 2026-11-25 : "the day/night module is welded to the map ; at the WELD the two
             // modules are stowed on top of the main dial, and they unfold toward the day/night module, in the right
             // orientation") : drawn on the compass's face. Folded : the two wells stacked on the ring at the weld. A weather :
@@ -2721,10 +2725,10 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
     // -- the cardinal letters, engraved in the brass band -- LAST : nothing of the case may cover them --
     if (fo) {
         const float rm = (rc + r) * 0.5f, csz = snap(TUNE("mm.dial_card", 13.0f) * S * clampf(c.mmCardSz, 0.5f, 2.0f) / 0.7f);
-        if (!sq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay && fabsf(pod_geo(r, S).th0 + 1.5708f) < 0.05f) draw_day_pod_needle(dev, cx, cy, rc, r, S, csz);   // the day pod's needle, out of the N (only when the pod sits above it)
+        if (!sq && day_dial(c) == 2 && c.mmClock && c.mmClkDay && fabsf(pod_geo(r, S).th0 + 1.5708f) < 0.05f) draw_day_pod_needle(dev, cx, cy, rc, r, S, csz);   // the day pod's needle, out of the N (only when the pod sits above it)
         static const char* NM[4] = { "N", "E", "S", "W" };
         static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
-        if (c.mmDayDial == 2 && tf) {
+        if (day_dial(c) == 2 && tf) {
             // FORGED BY BASTOK (the user 2026-11-25) : each letter a serif Roman capital (the wheels' face) cast with the
             // bezel
             const float ksz = snap(csz * 1.05f), o = 0.8f * S;
@@ -2898,7 +2902,7 @@ static void pod_slots(const UiConfig& c, bool sq, int& sDay, int& sMoon, int& sS
     sDay = v[0]; sMoon = v[1]; sSky = v[2]; sWx = v[3];
 }
 // the square case's frame width factor : wider with the modules (the user 2026-11-25 : "enlarge the frame to leave room")
-static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) ? TUNE("mm.sq_band", 1.45f) : 1.0f; }
+static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && day_dial(c) == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) ? TUNE("mm.sq_band", 1.45f) : 1.0f; }
 // THE MODULES' FOOTPRINT (the user 2026-11-25 : "make the edit-layout box smart -- whether the modules are on the sides, above,
 // below") : how far past the map's square each side reaches, from the modules actually shown -- every module's outer edge
 // sampled along its span, in its frame (the same slots and frames as Minimap::draw, centred on 0,0). L T R B : px past r.
@@ -3184,7 +3188,7 @@ void Minimap::draw(const Frame& f) {
             dialBot = snap(by0r + bandH0 + 2.5f * S - rr0);                                  // the band's foot past the ring
         }
         if (dialBot < dialSide) dialBot = dialSide;
-        if (c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) {
+        if (day_dial(c) == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) {
             dial_extents(c, rr0, S, dialSq, podL, podT, podR, podB, g.map.valid); podBox = true;
             // THE MODULES' MODEL (the user 2026-11-25 : "the edit-layout box does not match") : no corner subdials, no plinth --
             // the modules' collar stands out of the bezel all round, by the pods' depth, plus its soft cast shadow
@@ -3449,7 +3453,7 @@ void Minimap::draw(const Frame& f) {
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
     s_noMap = !g.map.valid || TUNE("mm.test_nomap", 0.0f) > 0.5f;       // (dev : mm.test_nomap simulates a map-less zone)
-    if (dial && c.mmDayDial == 2) {                                      // THE MODULES' SLOTS, THEIR FRAMES and THE COLLAR (round or square)
+    if (dial && day_dial(c) == 2) {                                      // THE MODULES' SLOTS, THEIR FRAMES and THE COLLAR (round or square)
         const float PIf = 3.14159265f;
         s_podR0 = r;
         s_podOut = dialSq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
@@ -3532,14 +3536,14 @@ void Minimap::draw(const Frame& f) {
             s_colA0 = -PIf; s_colA1 = PIf;
         }
     }
-    if (dial && c.mmDayDial == 2 && (s_skyOn || s_wxOn)) {   // the DAY / NIGHT module and the WEATHER module, each in its slot
+    if (dial && day_dial(c) == 2 && (s_skyOn || s_wxOn)) {   // the DAY / NIGHT module and the WEATHER module, each in its slot
         const VanaClock sv = dial_vana(g.vana);
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
         const u32 skT = TUNE("mm.sky_tex", 0.0f) > 0.5f ? ensure_raw_tex_mip(dev, skyTex_, skyR_, plugin_path_r("assets\\sky_frames.raw"), 1024, 512) : 0u;   // (the painted scenes : off)
         if (s_skyOn) draw_sky_pod(dev, s_skyF.cx, s_skyF.cy, s_skyF.R, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_, skT, true, false);
         if (s_wxOn)  draw_sky_pod(dev, s_wxF.cx, s_wxF.cy, s_wxF.R, S, s_wxTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_, skT, false, true);
     }
-    if (dial && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
+    if (dial && day_dial(c) == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         const VanaClock dv0 = dial_vana(g.vana);
         const int di0 = (dv0.dayIdx < 0 || dv0.dayIdx > 7) ? 2 : dv0.dayIdx;
@@ -3554,14 +3558,14 @@ void Minimap::draw(const Frame& f) {
         const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * sq_band_k(c)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
         s_moonDialTex = ensure_raw_tex_mip(dev, moonDialTex_, moonDialR_, plugin_path_r("assets\\moon_dial.raw"), 512, 512);
         ensure_raw_tex_mip(dev, moonPhTex_, moonPhR_, plugin_path_r("assets\\moon_phases.raw"), 1024, 128);
-        if (c.mmDayDial == 2 && c.mmClock && c.mmClkMoon) {              // the MOON POD : the disc behind the compass, three phases in a window
+        if (day_dial(c) == 2 && c.mmClock && c.mmClkMoon) {              // the MOON POD : the disc behind the compass, three phases in a window
             const VanaClock mv = dial_vana(g.vana);
             const float pct = (float)mv.moonPct / 100.0f, cyc = mv.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
             draw_moon_pod(dev, s_moonF.cx, s_moonF.cy, s_moonF.R, S, mv.moonPct, mv.waning, mv.hh, moonPhTex_); (void)cyc;   // the exact phase, hour by hour
         }
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
-    if (false && dial && !dialSq && c.mmDayDial == 2 && c.mmGrid) {       // (the position plate : replaced by the band's centre compartment)
+    if (false && dial && !dialSq && day_dial(c) == 2 && c.mmGrid) {       // (the position plate : replaced by the band's centre compartment)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { char gb[12]; sprintf(gb, "%c-%d", 'A' + gc, gr + 1); draw_pos_pod(dev, band_font(f, MM_TIME), ccx, ccy, r, S, gb); }
@@ -3576,7 +3580,7 @@ void Minimap::draw(const Frame& f) {
     dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);   // the dial's metal : the theme / custom colour / the brass
     if (dialSq) {                                                  // the square watch case (the map is drawn inside it)
         fi = snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * sq_band_k(c));
-        draw_square_case(dev, ccx, ccy, r, fi, S, c.mmDayDial == 2 && s_skyPod);
+        draw_square_case(dev, ccx, ccy, r, fi, S, day_dial(c) == 2 && s_skyPod);
     } else if (c.mmFrame == 1 && !round) {
         const int theme = c.skinTheme; const float lum = c.skinLum;
         if (window_theme_is_proc(theme)) { draw_proc_window(dev, theme, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, false, true, lum, c.skinHue); fi = snap(6.0f * S); themedOk = true; }
@@ -4068,14 +4072,14 @@ void Minimap::draw(const Frame& f) {
     if (astral) {                                              // the ring, its graduations, the glint, the cardinal medallions
         const bool grey = c.mmFrame != 0 && astG_[AS_BASE] && astG_[AS_TICKS] && astG_[AS_GLINT];   // the theme's metal : the grey kit, tinted
         u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
-        if (grey && dial && c.mmDayDial == 2) tint = dm_toward(g_dm.body, 0xFFFFFFFFu, TUNE("mm.ring_lift", 0.60f));   // with the modules : the ring's metal matched to their collar
+        if (grey && dial && day_dial(c) == 2) tint = dm_toward(g_dm.body, 0xFFFFFFFFu, TUNE("mm.ring_lift", 0.60f));   // with the modules : the ring's metal matched to their collar
         // (no horns : the modules are mounted BEHIND the compass now, nothing joins them on its face)
         draw_astral_ring(dev, grey ? astG_[AS_BASE] : ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f, tint);
-        if (dial && !dialSq && c.mmDayDial == 2) {                        // the metal's grain over the bezel
+        if (dial && !dialSq && day_dial(c) == 2) {                        // the metal's grain over the bezel
             s_grainTex = ensure_raw_tex_mip(dev, grainTex_, grainR_, plugin_path_r("assets\\metal_grain.raw"), 256, 256);
             grain_ring(dev, ccx, ccy, rc, 0, 96, r, S, 0.0f);
         }
-        if (dial && !dialSq && c.mmDayDial == 2) {
+        if (dial && !dialSq && day_dial(c) == 2) {
             // THE GRADUATION, ENGRAVED (the user 2026-11-25 : "forged by Bastok") : every 10 degrees a burin's groove cut
             // into the bezel -- a dark cut, its lit lip on the lamp's far side ; longer every 30 degrees, a punched dot at the
             // intercardinals ; none under the
@@ -4124,7 +4128,7 @@ void Minimap::draw(const Frame& f) {
         if (f.t < s_zoomT) za = 0.0f;                                       // f.t wrapped
         const VanaClock dv = dial_vana(g.vana);
         if (dialSq) { color_state(dev); rrect_stroke(dev, wx0 - 0.5f, wy0 - 0.5f, wx1 - wx0 + 1.0f, wy1 - wy0 + 1.0f, snap(2.0f * S), 0xC0140F08u, snap(1.4f * S)); }   // the inner edge's shadow on the map
-        if (dialSq && c.mmDayDial == 2 && s_skyPod) draw_index_marks(dev, f, c, g, S, fi);   // the modules' time arrows and the moon's counter on the frame -- AFTER the map (it covered them)
+        if (dialSq && day_dial(c) == 2 && s_skyPod) draw_index_marks(dev, f, c, g, S, fi);   // the modules' time arrows and the moon's counter on the frame -- AFTER the map (it covered them)
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);   // the weather orbs' HD icons
         { PERF_SCOPE("mm.dial"); draw_dial_instrument(dev, f, c, g, dv, elemTex_, wxTex_, mapX, mapY, ccx, ccy, dialSq ? r - fi : rc, r, S, za, dialSq, 1); }
     }

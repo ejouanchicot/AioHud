@@ -505,6 +505,9 @@ void Hud::render(u32 dev) {
             PERF_BEGIN("chat.1"); chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f); PERF_END("chat.1");   // Chat module : the combat log
             }   // !mapUp
             PERF_BEGIN("gameui.screens");           // every redrawn client screen below, as ONE row (most draw nothing unless their menu is open)
+            Font* const uiFont = f.font;            // Game UI -> Menu font : the screens below in it (the interface's when 0 / missing / not baked yet)
+            {   const int mf = ui_config().muFont;
+                if (mf > 0 && ui_font_installed(mf)) { Font* m = fonts_.get(ui_font_face(mf), 0); if (m) { m->ensure(f.dev); if (m->ready()) f.font = m; } } }
             topbar_draw(f);                         // the top bar (menu name + help), in place of the client's (Game UI) -- under the menus
             buffbar_draw(f);                        // your buff icons under it (Game UI -> NU_BUFF)
             netbox_draw(f);                         // the connection box (netstat), top right, in place of the client's
@@ -552,8 +555,11 @@ void Hud::render(u32 dev) {
             inspect_draw(f);                        // a player's Check : the equipment grid, View wares, the comment (Game UI)
             shop_draw(f);                           // an NPC shop : Buy / Sell, the list with its prices, the quantity (Game UI)
             dialog_draw(f);                         // a Yes / No confirm, in place of the client's (Game UI) -- over the screens
+            rgbedit_draw(f);                        // Config > Font Colors' RGB editor
+            gauges_draw(f);                         // the client's cast / HP-MP-TP gauges, redrawn
             macrobar_draw(f);                       // the Ctrl / Alt macro bar, in place of the client's (Game UI)
             item_card_fold(f);                      // AFTER every screen's card_draw : the item card shown a moment ago, folding away
+            f.font = uiFont;                        // (the widgets after : the interface's font)
             PERF_END("gameui.screens");
             if (!mapUp) {
             PERF_BEGIN("zonetracker"); draw_zonetracker(f); PERF_END("zonetracker");                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit

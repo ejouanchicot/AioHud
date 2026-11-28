@@ -221,7 +221,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 }
                 { ROW_BAND(52.0f)   // the font (drawn heavy, like the Arcade WS popup)
                     int fc = c.scHitFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), fc == 0 ? tr("Impact (default)", "Impact (d\xC3\xA9""faut)") : ui_font_label(fc))) c.scHitFont = wrap(fc + d, ui_font_count());
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), fc == 0 ? tr("Impact (default)", "Impact (d\xC3\xA9""faut)") : ui_font_label(fc))) c.scHitFont = ui_font_step(fc, d);
                 } ROW_NEXT(52.0f)
                 struct HitCol { const char* en; const char* fr; unsigned* col; };
                 HitCol hc[3] = { { "WS name", "Nom de la WS", &c.scHitNameCol }, { "Damage A", "D\xC3\xA9g\xC3\xA2ts A", &c.scHitDmgCol1 }, { "Damage B", "D\xC3\xA9g\xC3\xA2ts B", &c.scHitDmgCol2 } };

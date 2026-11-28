@@ -388,6 +388,53 @@ void FontManager::set_default(const char* face, int weight) {
 // BUNDLED fonts : register every .ttf/.otf in assets\fonts as PRIVATE process fonts (AddFontResourceEx,
 // no system install / no admin needed). CreateFont then finds them by family name -> ship Roboto etc. with
 // the plugin and they work on any PC. Safe if the folder is missing (just registers nothing).
+// each bundled file : the LABEL the config uses (its file name before the dash, spaced : OpenSans -> "Open Sans"), the
+// FAMILY name inside it (GDI's : name id 1 -- some static cuts name their 400 "Montserrat Thin") and its weight (OS/2)
+struct BundledFace { char label[40]; char family[64]; int weight; };
+static BundledFace g_bf[96]; static int g_bfN = 0;
+static void bf_label(const wchar_t* fn, char* out, int cap) {
+    int o = 0; wchar_t prev = 0;
+    for (int i = 0; fn[i] && fn[i] != L'-' && fn[i] != L'.' && o < cap - 2; ++i) {
+        const wchar_t c = fn[i];
+        const bool up = c >= L'A' && c <= L'Z', dig = c >= L'0' && c <= L'9', plow = prev >= L'a' && prev <= L'z';
+        if (o > 0 && ((up && plow) || (dig && !(prev >= L'0' && prev <= L'9')))) out[o++] = ' ';
+        out[o++] = (char)c; prev = c;
+    }
+    out[o] = 0;
+}
+static bool bf_read(const wchar_t* path, char* fam, int cap, int* weight) {
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    static unsigned char b[1 << 20]; DWORD got = 0; const BOOL ok = ReadFile(h, b, sizeof(b), &got, 0); CloseHandle(h);
+    if (!ok || got < 12) return false;
+    auto u16 = [&](DWORD o) -> unsigned { return o + 2 <= got ? (unsigned)(b[o] << 8 | b[o + 1]) : 0u; };
+    auto u32 = [&](DWORD o) -> DWORD { return o + 4 <= got ? (DWORD)b[o] << 24 | (DWORD)b[o + 1] << 16 | (DWORD)b[o + 2] << 8 | b[o + 3] : 0u; };
+    const unsigned nt = u16(4); DWORD nameO = 0, os2O = 0;
+    for (unsigned i = 0; i < nt && 12 + 16 * i + 16 <= got; ++i) {
+        const DWORD r = 12 + 16 * i;
+        if (!memcmp(b + r, "name", 4)) nameO = u32(r + 8);
+        if (!memcmp(b + r, "OS/2", 4)) os2O = u32(r + 8);
+    }
+    *weight = os2O ? (int)u16(os2O + 4) : 400;
+    fam[0] = 0; if (!nameO) return false;
+    const unsigned cnt = u16(nameO + 2), so = u16(nameO + 4);
+    for (unsigned i = 0; i < cnt; ++i) {
+        const DWORD r = nameO + 6 + 12 * i;
+        if (u16(r) == 3 && u16(r + 6) == 1) {                        // Windows platform, name id 1 : the family GDI groups by
+            const unsigned len = u16(r + 8), off = u16(r + 10); int o = 0;
+            for (unsigned k = 0; k + 1 < len && o < cap - 1; k += 2) { const unsigned c = u16(nameO + so + off + k); fam[o++] = c < 128 ? (char)c : '?'; }
+            fam[o] = 0; return fam[0] != 0;
+        }
+    }
+    return false;
+}
+// a bundled LABEL at a weight -> the family (and weight) of its nearest file ; false : not a bundled label
+static bool bf_resolve(const char* label, int weight, const char*& family, int& w) {
+    int best = -1, bd = 100000;
+    for (int i = 0; i < g_bfN; ++i) if (!lstrcmpiA(g_bf[i].label, label)) { const int d = abs(g_bf[i].weight - weight); if (d < bd) { bd = d; best = i; } }
+    if (best < 0) return false;
+    family = g_bf[best].family; w = g_bf[best].weight; return true;
+}
 static void register_bundled_fonts_once() {
     // Latch on SUCCESS, not on the first attempt : the assets\fonts\ folder can be briefly unreadable while the
     // updater extracts the zip (the exact scenario CLAUDE.md documents), and giving up then left the bundled faces
@@ -405,11 +452,21 @@ static void register_bundled_fonts_once() {
             const wchar_t* ext = fd.cFileName + L - 4;
             if (!lstrcmpiW(ext, L".ttf") || !lstrcmpiW(ext, L".otf") || !lstrcmpiW(ext, L".ttc")) {
                 wchar_t path[600]; wsprintfW(path, L"%s%s", dir, fd.cFileName);
-                AddFontResourceExW(path, FR_PRIVATE, 0);
+                if (AddFontResourceExW(path, FR_PRIVATE, 0) > 0 && g_bfN < 96) {
+                    BundledFace& e = g_bf[g_bfN];
+                    bf_label(fd.cFileName, e.label, sizeof(e.label));
+                    if (bf_read(path, e.family, sizeof(e.family), &e.weight)) ++g_bfN;
+                }
             }
         }
     } while (FindNextFileW(h, &fd));
     FindClose(h);
+    windower::debug::log("FONTS bundled : %d file(s) registered from assets\\fonts", g_bfN);
+}
+bool font_bundled(const char* label) {
+    register_bundled_fonts_once();
+    for (int i = 0; i < g_bfN; ++i) if (!lstrcmpiA(g_bf[i].label, label)) return true;
+    return false;
 }
 
 Font* FontManager::get(const char* face, int weight, bool italic) {
@@ -419,7 +476,9 @@ Font* FontManager::get(const char* face, int weight, bool italic) {
     for (int i = 0; i < n_; ++i) if (wt_[i] == w && it_[i] == italic && lstrcmpA(face_[i], fc) == 0) return &f_[i];
     if (n_ < MAXF) {
         lstrcpynA(face_[n_], fc, 64); wt_[n_] = w; it_[n_] = italic;
-        f_[n_].set_face(fc, w, italic);
+        const char* rf = fc; int rw = w;
+        bf_resolve(fc, w, rf, rw);                                       // a bundled label : its nearest file's own family / weight
+        f_[n_].set_face(rf, rw, italic);
         return &f_[n_++];
     }
     return &f_[0];   // pool full -> fall back to the default slot

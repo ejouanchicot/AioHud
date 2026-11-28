@@ -738,6 +738,11 @@ static const ImgText IMG_TEXT[] = {
     { 1, 633, -1, -1, 0, 0, "Dynamic", "Dynamique" },
     { 1, 634, -1, -1, 0, 0, "Static", "Fixe" },
     { 1, 655, -1, -1, 0, 0, "Normal", "Normal" },
+    { 1, 748, -1, -1, 0, 0, "Vertical", "Vertical" },
+    { 1, 749, -1, -1, 0, 0, "Horizontal", "Horizontal" },
+    { 1, 750, -1, -1, 0, 0, "OFF", "NON" },
+    { 1, 760, -1, -1, 0, 0, "00:00", "00:00" },
+    { 1, 761, -1, -1, 0, 0, "00:00:00", "00:00:00" },
     { 1, 794, -1, -1, 0, 0, "Off", "Non" },
     { 1, 795, -1, -1, 0, 0, "Full", "Complet" },
     { 1, 796, -1, -1, 0, 0, "Compact", "Compact" },
@@ -827,6 +832,42 @@ static const ImgText IMG_TEXT[] = {
     { 1, 751, 42, 172, 129, 14, "Party Icon Display", "Ic\xC3\xB4nes du groupe" },
     { 1, 751, 42, 204, 95, 14, "Timer Display", "Affichage des dur\xC3\xA9""es" },
     { 1, 751, 27, 238, 182, 11, "Furniture Camera Collision", "Collision cam\xC3\xA9ra / meubles" },
+    { 1, 629, 0, 0, 184, 13, "Window Settings (Shared)", "R\xC3\xA9glages (commun)" },
+    { 1, 629, 25, 28, 81, 13, "Log Window", "Fen\xC3\xAAtre du journal" },
+    { 1, 629, 40, 42, 95, 11, "Multi-window", "Multi-fen\xC3\xAAtres" },
+    { 1, 629, 40, 74, 74, 13, "Timestamp", "Horodatage" },
+    { 1, 629, 25, 108, 89, 14, "Window Type", "Type de fen\xC3\xAAtre" },
+    { 1, 629, 25, 140, 102, 11, "Window Effect", "Effet de fen\xC3\xAAtre" },
+    { 1, 743, 0, 0, 193, 13, "Window Settings (Window 1)", "R\xC3\xA9glages (fen\xC3\xAAtre 1)" },
+    { 1, 743, 25, 28, 81, 13, "Log Window", "Fen\xC3\xAAtre du journal" },
+    { 1, 743, 41, 42, 172, 13, "Reactive window sizing", "Taille adaptative" },
+    { 1, 743, 40, 74, 180, 14, "Maximum lines displayed", "Lignes affich\xC3\xA9""es max" },
+    { 1, 743, 46, 92, 22, 11, "Min", "Min" },
+    { 1, 743, 284, 92, 26, 11, "Max", "Max" },
+    { 1, 743, 40, 106, 177, 14, "Minimum lines displayed", "Lignes affich\xC3\xA9""es min" },
+    { 1, 743, 46, 124, 22, 11, "Min", "Min" },
+    { 1, 743, 284, 124, 26, 11, "Max", "Max" },
+    { 1, 743, 40, 140, 95, 11, "Window Width", "Largeur de la fen\xC3\xAAtre" },
+    { 1, 743, 46, 156, 22, 11, "Min", "Min" },
+    { 1, 743, 284, 156, 26, 11, "Max", "Max" },
+    { 1, 743, 41, 172, 85, 11, "Resize Time", "Dur\xC3\xA9""e du redimensionnement" },
+    { 1, 743, 46, 189, 22, 11, "Min", "Min" },
+    { 1, 743, 284, 189, 26, 11, "Max", "Max" },
+    { 1, 744, 0, 0, 193, 13, "Window Settings (Window 2)", "R\xC3\xA9glages (fen\xC3\xAAtre 2)" },
+    { 1, 744, 25, 28, 81, 13, "Log Window", "Fen\xC3\xAAtre du journal" },
+    { 1, 744, 41, 42, 172, 13, "Reactive window sizing", "Taille adaptative" },
+    { 1, 744, 40, 74, 180, 14, "Maximum lines displayed", "Lignes affich\xC3\xA9""es max" },
+    { 1, 744, 46, 92, 22, 11, "Min", "Min" },
+    { 1, 744, 284, 92, 26, 11, "Max", "Max" },
+    { 1, 744, 40, 106, 177, 14, "Minimum lines displayed", "Lignes affich\xC3\xA9""es min" },
+    { 1, 744, 46, 124, 22, 11, "Min", "Min" },
+    { 1, 744, 284, 124, 26, 11, "Max", "Max" },
+    { 1, 744, 40, 140, 95, 11, "Window Width", "Largeur de la fen\xC3\xAAtre" },
+    { 1, 744, 46, 156, 22, 11, "Min", "Min" },
+    { 1, 744, 284, 156, 26, 11, "Max", "Max" },
+    { 1, 744, 41, 172, 85, 11, "Resize Time", "Dur\xC3\xA9""e du redimensionnement" },
+    { 1, 744, 46, 189, 22, 11, "Min", "Min" },
+    { 1, 744, 284, 189, 26, 11, "Max", "Max" },
     { 1, 793, 0, 0, 48, 11, "Misc. 4", "Divers 4" },
     { 1, 793, 26, 25, 137, 14, "Software Keyboard", "Clavier logiciel" },
     { 1, 793, 25, 58, 74, 11, "Term Filter", "Filtre de termes" },
@@ -1922,6 +1963,11 @@ static float card_draw_sheet(const Frame& f, const Metrics& k, float bx, float b
     for (int b = 0; b < 2; ++b) if (BADGE[b]) fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), ty, BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
     { char cut[96]; fo->draw_lc(dev, bx, ty, fit_text(fo, title, snap(tz * 1.04f), right - bx - 6.0f * S, cut, sizeof(cut)), snap(tz * 1.04f), with_alpha(cTitle, A), sh, k.ow); }
     y = snap(y + lh);
+    // its maker, when the piece worn is signed (the client's card writes it under the name)
+    if (const char* sig = native_item_signature(g_card.id)) {
+        fo->draw_lc(dev, bx, snap(y + lh * 0.5f), sig, sz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        y = snap(y + lh);
+    }
     // 2) the kind ; the item level at the right
     {   const char* ilv = X && X->ilvl[0] ? X->ilvl : 0; char il[24] = "";
         if (ilv) { const char* q = ilv; while (*q && (*q < '0' || *q > '9')) ++q; int v = atoi(q); if (v > 0) sprintf(il, "iLv %d", v); }
@@ -6198,6 +6244,36 @@ static const char* auc_label(const char* help, char* buf, int cap) {
     return buf;
 }
 // the price typed : the client's value and its edited digit (its keys change it), your gil under it. Returns its height.
+// ---- the AH list : what YOU can wear, in the client's yellow (2026-11-28 : "les items qu'on peut porter ne sont pas en
+// jaune") -- the client's renderer colours the name cell (type 0x1A) itself : green, or yellow for what it flags, the
+// row holds no colour to read (auction-re s.3). Same rule here : an equipment piece your main job wears at your level.
+// The item's DAT head read once per id (a small cache ; 4 new reads a frame at most ; a failed read retried later).
+static bool item_wearable(const Frame& f, unsigned id, int& budget) {
+    struct E { unsigned id; signed char ok; unsigned at; };
+    static E cache[256]; static int next = 0;
+    if (!id || !f.game || !f.game->inGame) return false;
+    const int mj = (int)f.game->me.mjob, ml = (int)f.game->me.mlvl;
+    if (mj < 1 || mj > 22 || ml < 1) return false;
+    for (int i = 0; i < 256; ++i) if (cache[i].id == id) {
+        if (cache[i].ok >= 0) {
+            const unsigned packed = cache[i].at;             // jobs mask in the low 24 bits, level above
+            return (packed & (1u << mj)) && (int)(packed >> 24) <= ml;
+        }
+        if (GetTickCount() - cache[i].at < 5000u) return false;   // a failed read : retried after 5 s (rule 10)
+        cache[i].id = 0; break;
+    }
+    if (budget <= 0) return false;
+    --budget;
+    static unsigned char rec[0x2BD]; ItemText t;
+    E& e = cache[next]; next = (next + 1) % 256;
+    e.id = id;
+    if (read_item_record_head(id, rec, sizeof(rec)) && item_text_parse(rec, sizeof(rec), id, t)) {
+        e.ok = 1; e.at = (t.level > 0 ? (t.jobs & 0x00FFFFFFu) : 0u) | ((unsigned)(t.level > 255 ? 255 : (t.level > 0 ? t.level : 0)) << 24);
+        return (e.at & (1u << mj)) && (int)(e.at >> 24) <= ml;
+    }
+    e.ok = -1; e.at = GetTickCount();
+    return false;
+}
 static float auc_price_box(const Frame& f, const Metrics& k, const NativeAuction& a, float x, float y, float w, float A) {
     return gil_entry_box(f, k, a.sell ? gtr("Selling price", "Prix de vente") : gtr("Your bid", "Ton ench\xC3\xA8re"), a.priceVal, a.priceDigit, a.priceFocused, a.gil, a.gilOk, !a.sell, x, y, w, A);
 }
@@ -6307,6 +6383,8 @@ void auc_draw(const Frame& f) {
         char tb[48]; const char* title = last.status ? gtr("Your sales", "Tes ventes") : last.catHelp[0] ? auc_label(last.catHelp, tb, sizeof(tb)) : gtr("Auction", "H\xC3\xB4tel des ventes");
         char cnt[16]; sprintf(cnt, "%d", last.n);
         bool salePrices = false; for (int i = 0; i < last.vis && i < 16; ++i) if (last.row[i].hasPrice) salePrices = true;   // Sales status : each sale's price
+        if (!salePrices) { int budget = 4;                                // the AH's search list : what you can wear, in the client's yellow
+            for (int i = 0; i < last.vis && i < 16; ++i) if (last.row[i].itemCol == 0x80808080u && item_wearable(f, last.row[i].itemId, budget)) last.row[i].itemCol = 0x80909040u; }
         ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.listFocused, A0.listOpen, title, cnt, false, salePrices, 0, 0, true };   // the game's short names
         const float lw = keep_width(g_auLB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
         float lx = snap((float)last.lx0 * sx), ly = snap((float)last.ly0 * sy);
@@ -6865,7 +6943,10 @@ void gen_grid_draw(const Frame& f) {
         bool first = true;
         for (const ImgText& t : IMG_TEXT) if (t.sheet == 1 && t.id == fspr && t.x >= 0) {
             const float tx = snap(bx + (float)(ox + t.x) * sx), ty = snap(by + ((float)(oy + t.y) + (float)t.h * 0.5f) * sy);
-            fo->draw_lc(dev, tx, ty, gtr(t.en, t.fr), k.tz, with_alpha(first ? 0xFFE8D9B0u : 0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+            // no larger than the client's letters at that place : the rows keep the client's spacing (Gab 2026-11-27 :
+            // Misc. "trop charge", the captions ran into each other)
+            const float ctz = fminf(k.tz, snap((float)t.h * sy * 1.30f));
+            fo->draw_lc(dev, tx, ty, gtr(t.en, t.fr), ctz, with_alpha(first ? 0xFFE8D9B0u : 0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
             first = false;
         }
         cs(dev);
@@ -6897,7 +6978,15 @@ void gen_grid_draw(const Frame& f) {
         rrect(dev, x, y, w, h, r, with_alpha(on ? 0x50FFDA8Au : chosen ? 0x40C8A860u : 0x5A1C2638u, a), with_alpha(on ? 0x38FFDA8Au : chosen ? 0x30A88848u : 0x5A0A0F18u, a));
         rrect_stroke(dev, x, y, w, h, r, with_alpha(on ? 0xE0FFDA8Au : chosen ? 0xB0FFDA8Au : 0x38C8D6EAu, a), on || chosen ? 1.5f * S : 1.0f);
         RowSpec rs; rs.ltex = 0; rs.label = nullptr;
-        if (M.sheet[i] && !label_img(dev, M.sheet[i], M.spr[i][0], rs) && rs.label) {   // a known word : OUR type, centred
+        // a cell with NO label of its own (the client draws a sample beside it : Misc.'s Icon Type, 12 / 13 -- Gab 2026-11-27
+        // "Icon Type 1 et 2 invisibles") : its name from this table
+        static const char* const DIG[8] = { "1", "2", "3", "4", "5", "6", "7", "8" };   // the client's own : a number in a round button
+        if (!M.sheet[i] && !strcmp(M.name, "conf3win") && (M.entry[i] == 12 || M.entry[i] == 13)) rs.label = DIG[M.entry[i] - 12];
+        if (!M.sheet[i] && !strcmp(M.name, "conf5win") && M.entry[i] >= 7 && M.entry[i] <= 14) rs.label = DIG[M.entry[i] - 7];
+        if (rs.label && !M.sheet[i]) {
+            const u32 lc = on ? 0xFFFFFFFFu : chosen ? 0xFFFFE9B0u : other ? 0xFF8A96A8u : 0xFFC9D3E0u;
+            fo->begin(dev); fo->draw_c(dev, snap(x + w * 0.5f), snap(y + h * 0.5f), rs.label, k.tz * 0.92f, with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow); cs(dev);
+        } else if (M.sheet[i] && !label_img(dev, M.sheet[i], M.spr[i][0], rs) && rs.label) {   // a known word : OUR type, centred
             const u32 lc = on ? 0xFFFFFFFFu : chosen ? 0xFFFFE9B0u : other ? 0xFF8A96A8u : 0xFFC9D3E0u;
             fo->begin(dev); fo->draw_c(dev, snap(x + w * 0.5f), snap(y + h * 0.5f), rs.label, k.tz * 0.92f, with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow); cs(dev);
         } else if (rs.ltex) {
@@ -6933,7 +7022,7 @@ static bool cap_valueish(const char* t, unsigned col) {
     const char* p = t; if (*p == '(' || *p == '[' || *p == '+' || *p == '-') ++p;
     return *p >= '0' && *p <= '9';
 }
-struct PanelItem { char label[60]; char value[48]; int entry; bool grey, section, stat, pink; };   // pink : the client drew it in its cursor colour
+struct PanelItem { char label[60]; char value[48]; int entry; bool grey, section, stat, pink; unsigned vcol; };   // vcol : the value's own colour (a Config state), 0 the default   // pink : the client drew it in its cursor colour
 static int panel_items(const NativeGenMenus::Panel& P, char* title, int tcap, PanelItem* it, int cap) {
     title[0] = 0; int ord[40]; const int n = P.nr < 40 ? P.nr : 40;
     for (int i = 0; i < n; ++i) ord[i] = i;
@@ -6964,6 +7053,11 @@ static int panel_items(const NativeGenMenus::Panel& P, char* title, int tcap, Pa
         I.section = !e && !I.value[0]; I.stat = !e && I.value[0];
         if (I.section) { int l = lstrlenA(I.label); while (l && (I.label[l - 1] == ':' || I.label[l - 1] == ' ')) I.label[--l] = 0; }
     }
+    // Config's list screens : each entry's state, read from its handler (cfg_badges), is its value ; the title the client
+    // draws in another window wins
+    for (int i = 0; i < m; ++i) { const int e = it[i].entry; if (e >= 1 && e <= 32 && P.badge[e - 1][0]) {
+        lstrcpynA(it[i].value, P.badge[e - 1], sizeof(it[i].value)); it[i].vcol = P.bcol[e - 1]; it[i].section = false; it[i].stat = false; } }
+    if (P.ttl[0]) lstrcpynA(title, P.ttl, tcap);
     return m;
 }
 static bool parse_frac(const char* v, int& a, int& b) { a = b = 0; return v && sscanf(v, "%d/%d", &a, &b) == 2 && b > 0 && a >= 0 && a <= b * 4; }
@@ -7008,6 +7102,7 @@ static int section_kind(const char* l) {
     if (strstr(b, "current") || strstr(b, "en cours") || strstr(b, "actuel")) return 2;
     return 0;
 }
+static float g_tc1R[4] = { 0 }; static unsigned g_tc1Ms = 0;   // Font Colors' list, where it was drawn
 void gen_panel_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { for (int i = 0; i < 2; ++i) { g_gpB[i].vis = 0.0f; g_gpB[i].wasOpen = false; } return; }
@@ -7082,6 +7177,7 @@ void gen_panel_draw(const Frame& f) {
         const float A = g_gpB[s].vis * tO;
         if (A <= 0.0f) continue;
         draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+        if (!strcmp(P.name, "textcol1")) { g_tc1R[0] = bx; g_tc1R[1] = by; g_tc1R[2] = bw; g_tc1R[3] = bh; g_tc1Ms = now; }   // the RGB editor sits beside it
         const float x0 = bx + pad, x1 = bx + bw - pad;
         // ---- the header : the kicker (small caps, gold), the title (large), a hairline ; a band a shade lighter
         float y = by + pad * 0.5f;
@@ -7119,7 +7215,7 @@ void gen_panel_draw(const Frame& f) {
         // the cursor's row : the one the client draws in its cursor colour (pink) -- the entry ids are a fallback
         int curI = -1; for (int i = 0; i < n; ++i) if (items[s][i].pink && !items[s][i].stat && !items[s][i].section) { curI = i; break; }
         if (curI < 0) for (int i = 0; i < n; ++i) if (items[s][i].entry && items[s][i].entry == P.cursor) { curI = i; break; }
-        if (curI >= 0 && P.focused) {
+        if (curI >= 0 && (P.focused || (!strcmp(P.name, "textcol1") && native_rgb_edit().open))) {   // (the row being edited : lit too)
             float& cy = g_gpCurY[s]; const float target = ry[curI];
             cy = cy < 0.0f ? target : cy + (target - cy) * fminf(1.0f, dt * 18.0f);
             const float cx = snap(x0 - 3.0f * S), cw = (x1 - x0) + 6.0f * S;
@@ -7158,10 +7254,10 @@ void gen_panel_draw(const Frame& f) {
                     const float c0 = snap(lx + 7.0f * S), r = 4.5f * S;
                     disc_glow(dev, c0, cy, r * 0.6f, with_alpha(with_a(acc, 0x60), A), 6.0f * S);
                     fill_tri(dev, c0, cy - r, c0 + r, cy, c0 - r, cy, with_alpha(acc, A)); fill_tri(dev, c0 - r, cy, c0 + r, cy, c0, cy + r, with_alpha(acc, A));
-                } else {                                                  // a plain row : a small dot
+                } else if (!I.vcol) {                                     // a plain row : a small dot (a Config setting : none, as Chat Filters)
                     disc(dev, snap(lx + 7.0f * S), cy, 2.6f * S, with_alpha(I.grey ? 0xFF4A5262u : on ? 0xFFFFDA8Au : with_a(acc, 0xC0), A));
                 }
-                lx += bulletW;
+                if (!I.vcol) lx += bulletW;
                 const u32 lc = I.grey ? 0xFF6E7888u : on ? 0xFFFFFFFFu : I.entry ? (kind[i] == 1 ? 0xFFC9D3E0u : 0xFFE6ECF4u) : 0xFF9AA6B8u;
                 fo->begin(dev); fo->draw_lc(dev, snap(lx), cy, I.label, tz, with_alpha(lc, A), with_alpha(0xC8000000u, A), k.ow);
             }
@@ -7175,7 +7271,7 @@ void gen_panel_draw(const Frame& f) {
             } else if (I.value[0]) {
                 int a, b; const bool frac = parse_frac(I.value, a, b);
                 const float vw = fo->measure(I.value, tz), vx = snap(x1 - vw);
-                fo->begin(dev); fo->draw_lc(dev, vx, cy, I.value, tz, with_alpha(I.grey ? 0xFF6E7888u : frac && a >= b ? 0xFF9CE27Au : 0xFFFFE9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+                fo->begin(dev); fo->draw_lc(dev, vx, cy, I.value, tz, with_alpha(I.vcol ? I.vcol : I.grey ? 0xFF6E7888u : frac && a >= b ? 0xFF9CE27Au : 0xFFFFE9B0u, A), with_alpha(0xC8000000u, A), k.ow);
                 if (frac) {                                              // a count : a bar before it, green when full
                     const float bw2 = snap(84.0f * S), bh2 = snap(6.0f * S), bx2 = snap(vx - 12.0f * S - bw2), by2 = snap(cy - bh2 * 0.5f);
                     rrect(dev, bx2, by2, bw2, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
@@ -9452,11 +9548,19 @@ void trade_draw(const Frame& f) {
         const float sxl = snap(C0 + (float)((s - 1) % 4) * (cell + cg));
         const NativeList& NL = native_list(); unsigned qid = 0;
         if (NL.open && NL.kind == 3 && NL.cursor >= NL.top && NL.cursor < NL.top + NL.rows) qid = NL.id[NL.cursor - NL.top];
-        const float bwq = snap(4.0f * cell + 3.0f * cg), bhq = snap(btnH + 2.0f * 7.0f * S + k.bi * 2.0f);
-        float bxq = snap(sxl - cell), byq = snap(gridTop + 2.0f * cell + cg + 3.0f * S);
-        if (bxq < C0) bxq = C0; if (bxq + bwq > C0 + colW) bxq = snap(C0 + colW - bwq);
+        // UNDER the trade box, as wide as its content (2026-11-28 : "le bouton -/+ overlap la fenetre de trade" -- it sat
+        // over the box's bottom row, its buttons past its fixed width)
+        const float bhq = snap(btnH + 2.0f * 7.0f * S + k.bi * 2.0f);
+        const float ip = snap(7.0f * S) + k.bi, iz = snap(bhq - 2.0f * ip);
+        const float bzq = snap(iz * 0.9f), allW = snap(fo->measure(gtr("All", "Tout"), tz * 0.85f) + 12.0f * S);
+        char vq[16]; sprintf(vq, "%d / %d", T.qtyVal, T.qtyMax);
+        const float needW = snap(2.0f * ip + (qid ? iz + 6.0f * S : 0.0f) + 3.0f * (bzq + 3.0f * S) + fo->measure(vq, tz * 1.05f) + 13.0f * S + allW);
+        const float bwq = fmaxf(snap(4.0f * cell + 3.0f * cg), needW);
+        float bxq = snap(sxl - cell), byq = snap(py + ph + 4.0f * S);
+        if (bxq < px) bxq = px; if (bxq + bwq > px + pw) bxq = snap(px + pw - bwq);
+        if (byq + bhq > f.screenH - 4.0f) byq = snap(py - bhq - 4.0f * S);   // no room under : above it
         draw_themed_box(dev, f.skin, bxq, byq, bwq, bhq, C.muBox, A, S);
-        const float ip = snap(7.0f * S) + k.bi, iz = snap(bhq - 2.0f * ip), cy = snap(byq + bhq * 0.5f);
+        const float cy = snap(byq + bhq * 0.5f);
         float x = snap(bxq + ip);
         if (qid) { const u32 tex = list_icon(f, 3, qid); if (tex) { dTexQuadState(dev, tex); tquad(dev, x, snap(cy - iz * 0.5f), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); } x = snap(x + iz + 6.0f * S); }
         // - value / max + ; 1 ; All  (the client's events 1 / 2 / 3 / 4 ; the value validates)
@@ -9516,7 +9620,7 @@ void dialog_draw(const Frame& f) {
     if (!block_ease(g_dlB, D0.open, now, dt) || g_dlLast.uiW <= 0 || g_dlLast.uiH <= 0) return;
     const NativeDialog& D = g_dlLast;
     const Metrics k = metrics(f);
-    const float S = k.S, pad = snap(7.0f * S) + k.bi, tz = k.tz;
+    const float S = k.S, tz = k.tz;
     Font* fo = f.font; const u32 dev = f.dev;
     const float tO = ease_out(((float)(now - g_dlB.openMs) / 1000.0f) / 0.08f);
     const float A = g_dlB.vis * tO; if (A <= 0.0f) return;
@@ -9543,74 +9647,201 @@ void dialog_draw(const Frame& f) {
         if (D0.open && D0.focused && row >= 1 && row <= 2 && f.mouse && f.mouse->clicked) native_dialog_pick(row);
         return;
     }
+    // THE STANDARD (2026-11-28 : "shutdown et log out ont une boite yes no, pas faite") : the question in a band at the top,
+    // then Yes / No as the menus' rows -- the lit row is the cursor, as everywhere ; no pills of its own
+    const Metrics kN = no_icons(k);
     const u32 sh = with_alpha(0xC8000000u, A);
     const u32 GOLD = 0xFFFFDA8Au, TXT = 0xFFE4EAF2u, DIM = 0xFF93A6BEu;
-    const float sx = f.screenW / (float)D.uiW, sy = f.screenH / (float)D.uiH;
-    float bw = snap((float)(D.rx1 - D.rx0) * sx); if (bw < snap(360.0f * S)) bw = snap(360.0f * S);
-    // the question : its own lines (\n), each wrapped to the box
+    RowSpec rows[2] = {};
+    rows[0].label = gtr("Yes", "Oui"); rows[1].label = gtr("No", "Non");
+    for (int i = 0; i < 2; ++i) { rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; }
+    float mw, mh; block_size(f, kN, rows, 2, mw, mh);
+    const float sx = f.screenW / (float)D.uiW;
+    float bw = snap((float)(D.rx1 - D.rx0) * sx); if (bw < snap(300.0f * S)) bw = snap(300.0f * S); if (bw < mw) bw = mw;
+    const float tx0 = k.bi + kN.gutter, textW = bw - 2.0f * tx0;
+    // the question : its own lines (\n), each wrapped to the box ; none of its own : the client says it on the top bar
     char lines[10][160]; int nl = 0;
-    // no question of its own (shopbuy / shopsell, live 2026-11-20 : "") : the client says it on its help line -- the top bar
     const char* qtext = D.text[0] ? D.text : native_topbar().help.text;
     {   char para[400]; const char* p = qtext;
         while (*p && nl < 10) {
             int n = 0; while (p[n] && p[n] != '\n' && n < (int)sizeof(para) - 1) { para[n] = p[n]; ++n; } para[n] = 0;
-            if (n) nl += wrap_lines(fo, para, tz, bw - 2.0f * pad, lines + nl, 10 - nl);
+            if (n) nl += wrap_lines(fo, para, tz, textW, lines + nl, 10 - nl);
             p += n; if (*p == '\n') ++p;
         }
         if (!nl) { lstrcpynA(lines[0], "?", sizeof(lines[0])); nl = 1; }
     }
-    const float lineH = snap(tz * 1.35f), titleH = D.title[0] ? snap(k.capH * 1.1f) : 0.0f, btnH = snap(k.capH * 1.4f), gap = snap(10.0f * S);
-    const float bh = snap(pad + titleH + (titleH > 0.0f ? gap * 0.6f : 0.0f) + (float)nl * lineH + gap + btnH + pad + (D.cancelOk || D.hold ? lineH * 0.9f : 0.0f));
-    float bx = snap((float)D.rx0 * sx), by = snap((float)D.ry0 * sy);
+    const float lineH = snap(tz * 1.45f), titleH = D.title[0] ? snap(tz * 1.6f) : 0.0f;
+    const bool hint = D.cancelOk || D.hold;
+    const float inTop = snap(kN.pad + titleH + (float)nl * lineH + (hint ? lineH * 0.9f : 0.0f) + 2.0f * S);
+    const float bh = snap(mh + inTop);
+    float bx = 16.0f * S, by = snap(f.screenH * 0.5f);
     // ABOVE AioHUD's CHAT, its left edge (the user 2026-11-20 : the client's place -- anchored to the bottom -- put it IN
     // the chat), as the NPC windows ; no chat box : the client's place
     {   float cax = 0.0f, caw = 0.0f, ctop = 0.0f, cbot = 0.0f;
-        if (chat_anchor(cax, caw, ctop, cbot)) { bx = snap(cax); by = snap(ctop - 6.0f * S - bh); } }
+        if (chat_anchor(cax, caw, ctop, cbot)) { bx = snap(cax); by = snap(ctop - 6.0f * S - bh); }
+        else { bx = snap((float)D.rx0 * sx); by = snap((float)D.ry0 * f.screenH / (float)D.uiH); } }
     by = snap(by + (1.0f - tO) * 4.0f * S);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
     if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
-    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    g_dlB.inTop = inTop;
+    const int row = block_draw(f, kN, g_dlB, rows, 2, D.cursor, D.focused, bx, by, bw, bh, A, dt);
+    g_dlB.inTop = 0.0f;
     if (D0.open) { g_hit[14][0] = bx / f.screenW; g_hit[14][1] = by / f.screenH; g_hit[14][2] = bw / f.screenW; g_hit[14][3] = bh / f.screenH; }
+    const float L = bx + tx0, R = bx + bw - tx0;
+    float y = by + k.bi + kN.pad;
+    fo->begin(dev);
+    if (titleH > 0.0f) { fo->draw_lc(dev, L, snap(y + titleH * 0.5f), D.title, tz, with_alpha(0xFFE8D9B0u, A), sh, k.ow); y += titleH; }
+    for (int i = 0; i < nl; ++i) { fo->draw_lc(dev, L, snap(y + lineH * 0.5f), lines[i], tz, with_alpha(titleH > 0.0f ? TXT : 0xFFE8D9B0u, A), sh, k.ow); y += lineH; }
+    // the hints : Escape answers No (when the asker allows it) ; a protected answer is HELD to confirm (the client's gauge)
+    if (hint) {
+        const char* h = D.hold ? gtr("Hold the button to confirm", "Maintiens la touche pour confirmer") : gtr("Esc : No", "\xC3\x89""chap : Non");
+        fo->draw_lc(dev, snap(R - fo->measure(h, tz * 0.85f)), snap(y + lineH * 0.4f), h, tz * 0.85f, with_alpha(D.hold ? GOLD : DIM, A), sh, k.ow);
+    }
+    cs(dev);
+    static int lastRow = 0;
+    const bool live = D0.open && D0.focused;
+    if (live && row >= 1 && row <= 2 && row != lastRow && row != D.cursor) native_dialog_hover(row);
+    lastRow = row;
+    if (live && row >= 1 && row <= 2 && f.mouse && f.mouse->clicked) native_dialog_pick(row);
+}
+
+// ======== THE CLIENT'S SMALL GAUGES, REDRAWN (Gab 2026-11-27 : "on les veut toujours mais refaits") : at the client's place
+// (top-left), the Equipment sheet's gauges -- Casting Time while casting (its percent), HP / MP / TP while engaged ========
+namespace { Block g_cgB, g_hpgB; unsigned g_cgMs = 0; }
+void gauges_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeGauges& G0 = native_gauges();
+    if (!(C.nuHide & NU_PARTY) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_cgB.vis = g_hpgB.vis = 0.0f; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_cgMs ? (float)(now - g_cgMs) / 1000.0f : 0.0f; g_cgMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeGauges last; if (G0.cast || G0.gauge) last = G0;
+    const bool live = f.game && f.game->inGame;
+    const Metrics k = metrics(f); const float S = k.S;
+    Font* fo = f.font; const u32 dev = f.dev; const u32 sh = 0xC8000000u;
+    // THE CLIENT'S SIZE (2026-11-28 : "beaucoup trop gros, regarde le jeu") : its rect -- Casting Time 128 x 24, HP / MP / TP
+    // 128 x 44 (UI px) -- a small type, the bars inline
+    const float sx = last.uiW > 0 ? f.screenW / (float)last.uiW : 1.0f, sy = last.uiH > 0 ? f.screenH / (float)last.uiH : 1.0f;
+    const float bw = snap(fmaxf(120.0f * S, (float)(last.rx1 - last.rx0) * sx));
+    const float pad = snap(4.0f * S) + k.bi, tz = snap(k.tz * 0.82f), gh = snap(4.0f * S);
+    auto place = [&](float bh, float& bx, float& by) {
+        bx = snap((float)last.rx0 * sx); by = snap((float)last.ry0 * sy);
+        if (C.nuHide & NU_HELP) { const float tb = snap(topbar_height(k) + 4.0f * S); if (by < tb) by = tb; }   // under AioHUD's top bar
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); };
+    auto bar = [&](float x, float y, float w, float fr, u32 c0, u32 c1, float A) {
+        const float r = gh * 0.5f; fr = fminf(1.0f, fmaxf(0.0f, fr));
+        rrect(dev, x, y, w, gh, r, with_alpha(0xC0080C12u, A), with_alpha(0xC0141A22u, A));
+        if (fr > 0.0f) { const float fw = snap(fmaxf(gh, w * fr)); rrect(dev, x, y, fw, gh, r, with_alpha(c0, A), with_alpha(c1, A));
+            rrect_topcaps(dev, x + 1.0f, y + 0.5f, fw - 2.0f, snap(gh * 0.45f), r - 0.5f, with_alpha(0x50FFFFFFu, A), with_alpha(0x00FFFFFFu, A)); }
+        rrect_stroke(dev, x, y, w, gh, r, with_alpha(0x40000000u, A), 1.0f); };
+    // ---- Casting Time : the name and the percent on one line, the bar under them ----
+    const float lh = snap(tz * 1.15f), castH = snap(pad + lh + 2.0f * S + gh + pad);
+    if (block_ease(g_cgB, G0.cast, now, dt) && last.uiW > 0) {
+        const float A = g_cgB.vis;
+        float bx, by; place(castH, bx, by);
+        draw_themed_box(dev, f.skin, bx, by, bw, castH, C.muBox, A, S);
+        const float L = bx + pad, R = bx + bw - pad, y = by + pad;
+        char pc[12]; sprintf(pc, "%d%%", last.castPct);
+        fo->begin(dev);
+        fo->draw_lc(dev, L, snap(y + lh * 0.5f), gtr("Casting Time", "Incantation"), tz, with_alpha(0xFFE8D9B0u, A), with_alpha(sh, A), k.ow);
+        fo->draw_lc(dev, snap(R - fo->measure(pc, tz)), snap(y + lh * 0.5f), pc, tz, with_alpha(0xFFE4EAF2u, A), with_alpha(sh, A), k.ow);
+        cs(dev); bar(L, snap(y + lh + 2.0f * S), R - L, (float)last.castPct / 100.0f, 0xFFE89A6Au, 0xFFB8603Au, A);
+    }
+    // ---- HP / MP / TP : one line each -- the name, the bar, the value (as the client) ----
+    if (block_ease(g_hpgB, G0.gauge && live, now, dt) && last.uiW > 0 && live) {
+        const float A = g_hpgB.vis; const float rowH = snap(tz * 1.2f), bh = snap(pad + 3.0f * rowH + pad);
+        float bx, by; place(bh, bx, by);
+        if (g_cgB.vis > 0.0f) by = snap(by + castH + 3.0f * S);           // under the cast gauge when both
+        draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+        const float L = bx + pad, R = bx + bw - pad; float y = by + pad;
+        const float nameW = snap(fo->measure("MP", tz) + 5.0f * S), valW = snap(fo->measure("9999", tz) + 5.0f * S);
+        const auto& me = f.game->me;
+        struct Row { const char* n; int v; float fr; u32 c0, c1, nc; } rows[3] = {
+            { "HP", (int)me.hp, (float)me.hpp / 100.0f, 0xFF6ED36Au, 0xFF3E9E44u, 0xFF9CE27Au },
+            { "MP", (int)me.mp, (float)me.mpp / 100.0f, 0xFF6AA8F0u, 0xFF3A6CC0u, 0xFF8AB8F4u },
+            { "TP", (int)me.tp, (float)me.tp / 3000.0f, 0xFFF0C850u, 0xFFB8901Cu, 0xFFF0D480u } };
+        for (int i = 0; i < 3; ++i) {
+            char v[12]; sprintf(v, "%d", rows[i].v);
+            const float cy = snap(y + rowH * 0.5f);
+            cs(dev); bar(snap(L + nameW), snap(cy - gh * 0.5f), R - L - nameW - valW, rows[i].fr, rows[i].c0, rows[i].c1, A);
+            fo->begin(dev);
+            fo->draw_lc(dev, L, cy, rows[i].n, tz, with_alpha(rows[i].nc, A), with_alpha(sh, A), k.ow);
+            fo->draw_lc(dev, snap(R - fo->measure(v, tz)), cy, v, tz, with_alpha(0xFFE4EAF2u, A), with_alpha(sh, A), k.ow);
+            y = snap(y + rowH);
+        }
+    }
+    cs(dev);
+}
+
+// ======== FONT COLORS' RGB EDITOR (textcol3, 2026-11-28 : "Font color tu n'as pas fait") : at the client's place, the
+// row's title and its colour as a sample, then R / G / B as Config's sliders (the value inside the bar), then OK | Cancel
+// as Config's options ; the client's cursor lit, the channel held brighter ========
+namespace { Block g_reB; unsigned g_reMs = 0; NativeRgbEdit g_reLast; }
+void rgbedit_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_reB.vis = 0.0f; g_reB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_reMs ? (float)(now - g_reMs) / 1000.0f : 0.0f; g_reMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeRgbEdit& E0 = native_rgb_edit();
+    if (E0.open) g_reLast = E0;
+    if (!block_ease(g_reB, E0.open, now, dt) || g_reLast.uiW <= 0) return;
+    const NativeRgbEdit& E = g_reLast;
+    const Metrics k = metrics(f); const float S = k.S, tz = k.tz, pad = snap(7.0f * S) + k.bi;
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float rowH = snap(tz * 1.75f), trackH = snap(tz * 1.15f), labW = snap(22.0f * S), gap = snap(6.0f * S);
+    const float bw = snap(300.0f * S), headH = snap(tz * 1.9f);
+    const float bh = snap(pad + headH + 3.0f * rowH + gap + rowH + pad);
+    const float sx = f.screenW / (float)E.uiW, sy = f.screenH / (float)E.uiH;
+    float bx = snap((float)E.rx0 * sx), by = snap((float)E.ry0 * sy);
+    // the client puts it over its list's header strip ; ours is taller : BESIDE the list, its top level (the row edited
+    // stays in sight)
+    if (g_tc1Ms && now - g_tc1Ms < 300u && g_tc1R[2] > 0.0f) { bx = snap(g_tc1R[0] + g_tc1R[2] + 4.0f * S); by = snap(g_tc1R[1]); }
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_reB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_reB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const u32 sh = with_alpha(0xC8000000u, A);
     const float L = bx + pad, R = bx + bw - pad;
+    const u32 col = 0xFF000000u | ((u32)E.rgb[0] << 16) | ((u32)E.rgb[1] << 8) | (u32)E.rgb[2];
+    // the header : the row's title, its colour as a sample on the right ; a hairline
     float y = by + pad;
     fo->begin(dev);
-    if (titleH > 0.0f) {
-        fo->draw_lc(dev, L, snap(y + titleH * 0.5f), D.title, tz * 1.05f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-        y += titleH; rrect(dev, L, snap(y), R - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A)); y += gap * 0.6f;
-        fo->begin(dev);
+    const char* sample = gtr("Sample", "Exemple"); const float sw = fo->measure(sample, tz);
+    char ttl[60]; lstrcpynA(ttl, E.title[0] ? E.title : gtr("Text color", "Couleur du texte"), sizeof(ttl));
+    fo->draw_lc(dev, L, snap(y + headH * 0.45f), ttl, tz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, snap(R - sw), snap(y + headH * 0.45f), sample, tz, with_alpha(col, A), sh, k.ow);
+    rrect(dev, L, snap(y + headH - 4.0f * S), R - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    y += headH;
+    // R / G / B : Config's sliders
+    static const char* const CH[3] = { "R", "G", "B" };
+    static const u32 FILL[3] = { 0xE0E86A6Au, 0xE06AD27Au, 0xE06A9AF0u };
+    for (int c = 0; c < 3; ++c) {
+        const bool on = E.cursor == c + 1 && E.focused, held = E.held == c + 1;
+        const float ty = snap(y + (rowH - trackH) * 0.5f), tx = snap(L + labW), tw = R - tx, r = trackH * 0.5f;
+        fo->begin(dev); fo->draw_lc(dev, L, snap(y + rowH * 0.5f), CH[c], tz, with_alpha(on ? 0xFFFFFFFFu : 0xFFC9D3E0u, A), sh, k.ow);
+        rrect(dev, tx, ty, tw, trackH, r, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+        const float fw = snap((tw - 4.0f * S) * (float)E.rgb[c] / 255.0f);
+        if (fw > 1.0f) rrect(dev, tx + 2.0f * S, ty + 2.0f * S, fw, trackH - 4.0f * S, (trackH - 4.0f * S) * 0.5f, with_alpha(held ? (FILL[c] | 0xFF000000u) : FILL[c], A), with_alpha(held ? (FILL[c] | 0xFF000000u) : (FILL[c] & 0x00FFFFFFu) | 0xA0000000u, A));
+        rrect_stroke(dev, tx, ty, tw, trackH, r, with_alpha(on ? 0xE0FFDA8Au : 0x38C8D6EAu, A), on ? 1.5f * S : 1.0f);
+        char v[8]; sprintf(v, "%d", E.rgb[c]);
+        fo->begin(dev); fo->draw_lc(dev, snap(tx + tw - 6.0f * S - fo->measure(v, tz * 0.85f)), snap(ty + trackH * 0.5f), v, tz * 0.85f, with_alpha(on ? 0xFFFFFFFFu : 0xFFE4EAF2u, A), with_alpha(0xE0000000u, A), k.ow);
+        y += rowH;
     }
-    for (int i = 0; i < nl; ++i) { fo->draw_lc(dev, L, snap(y + lineH * 0.5f), lines[i], tz, with_alpha(TXT, A), sh, k.ow); y += lineH; }
-    y = snap(y + gap);
-    // Yes | No
-    const MouseState* ms = f.mouse;
-    const bool live = D0.open && D0.focused;
-    const float bwid = snap((R - L - 10.0f * S) * 0.5f);
-    int hov = 0;
-    for (int e = 1; e <= 2; ++e) {
-        const float x = snap(L + (float)(e - 1) * (bwid + 10.0f * S));
-        const bool cur = D.cursor == e, h = live && ms && ms->focused && ms->x >= x && ms->x < x + bwid && ms->y >= y && ms->y < y + btnH;
-        if (h) hov = e;
-        const u32 c1 = e == 1 ? 0x30FFDA8Au : 0x22FFFFFFu, c2 = e == 1 ? 0x18FFDA8Au : 0x14FFFFFFu;
-        rrect(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(c1, A), with_alpha(c2, A));
-        if (cur) { rrect_clip_begin(dev, x, y, bwid, btnH, btnH * 0.5f); party_selframe(dev, x, y, bwid, btnH, f.t, A, 0); rrect_clip_end(dev);
-                   rrect_stroke(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(0xD8FFDA8Au, A), 1.5f * S); }
-        else if (h) rrect_stroke(dev, x, y, bwid, btnH, btnH * 0.5f, with_alpha(0x80FFDA8Au, A), 1.0f * S);
-        const char* lb = e == 1 ? gtr("Yes", "Oui") : gtr("No", "Non");
-        fo->begin(dev);
-        fo->draw_lc(dev, snap(x + (bwid - fo->measure(lb, tz * 1.05f)) * 0.5f), snap(y + btnH * 0.5f), lb, tz * 1.05f, with_alpha(cur ? 0xFFFFFFFFu : TXT, A), sh, k.ow);
+    y += gap;
+    // OK | Cancel : Config's options
+    const float ow = snap((R - L - 10.0f * S) * 0.5f), oh = trackH, oy = snap(y + (rowH - oh) * 0.5f);
+    for (int e = 4; e <= 5; ++e) {
+        const float ox = snap(L + (float)(e - 4) * (ow + 10.0f * S));
+        const bool on = E.cursor == e && E.focused;
+        rrect(dev, ox, oy, ow, oh, oh * 0.5f, with_alpha(on ? 0x50FFDA8Au : 0x5A1C2638u, A), with_alpha(on ? 0x38FFDA8Au : 0x5A0A0F18u, A));
+        rrect_stroke(dev, ox, oy, ow, oh, oh * 0.5f, with_alpha(on ? 0xE0FFDA8Au : 0x38C8D6EAu, A), on ? 1.5f * S : 1.0f);
+        const char* lb = e == 4 ? "OK" : gtr("Cancel", "Annuler");
+        fo->begin(dev); fo->draw_c(dev, snap(ox + ow * 0.5f), snap(oy + oh * 0.5f), lb, tz * 0.92f, with_alpha(on ? 0xFFFFFFFFu : 0xFFC9D3E0u, A), sh, k.ow);
     }
-    // the hints : Escape answers No (when the asker allows it) ; a protected answer is HELD to confirm (the client's gauge)
-    if (D.cancelOk || D.hold) {
-        char hint[96]; hint[0] = 0;
-        if (D.hold) lstrcpynA(hint, gtr("Hold the button to confirm", "Maintiens la touche pour confirmer"), sizeof(hint));
-        else lstrcpynA(hint, gtr("Esc : No", "\xC3\x89""chap : Non"), sizeof(hint));
-        fo->begin(dev);
-        fo->draw_lc(dev, snap(R - fo->measure(hint, tz * 0.8f)), snap(y + btnH + lineH * 0.55f), hint, tz * 0.8f, with_alpha(D.hold ? GOLD : DIM, A), sh, k.ow);
-    }
-    static int lastHov = 0;
-    if (live && hov && hov != lastHov && hov != D.cursor) native_dialog_hover(hov);
-    lastHov = hov;
-    if (live && hov && ms && ms->clicked) native_dialog_pick(hov);
+    cs(dev);
 }
 
 // ======== THE MACRO BAR (NU_MACRO) : the client's Ctrl / Alt palette, AioHUD's style, shown exactly when the client
@@ -9648,6 +9879,12 @@ void macrobar_draw(const Frame& f) {
     const float cellH = snap(k.capH * 1.55f);
     const float bh = snap(pad + cellH + pad);                              // the cells only (the user 2026-11-20 : no book / set header)
     if (bw < 300.0f * S) bw = snap(300.0f * S);
+    // the client's COMPACT palette (its short width) : the names as the client cuts them -- their first letters, a smaller
+    // type, no "..." -- and cells wide enough for five of them (Gab 2026-11-27 : "C... H... R..." unreadable)
+    const float nameTzFull = tz, nameTzC = snap(tz * 0.86f), cgap = snap(2.0f * S);
+    const bool compact = (bw - 2.0f * pad - 9.0f * cgap) / 10.0f < fo->measure("Phalanx", nameTzFull) + 8.0f * S;
+    const float nameTz = compact ? nameTzC : nameTzFull;
+    if (compact) { const float need = snap(2.0f * pad + 9.0f * cgap + 10.0f * (fo->measure("Refre", nameTz) + 10.0f * S)); if (bw < need) bw = need; }
     // RIGHT UNDER THE TOP BAR, its left edge (the user 2026-11-20 : "en dessous de la barre d'infos") ; the client's
     // own place only when AioHUD's top bar is off
     float bx = snap((float)M.rx0 * sx), by = snap((float)M.ry0 * sy);
@@ -9683,8 +9920,13 @@ void macrobar_draw(const Frame& f) {
         fo->draw_lc(dev, snap(cx + 4.0f * S), snap(cy0 + 7.0f * S), key, tz * 0.72f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
         if (!empty) {
             char cut[32]; const float nw = cwi - 8.0f * S;
-            const char* s = fit_text(fo, nm, tz, nw, cut, sizeof(cut));
-            fo->draw_lc(dev, snap(cx + (cwi - fo->measure(s, tz)) * 0.5f), snap(cy0 + cellH * 0.58f), s, tz, with_alpha(hand ? 0xFFFFFFFFu : 0xFFE4EAF2u, A), sh, k.ow);
+            const char* s = nm;
+            if (compact) {                                               // the client's way : as many letters as fit, no "..."
+                lstrcpynA(cut, nm, sizeof(cut)); int l = lstrlenA(cut);
+                while (l > 1 && fo->measure(cut, nameTz) > nw) cut[--l] = 0;
+                s = cut;
+            } else s = fit_text(fo, nm, nameTz, nw, cut, sizeof(cut));
+            fo->draw_lc(dev, snap(cx + (cwi - fo->measure(s, nameTz)) * 0.5f), snap(cy0 + cellH * 0.58f), s, nameTz, with_alpha(hand ? 0xFFFFFFFFu : 0xFFE4EAF2u, A), sh, k.ow);
         }
     }
 }
@@ -10140,8 +10382,29 @@ const PlateFont g_plateFonts[] = {
         { "Microsoft YaHei UI", 400 }, { "Microsoft JhengHei UI", 400 }, { "Calibri", 400 }, { "Candara", 400 },
         { "Corbel", 400 }, { "Trebuchet MS", 400 }, { "Franklin Gothic Medium", 400 }, { "Century Gothic", 400 },
         { "Tahoma", 400 }, { "Verdana", 400 }, { "Arial", 400 }, { "Lucida Sans Unicode", 400 }, { "Sitka Small", 400 },
-        { "Georgia", 400 }, { "Palatino Linotype", 400 }, { "Constantia", 400 }, { "Cambria", 400 } };
+        { "Georgia", 400 }, { "Palatino Linotype", 400 }, { "Constantia", 400 }, { "Cambria", 400 },
+        // AioHUD's OWN (assets\fonts, SIL OFL) : on every PC -- appended, the saved indices stay
+        { "Roboto", 400 }, { "Open Sans", 400 }, { "Inter", 400 }, { "Noto Sans", 400 }, { "Lato", 400 }, { "Montserrat", 400 },
+        { "Source Sans 3", 400 }, { "Fira Sans", 400 }, { "Nunito", 400 }, { "Exo 2", 400 }, { "Merriweather", 400 }, { "Cinzel", 400 } };
 int plate_font_count() { return (int)(sizeof(g_plateFonts) / sizeof(g_plateFonts[0])); }
+// which faces THIS machine has (Gab 2026-11-27 : "la plupart des polices ne marchent pas" -- a face Windows lacks falls back
+// silently to its default : the choice seemed to do nothing). Asked once (GDI), logged ; the selector skips the missing.
+static int CALLBACK pf_found(const LOGFONTA*, const TEXTMETRICA*, DWORD, LPARAM lp) { *(bool*)lp = true; return 0; }
+static bool plate_font_ok(int i) {
+    static signed char have[64]; static bool done = false;   // rule10-ok: asked once ; a failed GetDC keeps every face (the list as before)
+    if (!done) { done = true; HDC dc = GetDC(0); int n = 0; char miss[512]; int mo = 0; miss[0] = 0;   // rule10-ok: a failed GetDC marks every face present (the list as before), never none
+        for (int q = 0; q < plate_font_count() && q < 64; ++q) { LOGFONTA lf; memset(&lf, 0, sizeof(lf)); lf.lfCharSet = DEFAULT_CHARSET; lstrcpynA(lf.lfFaceName, g_plateFonts[q].face, LF_FACESIZE);
+            bool f2 = font_bundled(g_plateFonts[q].face); if (!f2 && dc) EnumFontFamiliesExA(dc, &lf, pf_found, (LPARAM)&f2, 0); have[q] = (!dc || f2) ? 1 : 0; if (have[q]) ++n;
+            else if (mo < 480) mo += _snprintf(miss + mo, sizeof(miss) - mo, " '%s'", g_plateFonts[q].face); }
+        if (dc) ReleaseDC(0, dc);
+        windower::debug::log("PLATES fonts : %d of %d installed ; missing :%s", n, plate_font_count(), miss[0] ? miss : " none"); }
+    return i >= 0 && i < plate_font_count() && i < 64 && have[i];
+}
+int plate_font_step(int cur, int d) {
+    const int n = plate_font_count(); int i = cur;
+    for (int k = 0; k < n; ++k) { i = ((i + (d < 0 ? -1 : 1)) % n + n) % n; if (plate_font_ok(i)) return i; }
+    return cur;
+}
 const char* plate_font_label(int i) { static char b[64]; if (i < 0 || i >= plate_font_count()) i = 0; _snprintf(b, sizeof(b), "%s%s", g_plateFonts[i].face, g_plateFonts[i].w >= 600 && !strstr(g_plateFonts[i].face, "Semibold") ? " Bold" : ""); b[63] = 0; return b; }
 static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
     if (!f.font || f.screenW <= 0.0f || f.screenH <= 0.0f) return;
@@ -10153,6 +10416,7 @@ static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
     const int NPF = plate_font_count(); const PlateFont* PF = g_plateFonts;
     unsigned pfMs = 0; int pfSel = native_plates_font_sel(pfMs); if (pfSel >= 0) pfSel %= NPF;
     const bool pfShow = pfSel >= 0; if (pfSel < 0) { pfSel = ui_config().plFont; if (pfSel < 0 || pfSel >= NPF) pfSel = 0; }   // the config's font (the dev command wins while used)
+    if (!plate_font_ok(pfSel)) { const int alt = plate_font_step(pfSel, 1); if (plate_font_ok(alt)) pfSel = alt; }   // a face this machine lacks : the next one it has
     const int stl = ui_config().plStyle;   // Game UI -> the names' style : 1 bold, 2 italic, 4 CAPS
     int wIdx = (stl >> 8) & 7; if (!wIdx && (stl & 1)) wIdx = 4;   // the weight : the font's own, or ultra-thin .. bold
     static const int WGT[5] = { 0, 200, 300, 600, 700 };

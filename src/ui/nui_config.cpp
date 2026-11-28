@@ -109,7 +109,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         } ROW_NEXT(52.0f)
         if (c.plShow) {
             { ROW_BAND(52.0f) int fc = c.plFont; if (fc < 0 || fc >= plate_font_count()) fc = 0;
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), plate_font_label(fc))) { c.plFont = (fc + d + plate_font_count()) % plate_font_count(); save_ui_config(); }
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), plate_font_label(fc))) { c.plFont = plate_font_step(fc, d); save_ui_config(); }
             } ROW_NEXT(52.0f)
             #define NUI_SCALE_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = 0.6f, hi_ = 1.6f; char b_[16]; sprintf(b_, "%d%%", (int)((FIELD) * 100.0f + 0.5f)); \
                 float v01_ = clampf(((FIELD) - lo_) / (hi_ - lo_), 0.0f, 1.0f); \
@@ -266,6 +266,10 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
         const char* LANG[3] = { tr("As the game", "Comme le jeu"), "English", "Fran\xC3\xA7""ais" };
         const int ml = c.muLang >= 0 && c.muLang <= 2 ? c.muLang : 0;
         if (cfg_select_row(K, ctrl_uid_i(base, 40), x, ry, w, tr("Menu language", "Langue des menus"), LANG[ml], nullptr, nullptr, 0)) { c.muLang = (ml + 1) % 3; save_ui_config(); }
+        // their font : the interface's by default, or any face this machine has
+        {   const int mf = c.muFont >= 0 && c.muFont < ui_font_count() ? c.muFont : 0;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 42), x, ry, w, tr("Menu font", "Police des menus"), mf == 0 ? tr("As the interface", "Comme l'interface") : ui_font_label(mf), nullptr, nullptr, 0)) {
+                c.muFont = ui_font_step(mf, d); save_ui_config(); } }
         ry += K.px(8.0f);
     }
     if (adv) {
@@ -316,7 +320,7 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
             {   // the font : the plate-font list (read at run time)
                 const int nf = plate_font_count() < 1 ? 1 : plate_font_count();
                 int fc = c.plFont; if (fc < 0 || fc >= nf) fc = 0;
-                if (int d = cfg_select_row(K, ctrl_uid_i(base, 20), x, ry, w, tr("Font", "Police"), plate_font_label(fc), off, &c.plFont, 4)) { c.plFont = (fc + d + nf) % nf; save_ui_config(); }
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 20), x, ry, w, tr("Font", "Police"), plate_font_label(fc), off, &c.plFont, 4)) { c.plFont = plate_font_step(fc, d); save_ui_config(); }
             }
             cfg_rows(K, ctrl_uid_i(base, 21), NUI_PL_SIZE, 1, x, ry, w, adv);
             {   // the names' size : with the distance (as the game) or FIXED, every one as thin as a far name

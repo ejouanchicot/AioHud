@@ -85,6 +85,8 @@ struct MenuGroup {
 bool menu_group_lookup(float x, float y, float w, float h, MenuGroup& g);
 void topbar_draw(const Frame& f);     // hud_actmenu.cpp : the client's top bar (menu name + help), AioHUD's style (NU_HELP)
 void buffbar_draw(const Frame& f);    // hud_actmenu.cpp : your buff icons under the top bar, the party's icon set (NU_BUFF)
+void gauges_draw(const Frame& f);    // hud_actmenu.cpp : the client's casttime / gaugewin, AioHUD's style
+void rgbedit_draw(const Frame& f);   // hud_actmenu.cpp : Font Colors' RGB editor (textcol3)
 void dialog_draw(const Frame& f);     // hud_actmenu.cpp : the client's Yes / No confirms, AioHUD's style (NU_DIALOG)
 void trade_draw(const Frame& f);     // hud_actmenu.cpp : the player trade (trade + gift), AioHUD's style (NU_TRADE)
 void shop_draw(const Frame& f);      // hud_actmenu.cpp : an NPC shop (Buy / Sell, the list, the quantity), AioHUD's style (NU_NPC)
@@ -109,6 +111,7 @@ void map_screen_hud(const Frame& f);
 void plates_draw(const Frame& f);
 void plates_sample(const Frame& f, float sx, float sy, float sw, float sh);   // the config's preview of the name plates
 struct PlateFont { const char* face; int w; };
+int plate_font_step(int cur, int d);   // the next INSTALLED plate font from cur (d = +1 / -1)
 int plate_font_count();                // the name plates' fonts (Game UI -> Name plates font)
 const char* plate_font_label(int i);      // hud_actmenu.cpp : the name plates over the characters (under the widgets)
 void map_list_draw(const Frame& f);

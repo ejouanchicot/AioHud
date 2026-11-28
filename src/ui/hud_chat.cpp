@@ -28,6 +28,55 @@
 #include <windows.h>
 
 namespace aio {
+// the unfolded log's LINE CURSOR (rows up from the newest) and its page, per box : the GAME's own cursor (fulllog +0x20 lines
+// scrolled back, +0x1C its row on a 72-row page, +0x58 the last row -- measured 2026-11-28) -- keys or pad alike
+static int g_flCur[2] = { 0, 0 }, g_flVis[2] = { 20, 20 };
+// THE KEYBOARD drives it (2026-11-28, measured : the game's own page goes "50 back, then nothing for 6 presses, then its
+// cursor to the top" -- copied, the box rose, stood, rose again). Each key does ONE thing here : up / down a line, left /
+// right one of OUR pages. Observed, never consumed. The game's state stays the fallback when no key is seen (a pad).
+static unsigned g_flKeyMs = 0;
+void fulllog_key(int dik, bool pressed) {
+    if (!pressed) return;
+    const NativeFullLog& FLk = native_fulllog();
+    if (!FLk.open || !FLk.focused) return;
+    const int pg = g_flVis[0] > 2 ? g_flVis[0] - 1 : 1;
+    switch (dik) {
+        case 0xC8: case 0x48: g_flCur[0] += 1; break;                  // up (arrow / numpad 8) : a line
+        case 0xD0: case 0x50: g_flCur[0] -= 1; break;                  // down : a line
+        case 0xCB: case 0x4B: g_flCur[0] += pg; break;                 // left : a page up
+        case 0xCD: case 0x4D: g_flCur[0] -= pg; break;                 // right : a page down
+        default: return;
+    }
+    if (g_flCur[0] < 0) g_flCur[0] = 0;
+    g_flKeyMs = GetTickCount();
+}
+// ... and THE PAD (2026-11-28 : "au clavier ok, a la manette non") : a pad never reaches the key hook. Its D-pad read
+// straight from XInput (loaded at run time : no link dependency ; no pad / no DLL = nothing) while the unfolded log has
+// the focus -- the same moves as the arrows, held = repeated (400 ms, then every 90 ms)
+struct XPadState { DWORD packet; WORD buttons; BYTE lt, rt; SHORT lx, ly, rx, ry; };
+typedef DWORD(WINAPI* XGetStateFn)(DWORD, XPadState*);
+static XGetStateFn xinput_fn() {
+    static XGetStateFn fn = nullptr; static int tries = 0; static unsigned nextMs = 0;
+    if (fn || tries >= 3 || (nextMs && (int)(GetTickCount() - nextMs) < 0)) return fn;   // bounded retry (rule 10)
+    ++tries; nextMs = GetTickCount() + 10000;
+    const char* dlls[3] = { "xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll" };
+    for (int i = 0; i < 3 && !fn; ++i) { HMODULE m = LoadLibraryA(dlls[i]); if (m) fn = (XGetStateFn)GetProcAddress(m, "XInputGetState"); }
+    windower::debug::log("CHAT pad (XInput) %s (try %d)", fn ? "ready" : "not found -- the unfolded log follows the game's cursor", tries);
+    return fn;
+}
+static void fulllog_pad(unsigned nowMs) {
+    static WORD held = 0; static unsigned heldMs = 0, repMs = 0;
+    const XGetStateFn fn = xinput_fn(); if (!fn) return;
+    WORD b = 0; for (DWORD u = 0; u < 4; ++u) { XPadState st; if (fn(u, &st) == 0) { b = (WORD)(st.buttons & 0x000F); if (b) break; } }
+    const int DIK[4] = { 0xC8, 0xD0, 0xCB, 0xCD };                       // up, down, left, right : as the arrows
+    for (int i = 0; i < 4; ++i) {
+        const WORD m = (WORD)(1u << i);
+        if ((b & m) && !(held & m)) { fulllog_key(DIK[i], true); heldMs = nowMs; repMs = nowMs + 400u; }
+        else if ((b & m) && (held & m) && (int)(nowMs - repMs) >= 0) { fulllog_key(DIK[i], true); repMs = nowMs + 90u; }
+    }
+    held = b;
+    (void)heldMs;
+}
 
 // ---- channel colours (readable on a dark panel) ----
 static const u32 CHAN_COL[CH_COUNT] = {
@@ -853,7 +902,9 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             if (!aged && nowMs - L->arrivedTick < keepMs) fresh += rws; else aged = true;   // newest first : the fresh ones are on top of the list
         }
         int rowsShown = have;
-        if (collapsing) { int keep = C.chFoldLines[box]; if (fresh > keep) keep = fresh; if (keep < rowsShown) rowsShown = keep; }
+        // "Follows the content" on its own (Gab 2026-11-27 : "reste fixe") : without the fold behaviour the history always
+        // filled it ; at rest it now follows the RECENT lines (those of the last chIdle seconds, at least chFoldLines)
+        if (collapsing || !awake) { int keep = C.chFoldLines[box]; if (fresh > keep) keep = fresh; if (keep < rowsShown) rowsShown = keep; }
         float want = (float)(rowsShown < 1 ? 1 : rowsShown) * rowH; if (want > bodyMax) want = bodyMax;
         overflow = (float)have * rowH > bodyMax + 0.5f || st.scroll > 0;
         if (st.bodyEase < 0.0f) st.bodyEase = want;
@@ -1141,7 +1192,33 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     }
     if (!preview) {
         if (C.chWheel[box] != 0) { st.scroll += C.chWheel[box] * 3; C.chWheel[box] = 0; }
-        if (fullOn) st.scroll = FL.back;                                     // unfolded : the game's own scroll (its lines back)
+        // UNFOLDED : the GAME's line cursor, in lines from the newest = its lines scrolled back + its rows above its last row.
+        // Our box is shorter than its 72-row page : copying only the scroll, the cursor climbed its page while ours stood
+        // still -- the lines between were skipped ("on perd des lignes", 2026-11-28). The box follows the cursor when it
+        // MOVES ; the wheel stays free (beyond the game's 50 lines back)
+        // A PAGE comes in TWO steps (FLPROBE 2026-11-28 : back 0 -> 50 with the cursor still on the last row, THEN the
+        // cursor to the top row) : followed step by step, the box jumped, paused, jumped again ("pas fluide"). A line move
+        // (1-2 rows) applies at once ; a bigger one waits until the game holds still (150 ms), then the box glides there once
+        if (fullOn && FL.focused && box == 0) fulllog_pad(nowMs);          // the pad's D-pad, as the arrows
+        {   static int lastPos[2] = { -1, -1 }, applied[2] = { 0, 0 }; static unsigned movedMs[2] = { 0, 0 };
+            if (fullOn) {
+                const int pos = FL.back + (FL.last > 0 ? FL.last - FL.top : 0);
+                if (pos != lastPos[box]) { lastPos[box] = pos; movedMs[box] = nowMs; }
+                const int d = pos - applied[box];
+                const bool keys = g_flKeyMs && nowMs - g_flKeyMs < 1500u;  // the keyboard drives : the game's state is only noted
+                if (keys) applied[box] = pos;
+                if (keys) {
+                    const int vis = g_flVis[box] > 1 ? g_flVis[box] : 1;
+                    if (g_flCur[box] < st.scroll) st.scroll = g_flCur[box];
+                    if (g_flCur[box] > st.scroll + vis - 1) st.scroll = g_flCur[box] - vis + 1;
+                } else if (d != 0 && (d >= -2 && d <= 2 ? true : nowMs - movedMs[box] >= 150u)) {
+                    applied[box] = pos;
+                    g_flCur[box] = pos < 0 ? 0 : pos;
+                    const int vis = g_flVis[box] > 1 ? g_flVis[box] : 1;
+                    if (g_flCur[box] < st.scroll) st.scroll = g_flCur[box];
+                    if (g_flCur[box] > st.scroll + vis - 1) st.scroll = g_flCur[box] - vis + 1;
+                }
+            } else { lastPos[box] = -1; applied[box] = 0; } }
         if (st.scroll < 0) st.scroll = 0;
         if (st.scroll == 0) st.newBelow = 0;
     } else { st.scroll = 0; st.vpos = 0.0f; }
@@ -1164,7 +1241,9 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             if (nr < want) { ChatRow& R = rows[nr++]; R.L = L; R.a = sa[k]; R.b = sb[k]; R.first = (k == 0) && !L->cont; }
         }
     }
-    if (skipLeft > 0 && !preview) { st.scroll -= skipLeft; if (st.scroll < 0) st.scroll = 0; }   // past the oldest line
+    if (skipLeft > 0 && !preview) { st.scroll -= skipLeft; if (st.scroll < 0) st.scroll = 0;   // past the oldest line
+        if (fullOn && g_flCur[box] > st.scroll + (nr > 0 ? nr - 1 : 0)) g_flCur[box] = st.scroll + (nr > 0 ? nr - 1 : 0); }
+    if (fullOn) g_flVis[box] = (int)(bodyNow / rowH);                     // the page (left / right)
 
     // ---- draw the rows, bottom up : ONE baseline for every coloured run, top edge fading, clipped to the body ----
     const float bodyTop = py + bodyY0, bodyH = bodyNow, bodyBot = bodyTop + bodyH;
@@ -1186,6 +1265,15 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     int rowHitN = 0;
     if (nr == 0)
         fo->draw_cc(dev, px + boxW * 0.5f, bodyTop + bodyH * 0.5f, tr("No messages yet", "Aucun message pour l'instant"), tz * 0.92f, with_alpha(0xFF6E7A8Cu, A), with_alpha(0xC0000000u, A), tow);
+    if (fullOn && !preview) {                                              // the line cursor (unfolded) : a gold band
+        const int ci = g_flCur[box] - (int)st.vpos;
+        if (ci >= 0 && ci < nr) {
+            const float ccy = bodyBot - 0.5f * rowH + frac * rowH - (float)ci * rowH;
+            cs(dev);
+            rrect(dev, px + 3.0f * S, snap(ccy - rowH * 0.5f), boxW - 6.0f * S, rowH, 4.0f * S, with_alpha(0x40FFDA8Au, A), with_alpha(0x28FFDA8Au, A));
+            rrect_stroke(dev, px + 3.0f * S, snap(ccy - rowH * 0.5f), boxW - 6.0f * S, rowH, 4.0f * S, with_alpha(0xB0FFDA8Au, A), 1.0f);
+            fo->begin(dev);
+        } }
     for (int r = 0; r < nr; ++r, cy -= rowH) {
         const ChatRow& R = rows[r]; const ChatLine& L = *R.L;
         const float rTop = cy - rowH * 0.5f;

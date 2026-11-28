@@ -345,7 +345,7 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
         { ROW_BAND(52.0f)
           int gf = ui_config().text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
           if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf))) {
-              gf = wrap(gf + d, ui_font_count());
+              gf = ui_font_step(gf, d);
               ui_config().text[0][TE_UI].face = gf;   // the config menu font (changes live)
               ui_config().fontFace = gf;              // and the HUD default text face
               save_ui_config(); } }
@@ -500,7 +500,7 @@ void ConfigPage::draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool
     {   // the config menu's font -- also the HUD's default text face
         int gf = c.text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
         if (int d = cfg_select_row(K, ctrl_uid_i(base, 2), x, ry, w, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf), nullptr, &c.text[0][TE_UI].face, 4)) {
-            gf = wrap(gf + d, ui_font_count()); c.text[0][TE_UI].face = gf; c.fontFace = gf; save_ui_config(); }
+            gf = ui_font_step(gf, d); c.text[0][TE_UI].face = gf; c.fontFace = gf; save_ui_config(); }
         if (c.fontFace != c.text[0][TE_UI].face) { c.fontFace = c.text[0][TE_UI].face; save_ui_config(); }   // a right-click reset set only the face : both, always
     }
     {   // the status-icon sheet the whole HUD draws from (the list found on disk when the page opened)

@@ -379,6 +379,7 @@ struct UiConfig {
     BoxStyle  muBox;                       // Game UI : ONE theme for every native menu AioHUD redraws (action menu first)
     int       muLabel = 0;                 // their rows : 0 = text only, 1 = icon + text
     int       eqStyle = 1;                 // the Equipment screen : 1 = the SHEET (one panel, the body), 0 = Classic (the client's layout)
+    int       muFont  = 0;                 // their FONT (2026-11-28 : "pas d'option pour la police des menus") : ui_font_face index, 0 = the interface's
     int       muLang  = 0;                 // their language : 0 = the game's (the client's), 1 = English, 2 = French
     float     muScale = 1.0f;              // their size (every dimension, text included) : 0.6 .. 1.6
     int       muGrow  = 0;                 // a submenu taller than its menu grows : 0 = upward (bottoms level), 1 = downward
@@ -881,5 +882,8 @@ bool        take_scale_baseline_reset();           // returns + clears the flag
 int         ui_font_count();
 const char* ui_font_label(int idx);   // display label
 const char* ui_font_face(int idx);    // GDI face name ("" for Default)
+bool ui_font_bundled_file(const char* face);   // one AioHUD ships (assets\fonts)
+bool ui_font_installed(int i);   // is that face on THIS machine (0, the default, always)
+int  ui_font_step(int cur, int d);  // the next INSTALLED face from cur (d = +1 / -1) : every Font selector
 
 } // namespace aio

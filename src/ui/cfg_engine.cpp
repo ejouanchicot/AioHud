@@ -294,7 +294,7 @@ void cfg_text_rows(Kit& K, int uidBase, float x, float& y, float w, const char* 
     const int nf = ui_font_count() < 1 ? 1 : ui_font_count();
     int fc = ts.face; if (fc < 0 || fc >= nf) fc = 0;
     if (int d = cfg_select_row(K, ctrl_uid_i(uidBase, 1), x, y, w, tr("Font", "Police"), ui_font_label(fc), nullptr, &ts.face, 4)) {
-        ts.face = (fc + d + nf) % nf; save_ui_config(); }
+        ts.face = ui_font_step(fc, d); save_ui_config(); }
     auto pct = [&](int id, const char* en, const char* fr, float* f, float lo, float hi) {
         float v01 = (*f - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
         char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(*f * 100.0f + 0.5f)); b[15] = 0;

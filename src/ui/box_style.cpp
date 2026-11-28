@@ -312,7 +312,7 @@ void ConfigPage::draw_text_style(u32 dev, Font* fo, const MouseState* mo, bool c
                                  float bandX, float bandW, float coX, float ctrlW, TextStyle& ts, bool swatch) {
     { ROW_BAND(52.0f)   // Font
         int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
+        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = ui_font_step(fc, d); save_ui_config(); }
     }
     ROW_NEXT(52.0f)
     { ROW_BAND(46.0f)   // Size

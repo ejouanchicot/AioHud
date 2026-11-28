@@ -33,7 +33,7 @@ enum ChatChan {
 static const unsigned short CHAT_AT_OPEN = 0x401, CHAT_AT_CLOSE = 0x402, CHAT_AT_TEXT = 0x403;
 
 static const int CHAT_TEXT = 240;   // chars kept per history line (a longer message wraps into several lines)
-static const int CHAT_HIST = 4096;  // history lines kept (power of two) ; battle spam shares it -- 1024 left the talk only a few
+static const int CHAT_HIST = 16384; // history lines kept (power of two) ; battle spam shares it -- 1024 left the talk only a few ; 4096 still scrolled back less far than the game (Gab 2026-11-27)
                                      // minutes deep in the expanded log (2026-11-16, "je remonte, au plus loin divine emble") ; ~2.3 MB
 
 struct ChatLine {

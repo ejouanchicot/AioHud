@@ -1001,7 +1001,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || (T == 1 && cfgTextElem_ == TE_COST)) ? 0 : cfgTextElem_];
             { ROW_BAND(52.0f)   // Font face (0 = default)
                 int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = ui_font_step(fc, d); save_ui_config(); }
             }
             ROW_NEXT(52.0f)
             { ROW_BAND(46.0f)   // Size

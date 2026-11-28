@@ -127,9 +127,11 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             { ROW_BAND(52.0f)   // the Dial's day subdial : the enamel globe or the icons' carousel
                 static const char* DD_EN[3] = { "Globe (colours)", "Carousel (icons)", "Disc (icons)" }; static const char* DD_FR[3] = { "Globe (couleurs)", "Carrousel (ic\xC3\xB4nes)", "Disque (ic\xC3\xB4nes)" };
                 const int dd = (c.mmDayDial < 0 || c.mmDayDial > 2) ? 1 : c.mmDayDial;
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), tr(DD_EN[dd], DD_FR[dd]))) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
+                // a SQUARE map always takes the disc (the globe and the carousel sit in the corners it covers) : said here
+                const char* shown = c.mmShape == 0 ? tr("Disc (square map)", "Disque (carte carr\xC3\xA9""e)") : tr(DD_EN[dd], DD_FR[dd]);
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), shown)) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
             } ROW_NEXT(52.0f)
-            if (c.mmDayDial == 2) {   // the MODULES around the compass : where each one sits
+            if (c.mmDayDial == 2 || c.mmShape == 0) {   // the MODULES around the compass : where each one sits
                 // the PLACES of the chosen shape : the round -- 4 corners and 2 sides ; the square -- 4 corners and 2 places on
                 // each side (the user 2026-11-25), going round the frame
                 const bool sqS = c.mmShape == 0;

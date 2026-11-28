@@ -21,6 +21,7 @@
 #include <cstring>
 
 namespace aio {
+void worn_sig_refresh();   // the worn pieces' signatures (below)
 
 using windower::u32;
 using windower::valid_ptr;
@@ -84,7 +85,9 @@ bool in_list(const char* n, const char* const* L) { for (; *L; ++L) if (!strcmp(
 // window's frame to ptw<count>'s RECORD (FUN_05545290 -> FUN_0545BD80 -> the setter, never the hooked move-to), so an
 // unshifted ptwN put the hidden window back on screen until heal_hud caught it -- the "it pops for a second when someone
 // joins" of 2026-11-17. Shifted with partywin, the switch lands parked. (docs/notes/re-2026-11-25/job-equip-storage-menus.md)
-const char* const PARTY_W[] = { "partywin", "targetwi", "ptw0", "ptw1", "ptw2", "ptw3", "ptw4", "ptw5", "ptw6", 0 };
+// + the client's own HP / MP / TP gauge (gaugewin, shown ENGAGED) and its Casting Time gauge (casttime, while casting) :
+// top-left, 16,48 -- AioHUD's party box shows both (Gab 2026-11-27, measured live 2026-11-28)
+const char* const PARTY_W[] = { "partywin", "targetwi", "ptw0", "ptw1", "ptw2", "ptw3", "ptw4", "ptw5", "ptw6", "gaugewin", "casttime", 0 };
 const char* const ALLY_W[]  = { "raid1", "raid2", 0 };
 const char* const CHAT_W[]  = { "logwindo", "logwin2", "fulllog", "spoolmsg", "splmsg2", "eventlog", "log8", "rem1line", "rem2line", "rem3line", 0 };
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
@@ -195,6 +198,9 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // the trade's Current Gil (`money`) draws its digits WHERE IT OPENED and does not follow a later park (2026-11-20 :
     // "on voit les chiffres de gil ... ceux du jeu") : BORN parked while a trade is up (or `trade` was born a moment ago)
     if ((hide & NU_TRADE) && !strcmp(n, "money") && (g_trade.open || (g_tradeBornMs && GetTickCount() - g_tradeBornMs < 1000))) { dy = HIDE_DY; return; }
+    // ... and while it is up, its count / gil fields and the item card BORN parked : parked a frame later (by the trade's
+    // own list), they flashed on screen when an item was picked (2026-11-28 : "la fenetre du jeu flash subtilement")
+    if ((hide & NU_TRADE) && g_trade.open && (!strcmp(n, "itemctrl") || !strcmp(n, "moneyctr") || !strcmp(n, "iteminfo"))) { dy = HIDE_DY; return; }
     // actionm1..actiom10 : playermo's SIZE VARIANTS (1..10 rows) -- the same switch as partywin's ptwN at each row-count
     // change (engage, a drop adds Treasure : 0x0546CA44), so they carry playermo's park (gauges-system-map-commands.md s.4.1)
     if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || !strncmp(n, "actionm", 7) || !strcmp(n, "actiom10") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
@@ -355,6 +361,9 @@ NativeCelestite g_cel;                                                          
 NativeFaith g_faith;                                         // Status -> Alter Ego (fp_cat / fp_cat2 / fp_info)
 NativeJpCat g_jcat;
 NativeJobPoints g_jpts;                                                               // Status -> Job Points (merit2ca, levmeri2)
+NativeRgbEdit g_rgbEd;   // Font Colors' RGB editor (rgb_poll)
+NativeGauges g_gauges;   // the client's casttime / gaugewin (gauges_poll)
+char g_tcTitle[60] = "";   // Font Colors' last title read (textcol2) : the editor blanks it while it is up
 NativeAreaList g_area; NativeSearch g_search; NativeEntryMenu g_scopt;               // Unity Lists : arealist, scresult, scoption
 const char* const SCOPT_W[] = { "scoption", 0 };
 NativeUnityRank g_urank;                                                              // Ranking Info -> its two lists (quest01)
@@ -2188,7 +2197,10 @@ int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
             u32 st = 0; short r[4] = { 0, 0, 0, 0 };
             if (!safe_read(ch + 0x10, &st) || !rd16(ch + 0x32, r[0]) || !rd16(ch + 0x34, r[1]) || !rd16(ch + 0x36, r[2]) || !rd16(ch + 0x38, r[3])) return 0;
             // skipped / not laid out / a DECORATION, not a row (chatctrl's 8th entry : 18 x 12, never under the cursor)
-            if ((st & 0x10) || r[2] - r[0] < 24 || r[3] - r[1] <= 0 || m.n >= 32) { cn = cnext; continue; }
+            // (Config's small round buttons ARE rows : Misc.'s Icon Type 1 / 2, Windows' Window Type 1..8 -- 16 px wide ;
+            // dropped, those settings had no buttons at all : Gab 2026-11-27)
+            const int minW = (!strcmp(name, "conf3win") || !strcmp(name, "conf5win")) ? 10 : 24;
+            if ((st & 0x10) || r[2] - r[0] < minW || r[3] - r[1] <= 0 || m.n >= 32) { cn = cnext; continue; }
             int at = m.n;                                                // insert by screen y
             while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; memcpy(m.label[at], m.label[at - 1], sizeof(m.label[at])); --at; }
             ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF);
@@ -2388,6 +2400,7 @@ void main_poll(bool on) {
                 if (!(feUp && cel_read(mgr, focus, g_cel))) g_cel.open = false;
                 // Equipment (from the main menu) : the grid, the slot's item list
                 if (!equip_read(mgr, focus, g_equip)) { g_equip.open = false; g_equip.lopen = false; }
+                if (g_equip.open) worn_sig_refresh();                       // the worn pieces' signatures (Gab 2026-11-27)
                 // Items (from the main menu) : the list ; the item cards' rule as for Equipment
                 if (!syn_read(mgr, focus, g_syn)) g_syn.open = false;
                 // the comment editor : the search comment (mode 2) and the bazaar's (mode 0, Set Bazaar -> Comment, 2026-11-26) ;
@@ -2850,6 +2863,8 @@ void rescue_children(u32 mgr, int hide) {
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
                              || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(nm, g_gen.p[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")) || (!strcmp(g_gen.listName, "msglist") && !strcmp(nm, "titlehan")))); }()
                              || ((g_cur.open || g_key.ok) && !strcmp(nm, "evitem"))
+                             || (g_rgbEd.open && (!strcmp(nm, "textcol3") || !strcmp(nm, "textcol2")))
+                             || (!strcmp(nm, "textcol2") && [&]() { for (int i = 0; i < g_gen.np; ++i) if (!strcmp(g_gen.p[i].name, "textcol1")) return true; return false; }())   // Font Colors' sample : textcol1's title
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
@@ -4455,11 +4470,16 @@ static bool gen_grid_read(u32 o, const NativeEntryMenu& m, NativeGenMenus& G) {
         cn = cnext;
     }
     for (int i = 0; i < m.n && i < 32; ++i) { const int e = m.entry[i]; if (e < 1 || e > 32 || !have[e]) return false; G.gx[i] = rx[e]; G.gy[i] = ry[e]; G.gw[i] = rw[e]; G.gh[i] = rh[e]; }
+    {   static char seen[8][9]; static int nSeen = 0; bool known = false;     // GRIDPROBE (dev) : each grid's entries once
+        for (int q = 0; q < nSeen; ++q) if (!strcmp(seen[q], m.name)) known = true;
+        if (!known && nSeen < 8) { memcpy(seen[nSeen++], m.name, 9); char b[900]; int bo = 0;
+            for (int i = 0; i < m.n && i < 32 && bo < 860; ++i) bo += _snprintf(b + bo, sizeof(b) - bo, " e%d %d,%d %dx%d st%X sh%d", m.entry[i], G.gx[i], G.gy[i], G.gw[i], G.gh[i], m.state[i], m.sheet[i]);
+            windower::debug::log("GRIDPROBE '%s' :%s", m.name, b); } }
     return true;
 }
 static u32 handler_global_of(const char* name8);   // below : the client's name -> handler registry
 // the PANEL lists (cfilter & co : checkboxes the capture does not see -- the client's)
-static const char* const PANEL_SKIP[] = { "cfilter", "fxfilter", "conf11s", "textcol", 0 };
+static const char* const PANEL_SKIP[] = { "textcol2", 0 };   // the sample : textcol1's title (cfg_badges)
 // an UNNAMED window as a PANEL from the text capture : its runs of the last frame + its entries' rects. false (the client's)
 // when the capture is off / stale, fewer than 2 runs, or no entry holds a text (a list drawn another way : mapv3)
 static bool gen_panel_read(u32 o, const NativeEntryMenu& m, NativeGenMenus::Panel& P) {
@@ -4537,6 +4557,101 @@ static bool gen_panel_read(u32 o, const NativeEntryMenu& m, NativeGenMenus::Pane
         cache[c].o = o; cache[c].P = P; }
     return true;
 }
+// ---- the RGB editor (textcol3) : read while open ; false values = the client's window (never a half-read editor)
+const NativeRgbEdit& native_rgb_edit() { return g_rgbEd; }
+const NativeGauges& native_gauges() { return g_gauges; }
+static void gauges_poll(bool on, u32 mgr) {
+    NativeGauges G; memset(&G, 0, sizeof(G)); G.castPct = g_gauges.castPct;
+    u32 wh = 0;
+    if (on && mgr && safe_read(mgr + 0x80, &wh)) {
+        G.uiW = (short)(wh & 0xFFFF); G.uiH = (short)(wh >> 16);
+        if (G.uiW >= 320 && G.uiH >= 240 && G.uiW <= 8000 && G.uiH <= 8000) {
+            const char* names[2] = { "casttime", "gaugewin" };
+            for (int w = 0; w < 2; ++w) { const u32 o = win_named(mgr, names[w]); if (!o) continue;
+                short r[4] = { 0 }; if (!rd16(o + OBJ_RECT, r[0]) || !rd16(o + OBJ_RECT + 2, r[1]) || !rd16(o + OBJ_RECT + 4, r[2]) || !rd16(o + OBJ_RECT + 6, r[3])) continue;
+                while (r[1] >= G.uiH) { r[1] = (short)(r[1] - HIDE_DY); r[3] = (short)(r[3] - HIDE_DY); }
+                G.rx0 = r[0]; G.ry0 = r[1]; G.rx1 = r[2]; G.ry1 = r[3];
+                if (w == 0) { G.cast = true; const CapRun* R = 0; const int nr = text_capture(o, R);
+                    for (int j = 0; j < nr; ++j) { const char* t = R[j].s; while (*t && (*t < '0' || *t > '9')) ++t; if (*t) { const int v = atoi(t); if (v >= 0 && v <= 100) G.castPct = v; break; } } }
+                else G.gauge = true; }
+        }
+    }
+    if (!G.cast) G.castPct = 0;
+    static bool wasC = false, wasG = false;
+    if (G.cast != wasC || G.gauge != wasG) { wasC = G.cast; wasG = G.gauge; windower::debug::log("NATIVEUI gauges : cast %d (%d pct), HP/MP/TP %d -- AioHUD draws them", G.cast ? 1 : 0, G.castPct, G.gauge ? 1 : 0); }
+    g_gauges = G;
+}
+static void rgb_poll(bool on, u32 mgr) {
+    NativeRgbEdit E; memset(&E, 0, sizeof(E));
+    if (on && mgr && win_named(mgr, "textcol3")) {
+        const char* one[2] = { "textcol3", 0 }; NativeEntryMenu m; u32 o = 0, hd = 0, ch = 0; unsigned char c[3] = { 0 };
+        if (entry_read(one, m, &o) == 1 && valid_ptr(o) && safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && rdblk(hd + 0x3C, c, 3) && safe_read(hd + 0x14, &ch) && ch <= 3
+            && m.uiW >= 320 && m.uiH >= 240) {
+            u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+            E.open = true; E.focused = focus == o; E.cursor = m.cursor; E.held = (int)ch; for (int i = 0; i < 3; ++i) E.rgb[i] = c[i];
+            E.rx0 = m.rx0; E.ry0 = m.ry0; E.rx1 = m.rx1; E.ry1 = m.ry1; E.uiW = m.uiW; E.uiH = m.uiH;
+            while (E.ry0 >= E.uiH) { E.ry0 = (short)(E.ry0 - HIDE_DY); E.ry1 = (short)(E.ry1 - HIDE_DY); }
+            lstrcpynA(E.title, g_tcTitle, sizeof(E.title));               // the row's title, read while the list was alone
+        }
+        static int said = 0; if (said < 3) { ++said; windower::debug::log("NATIVEUI RGB editor : %s (R %d G %d B %d, cursor %d)", E.open ? "read -- AioHUD draws it" : "NOT read -- the client's", E.rgb[0], E.rgb[1], E.rgb[2], E.cursor); }
+    }
+    g_rgbEd = E;
+}
+// ---- Config's LIST screens as panels (2026-11-28, docs/notes/config-screens-re-2026-11-21.md s.3 : Log Settings, Font Colors) : the rows are the
+// captured texts (the panel reader) ; each entry's STATE is read from the screen's handler here -- false (the client's
+// window) when a screen of this family does not read, never a list without its states
+static bool cfg_badges(u32 mgr, u32 o, NativeGenMenus::Panel& P) {
+    const char* nm = P.name;
+    const bool ls = !strcmp(nm, "conf11s"), t1 = !strcmp(nm, "textcol1"), t3 = !strcmp(nm, "textcol3");   // (cfilter / fxfilter : their own module)
+    if (!ls && !t1 && !t3) return true;                                // not one of them : nothing to add
+    u32 hd = 0; if (!safe_read(o + OBJ_HANDLER, &hd) || !valid_ptr(hd)) return false;
+    const u32 ON = 0xFF9CE27Au, OFFC = 0xFF7D8A9Cu;
+    auto put = [&](int e, const char* w, unsigned c) { if (e >= 1 && e <= 32) { lstrcpynA(P.badge[e - 1], w, sizeof(P.badge[0])); P.bcol[e - 1] = c; } };
+    static int said[3] = { 0 }; const int si = ls ? 0 : t1 ? 1 : 2;
+    bool ok = false;
+    if (ls) {                                                          // conf11s : 14 rows {label, bit} ; window 1 / 2's 64-bit mask
+        u32 tab = 0, win = 0, m0 = 0, m1 = 0;
+        if (safe_read(hd + 0x3C, &tab) && valid_ptr(tab) && safe_read(hd + 0x34, &win) && win <= 1
+            && safe_read(hd + (win ? 0x2C : 0x24), &m0) && safe_read(hd + (win ? 0x30 : 0x28), &m1)) {
+            ok = true;
+            for (int r = 0; r < 14; ++r) { int lab = 0; u32 bit = 0; if (!safe_read(tab + r * 8, (u32*)&lab) || !safe_read(tab + r * 8 + 4, &bit)) { ok = false; break; }
+                if (lab == -1) continue; if (bit > 63) { ok = false; break; }
+                const bool on = bit < 32 ? ((m0 >> bit) & 1) : ((m1 >> (bit - 32)) & 1);
+                put(r + 1, on ? "ON" : "OFF", on ? ON : OFFC); }
+            if (ok) _snprintf(P.ttl, sizeof(P.ttl), "%s %d", "Log Settings : Window", (int)win + 1);
+            // its rows' texts by HEIGHT to entries 1..14 : the window arrows (15 / 16, at the top) caught the first row
+            // (measured 2026-11-28 : r0 'HP/MP others recover' y20 -> e15 y8)
+            if (ok) for (int j = 0; j < P.nr; ++j) { int best = 0, bd = 7;
+                for (int i = 0; i < P.n; ++i) if (P.entry[i] >= 1 && P.entry[i] <= 14) { const int d = abs(P.run[j].y - P.ey0[i]); if (d < bd) { bd = d; best = P.entry[i]; } }
+                P.run[j].ent = (unsigned char)best; }
+        }
+    } else if (t1) {                                                   // textcol1 : 16-B rows {label, sample, colour copy, setting id}
+        u32 tab = 0, top = 0, cnt = 0;
+        if (safe_read(hd + 0x18, &tab) && valid_ptr(tab) && safe_read(hd + 0x28, &top) && safe_read(hd + 0x2C, &cnt) && cnt <= 32 && top <= cnt) {
+            ok = true;
+            for (int e = 1; e <= 11; ++e) { const u32 r = top + (u32)e - 1; if (r >= cnt) break;
+                u32 copy = 0, id = 0; if (!safe_read(tab + r * 16 + 8, &copy) || !safe_read(tab + r * 16 + 12, &id)) { ok = false; break; }
+                int v = 0; const u32 col = (id < 0xD0 && cfg_setting((int)id, v)) ? (u32)v : copy;
+                put(e, "Abc", 0xFF000000u | (col & 0x00FFFFFFu)); }
+            // the title + sample : textcol2's own texts (that window stays parked with this one)
+            if (const u32 o2 = win_named(mgr, "textcol2")) { const CapRun* R = 0; const int nr = text_capture(o2, R); if (nr >= 1 && !g_rgbEd.open) { const char* t = R[0].s; while (*t == '>' || *t == ' ') ++t; lstrcpynA(g_tcTitle, t, sizeof(g_tcTitle)); } }   // (the client's ">>" pointer off)
+            lstrcpynA(P.ttl, g_tcTitle, sizeof(P.ttl));
+        }
+    } else if (t3) {                                                   // textcol3 : the RGB editor -- R / G / B (0..255), OK, Cancel
+        unsigned char rgb[3] = { 0 };
+        if (rdblk(hd + 0x3C, rgb, 3)) { ok = true; char v[8];
+            for (int c = 0; c < 3; ++c) { sprintf(v, "%d", rgb[c]); put(c + 1, v, c == 0 ? 0xFFFF8A8Au : c == 1 ? 0xFF8AE28Au : 0xFF8AB4FFu); }
+            _snprintf(P.ttl, sizeof(P.ttl), "%s", "Color"); }
+    }
+    if (said[si] < 2) { ++said[si]; windower::debug::log("NATIVEUI config list '%s' : states %s -- %s", nm, ok ? "read" : "NOT read", ok ? "AioHUD draws it" : "the client's"); }
+    {   static int saidM = 0;                                          // the mapping, measured (bounded) : entries' ids / y, runs' entry / y
+        if (ok && saidM < 6) { ++saidM; char b[900]; int bo = 0;
+            for (int i = 0; i < P.n && bo < 400; ++i) bo += _snprintf(b + bo, sizeof(b) - bo, " e%d y%d s%X", P.entry[i], P.ey0[i], P.st[i]);
+            bo += _snprintf(b + bo, sizeof(b) - bo, " |");
+            for (int j = 0; j < P.nr && bo < 860; ++j) bo += _snprintf(b + bo, sizeof(b) - bo, " r%d:e%d y%d", j, P.run[j].ent, P.run[j].y);
+            windower::debug::log("NATIVEUI config list '%s' map :%s", nm, b); } }
+    return ok;
+}
 // CAPPROBE (dev, 2026-11-21) : a window's captured runs + its entry rects, once per window name -- the attribution checked live
 static void cap_probe(u32 o, const char* nm, const NativeEntryMenu& m) {
     static char seen[24][9]; static int seenN[24], seenK[24], nSeen = 0;
@@ -4584,7 +4699,7 @@ void gen_poll(bool on, u32 mgr, int hide) {
             if (!strcmp(nm, "quest01")) { jrSeen = true; journal_read(o, focusObj); }   // the journal : the whole list as data (journal_draw when verified)   // Missions : the whole list as data (drawn by missions_draw when verified)
             // unnamed entries that ARE a text list's rows (msglist, 2026-11-26 : "an entry menu with unnamed entries") : the list reader
             { TextList T2; if (cls == 2 && !named && tl_find(mgr, nm, T2)) cls = 3; }
-            if (cls == 2 && !named && !gen_grid_family(nm) && G.np < 2 && gen_panel_read(o, m, G.p[G.np])) {   // a PANEL from the text capture
+            if (cls == 2 && !named && !gen_grid_family(nm) && G.np < 2 && gen_panel_read(o, m, G.p[G.np]) && cfg_badges(mgr, o, G.p[G.np])) {   // a PANEL from the text capture
                 NativeGenMenus::Panel& P = G.p[G.np++]; P.focused = focusObj == o;
                 while (P.ry0 >= uiH) { P.ry0 = (short)(P.ry0 - HIDE_DY); P.ry1 = (short)(P.ry1 - HIDE_DY); }
                 cls = 5; }
@@ -5152,6 +5267,32 @@ const NativeEquipSets& native_equip_sets() { return g_es; }
 const NativeCfgFilter& native_cfg_filter() { return g_cff; }
 const NativeMap& native_map() { return g_map; }
 const NativeFriends& native_friends() { return g_frl; }
+// ---- the WORN pieces' SIGNATURES (a crafted item's maker : Gab 2026-11-27, "son Stikini") : extdata bytes 12.., 6 bits
+// a char, left to right (Windower's extdata.lua tools.sig) ; refreshed at 4 Hz while Equipment is open
+static unsigned short g_wsId[16]; static char g_wsSig[16][20]; static DWORD g_wsAt = 0; static bool g_wsOk = false;
+static void sig_decode(const unsigned char ext[24], char* out, int cap) {
+    static const char M[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz{";
+    int o = 0; out[0] = 0; if (!ext[12]) return;
+    for (int i = 0; i + 6 <= 96 && o < cap - 1; i += 6) {
+        int v = 0; for (int b = 0; b < 6; ++b) { const int bit = i + b; v = (v << 1) | ((ext[12 + bit / 8] >> (7 - bit % 8)) & 1); }
+        if (v < 1 || v > 63) break;
+        out[o++] = M[v - 1];
+    }
+    out[o] = 0;
+}
+void worn_sig_refresh() {
+    const DWORD now = GetTickCount(); if (g_wsAt && now - g_wsAt < 250) return; g_wsAt = now;
+    unsigned short ids[16]; unsigned char ext[16][24];
+    g_wsOk = read_equipment_ext(ids, ext);
+    for (int s2 = 0; s2 < 16; ++s2) { g_wsId[s2] = g_wsOk ? ids[s2] : 0; if (g_wsOk && ids[s2]) sig_decode(ext[s2], g_wsSig[s2], sizeof(g_wsSig[s2])); else g_wsSig[s2][0] = 0; }
+    static int said = 0; if (said < 3) { ++said; int n = 0; for (int s2 = 0; s2 < 16; ++s2) if (g_wsSig[s2][0]) ++n;
+        windower::debug::log("NATIVEUI worn signatures : %s, %d signed piece(s)", g_wsOk ? "read" : "NOT read (the container not ready)", n); }
+}
+const char* native_item_signature(unsigned id) {
+    if (!g_wsOk || !id) return 0;
+    for (int s2 = 0; s2 < 16; ++s2) if (g_wsId[s2] == id && g_wsSig[s2][0]) return g_wsSig[s2];
+    return 0;
+}
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 unsigned native_item_extra_live() { return g_iix[0].id; }   // the item the client's own card shows (0 : none)
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
@@ -5841,7 +5982,7 @@ bool native_action_pick(int row) {
 NativeFullLog g_full = { false, false, 0, 0, 0, -1 };
 const NativeFullLog& native_fulllog() { return g_full; }
 static void fulllog_read(u32 mgr) {
-    NativeFullLog F = { false, false, 0, 0, 0, -1 };
+    NativeFullLog F = { false, false, 0, 0, 0, 0, -1 };   // (logFocus -1 : none)
     u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
     {   // WHICH window holds the focus : its name (the small log windows light AioHUD's boxes up)
         char fn[9] = { 0 }; u32 def = 0;
@@ -5866,6 +6007,7 @@ static void fulllog_read(u32 mgr) {
             if (safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && safe_read(hd + 0x54, (u32*)&tab) && safe_read(hd + 0x20, (u32*)&back)
                 && safe_read(hd + 0x1C, (u32*)&top) && tab >= 0 && tab <= 10 && back >= 0 && back < 100000) {
                 F.open = true; F.focused = focus == o; F.tab = tab; F.back = back; F.top = top;
+                { int lr = 0; if (safe_read(hd + 0x58, (u32*)&lr) && lr > 0 && lr < 200 && top >= 0 && top <= lr) F.last = lr; }   // the page's last row
             }
             break;
         }
@@ -6227,12 +6369,16 @@ void native_ui_tick(bool inWorld) {
     auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
     if (wanted && (c.nuHide & NU_NPC)) ensure_text_capture();     // the unnamed lists' rows (hk_txcore & co)
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
+    rgb_poll(wanted && (c.nuHide & NU_NPC), manager());                  // Font Colors' RGB editor
+    gauges_poll(wanted && (c.nuHide & NU_PARTY), manager());             // the cast / HP-MP-TP gauges (redrawn)
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
         if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list");
         static int thLog2 = 0; if (g_gen.list && !strcmp(g_gen.listName, "msglist")) park_named(manager(), "titlehan", thLog2, "Messages -> its header");
         static int ggLog = 0; if (g_gen.grid) park_named(manager(), g_gen.gm.name, ggLog, "generic -> a grid");
-        static int gpLog[2] = { 0 }; for (int i = 0; i < g_gen.np; ++i) park_named(manager(), g_gen.p[i].name, gpLog[i], "generic -> a panel"); }
+        static int gpLog[2] = { 0 }; for (int i = 0; i < g_gen.np; ++i) park_named(manager(), g_gen.p[i].name, gpLog[i], "generic -> a panel");
+        static int rgbLog = 0; if (g_rgbEd.open) park_named(manager(), "textcol3", rgbLog, "Font Colors -> the RGB editor");
+        static int tc2Log = 0; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(g_gen.p[i].name, "textcol1")) park_named(manager(), "textcol2", tc2Log, "Font Colors -> its sample (textcol1's title)"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
         if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");

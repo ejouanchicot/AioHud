@@ -60,7 +60,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         { ROW_BAND(52.0f)   // Font
             int fc = c.wsFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = ui_font_step(fc, d); save_ui_config(); }
         } ROW_NEXT(52.0f)
         struct ColRow { const char* en; const char* fr; unsigned* col; };
         ColRow cols[3] = {

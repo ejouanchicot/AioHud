@@ -49,6 +49,14 @@ struct NativeDialog {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeDialog& native_dialog();
+// Config > Font Colors > a row validated : the client's RGB editor (textcol3 ; config-screens-re s.3) -- R / G / B (0..255),
+// the entry under the cursor (1 R, 2 G, 3 B, 4 OK, 5 Cancel), the channel held, the client's rect ; title = the row's
+struct NativeRgbEdit { bool open, focused; int cursor, held; int rgb[3]; short rx0, ry0, rx1, ry1; int uiW, uiH; char title[60]; };
+const NativeRgbEdit& native_rgb_edit();
+// The client's own small gauges (top-left, 16,48 ; parked with the party box -- Gab 2026-11-27 : "on les veut, mais refaites") :
+// casttime while casting (its "NN %" read off the capture), gaugewin while engaged (HP / MP / TP : the poller's values)
+struct NativeGauges { bool cast; int castPct; bool gauge; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+const NativeGauges& native_gauges();
 bool native_dialog_hover(int entry);   // 1 Yes / 2 No : the client's cursor there
 bool native_dialog_pick(int entry);    // ... and validated (the asker's callback answers)
 
@@ -811,7 +819,11 @@ struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS
         int n; unsigned char entry[32]; unsigned st[32]; short ex0[32], ey0[32], ex1[32], ey1[32];
         int nr; struct Run { short x, y; unsigned col; unsigned char ent; char s[60]; } run[40];
         int titleRun;
-        int lcount, ltop, lvis, lcur; };   // a list-base window (miss00 / quest00's class) : its rows, first shown, page, cursor -- lcount -1 otherwise   // ent : the entry the run belongs to (0 none) ; titleRun : the title's run, -1 none, -2 "the top lone line"
+        int lcount, ltop, lvis, lcur;
+        // Config's list screens (cfilter / fxfilter / conf11s / textcol1 / textcol3, 2026-11-28) : each entry's state read
+        // from its handler -- a word (ON / OFF / Hold, a value) in bcol (0 : the menus' value colour) ; ttl : the title the
+        // client draws in another window (textcol2's "Player: Color of ...")
+        char badge[32][8]; unsigned bcol[32]; char ttl[60]; };   // a list-base window (miss00 / quest00's class) : its rows, first shown, page, cursor -- lcount -1 otherwise   // ent : the entry the run belongs to (0 none) ; titleRun : the title's run, -1 none, -2 "the top lone line"
     int np; Panel p[2];
     // step 2 : ONE generic TEXT LIST (the focused one, else the last listed) -- its cells by TYPE (the types every list
     // measured so far uses) : 0x15 / 0x16 / 0x1A an item (its icon, its name), 1 / 3 / 0x19 / 0x22 a text (at the value),
@@ -940,7 +952,8 @@ bool native_synth_grid_pick(int entry);
 // (no Y / numpad - needed). Decoded to ASCII (elements spelled out, '\n' kept).
 struct ItemExtra { unsigned id; char aug[256]; char line[128]; char ilvl[64]; };
 const ItemExtra* native_item_extra(unsigned id);   // 0 when neither card shows that item
-unsigned native_item_extra_live();   // the item the client's own card (iteminfo) shows now, 0 none
+unsigned native_item_extra_live();
+const char* native_item_signature(unsigned id);   // a WORN piece's maker (a crafted, signed item) ; 0 none / not read   // the item the client's own card (iteminfo) shows now, 0 none
 bool native_equip_hover(int entry);
 bool native_equip_pick(int entry);
 const char* native_ability_text(unsigned id, bool desc);   // the client's ability id (traits 0x600 + t) -> d_msg 55701 name / 55733 description
@@ -1015,7 +1028,7 @@ const NativeList& native_list();
 // logFocus : the client's SMALL log window holds the focus (selected, before X / Enter expands it) -- 0 "logwindo"
 // (the chat), 1 "logwin2" (the battle log), -1 neither. The focused menu object's name is logged at each change
 // ("NATIVEUI focus -> ...") so the window names are checked in game, not assumed.
-struct NativeFullLog { bool open, focused; int tab, back, top; int logFocus; };
+struct NativeFullLog { bool open, focused; int tab, back, top, last; int logFocus; };   // last : the page's last row (+0x58)
 const NativeFullLog& native_fulllog();
 bool native_sub_hover(int entry);   // cursor -> that entry, event 9 (the client's mouse hover)
 bool native_sub_pick(int entry);    // hover + event 5 (validate)

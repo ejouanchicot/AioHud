@@ -286,6 +286,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "menugrow=%d\n", c.muGrow);         // Game UI : a taller submenu grows up (0) or down (1)
     fprintf(f, "mainmenupos=%d\n", c.muMainPos);   // Game UI : the main menu at the game's place (0) or top left (1)
     fprintf(f, "eqstyle=%d\n", c.eqStyle);         // Game UI : the Equipment screen (1 the sheet, 0 classic)
+    fprintf(f, "menufont=%d\n", c.muFont);         // Game UI : the redrawn menus' font (0 the interface's)
     fprintf(f, "menulang=%d\n", c.muLang);         // Game UI : the redrawn menus' language (0 the game's, 1 EN, 2 FR)
     fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
     fprintf(f, "plates=%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n", c.plShow, c.plFont, c.plSize, c.plIcon, c.plStar, c.plGap, c.plStarY, c.plStarX, c.plStyle);   // Game UI : the name plates drawn by AioHUD, their font
@@ -515,6 +516,7 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
     if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
     if (!strncmp(line, "eqstyle=", 8)) { c.eqStyle = atoi(line + 8) == 0 ? 0 : 1; return true; }
+    if (!strncmp(line, "menufont=", 9)) { const int v = atoi(line + 9); c.muFont = v >= 0 && v < ui_font_count() ? v : 0; return true; }
     if (!strncmp(line, "menulang=", 9)) { const int v = atoi(line + 9); c.muLang = v >= 0 && v <= 2 ? v : 0; return true; }
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (!strncmp(line, "menuscale=", 10)) { c.muScale = (float)atof(line + 10); return true; }   // clamped by config_rules
@@ -1513,7 +1515,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muLang != b.muLang || a.eqStyle != b.eqStyle || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muLang != b.muLang || a.muFont != b.muFont || a.eqStyle != b.eqStyle || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;
@@ -1714,11 +1716,14 @@ static const char* FACE_LABEL[] = {
     "Default", "Segoe UI", "Segoe UI Semibold", "Roboto", "Open Sans", "Arial", "Tahoma", "Verdana",
     "Calibri", "Candara", "Corbel", "Trebuchet MS", "Franklin Gothic Medium", "Century Gothic",
     "Bahnschrift", "Lucida Sans Unicode", "Microsoft Sans Serif", "Consolas", "Courier New", "Georgia",
+    // AioHUD's OWN (assets\fonts, SIL OFL : on every PC, 2026-11-28 "integre les polices") -- appended : the indices stay
+    "Inter", "Noto Sans", "Lato", "Montserrat", "Source Sans 3", "Fira Sans", "Nunito", "Exo 2", "Merriweather", "Cinzel",
 };
 static const char* FACE_NAME[] = {
     "", "Segoe UI", "Segoe UI Semibold", "Roboto", "Open Sans", "Arial", "Tahoma", "Verdana",
     "Calibri", "Candara", "Corbel", "Trebuchet MS", "Franklin Gothic Medium", "Century Gothic",
     "Bahnschrift", "Lucida Sans Unicode", "Microsoft Sans Serif", "Consolas", "Courier New", "Georgia",
+    "Inter", "Noto Sans", "Lato", "Montserrat", "Source Sans 3", "Fira Sans", "Nunito", "Exo 2", "Merriweather", "Cinzel",
 };
 static const int NFACE = (int)(sizeof(FACE_LABEL) / sizeof(FACE_LABEL[0]));
 
@@ -1729,5 +1734,35 @@ const char* ui_text_elem_label(int e) {
 int         ui_font_count()        { return NFACE; }
 const char* ui_font_label(int i)   { return (i >= 0 && i < NFACE) ? FACE_LABEL[i] : ""; }
 const char* ui_font_face(int i)    { return (i >= 0 && i < NFACE) ? FACE_NAME[i]  : ""; }
+// is the face INSTALLED (2026-11-28 : "le choix de police n'affecte pas" -- Roboto / Open Sans are not Windows' own : a
+// missing face falls back to the default silently). Asked once (GDI, logged) ; 0 (the layout's default) always is.
+#pragma comment(lib, "gdi32.lib")   // EnumFontFamiliesExA (the tests' exe links this file too)
+// a face AioHUD ships : its file in assets\fonts (the label without spaces, its 400 cut : "Open Sans" -> OpenSans-400.ttf)
+bool ui_font_bundled_file(const char* face) {
+    if (!face || !face[0]) return false;
+    char stem[64]; int o = 0; for (int i = 0; face[i] && o < 60; ++i) if (face[i] != ' ') stem[o++] = face[i]; stem[o] = 0;
+    char rel[128]; _snprintf(rel, sizeof(rel), "assets\\fonts\\%s-400.ttf", stem); rel[127] = 0;
+    char path[MAX_PATH]; plugin_path(path, sizeof(path), rel);
+    const DWORD a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+static int CALLBACK face_found(const LOGFONTA*, const TEXTMETRICA*, DWORD, LPARAM lp) { *(bool*)lp = true; return 0; }
+bool ui_font_installed(int i) {
+    static signed char have[64]; static bool done = false;   // rule10-ok: asked once ; a failed GetDC keeps every face
+    if (!done) { done = true; HDC dc = GetDC(0); int n = 0; char miss[512]; int mo = 0; miss[0] = 0;   // rule10-ok: see above
+        for (int q = 0; q < NFACE && q < 64; ++q) {
+            bool f = q == 0 || ui_font_bundled_file(FACE_NAME[q]);
+            if (q > 0 && dc) { LOGFONTA lf; memset(&lf, 0, sizeof(lf)); lf.lfCharSet = DEFAULT_CHARSET; lstrcpynA(lf.lfFaceName, FACE_NAME[q], LF_FACESIZE); EnumFontFamiliesExA(dc, &lf, face_found, (LPARAM)&f, 0); }
+            if (!dc) f = true;
+            have[q] = f ? 1 : 0; if (f) ++n; else if (mo < 480) mo += _snprintf(miss + mo, sizeof(miss) - mo, " '%s'", FACE_NAME[q]); }
+        if (dc) ReleaseDC(0, dc);
+        windower::debug::log("FONTS : %d of %d faces installed ; missing :%s", n, NFACE, miss[0] ? miss : " none"); }
+    return i >= 0 && i < NFACE && i < 64 && have[i];
+}
+int ui_font_step(int cur, int d) {
+    int i = cur < 0 || cur >= NFACE ? 0 : cur;
+    for (int k = 0; k < NFACE; ++k) { i = ((i + (d < 0 ? -1 : 1)) % NFACE + NFACE) % NFACE; if (ui_font_installed(i)) return i; }
+    return 0;
+}
 
 } // namespace aio

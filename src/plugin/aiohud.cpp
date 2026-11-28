@@ -1005,7 +1005,8 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
         else if (s_ateEdit[dik & 0xFF]) { s_ateEdit[dik & 0xFF] = false; return 1u; }
     }
     if (!g_hud.config().wants_keys())                       // not typing -> never block the game (but Currencies' search)
-    {   const unsigned ch = (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u;   // Currencies' search ; the trade's gil typed
+    {   aio::fulllog_key(dik, pressed);                     // the unfolded log's line cursor : observed, not consumed
+        const unsigned ch = (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u;   // Currencies' search ; the trade's gil typed
         return (aio::currencies_key(dik, ch, pressed, mCtrl || mAlt) || aio::trade_key(dik, ch, pressed, mCtrl || mAlt)) ? 1u : 0u; }
     // Insert toggles the Windower console -> NEVER swallow it, even while typing (extended DIK 0xD2, or the
     // numpad-0 scan 0x52 when NumLock is off so it produced no character).
