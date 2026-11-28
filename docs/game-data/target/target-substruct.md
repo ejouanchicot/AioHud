@@ -87,7 +87,7 @@ active the focused-menu pointer `*(FFXiMain+0x5EEDAC)` points at the menu named 
 in slot order = our row order, so the hovered member is `rows[index-1]`. `poll_game_state` fills
 `GameState::partyMenuSel`; the party widget frames that row. Found with `//aio pcur` (needs ≥2 party
 members so the index is non-zero — solo it is `0`, an all-zero byte you can't pick out). The probe
-(`g_pcur_probe`) stays in `plugin/aiohud.cpp` for re-locating after a client patch.
+(`g_pcur_probe`) is gone since : re-locating after a client patch means rewriting it (see the note at the top).
 
 ## Resolving the target to its ENTITY struct (Target-HUD reverse — REVERSED & WORKING, 2026-07-03)
 
@@ -208,7 +208,7 @@ If the client stored the target's live status list — and a remaining-tick — 
 debuffs + **exact** expiry straight from memory. The `//aio tent` dump only covered `+0x000..+0x120`
 and showed **no** status array there, but a list could sit beyond that, or hang off a pointer.
 
-**Probe `//aio tdbg`** (kept in `plugin/aiohud.cpp`, off by default) resolves the same entity as `//aio
+**Probe `//aio tdbg`** (since removed — see the note at the top) resolves the same entity as `//aio
 tent` (`target_t → Targets[0].EntityPointer`, array-resolved fallback) and runs three passes over ONE
 SEH-guarded `0x400` block copy:
 1. **Wide hex dump** `+0x000..+0x400` (hex | ascii) — extends the `0x120` `tent` already covered so an
@@ -241,7 +241,7 @@ Three `//aio tdbg` runs on the same mob (baseline / Burn applied / worn off), di
 Conclusion: the server doesn't send mob debuff state to the client (why every addon packet-tracks). There is
 **no memory store and no memory timer** to read → the Target module's **packet-tracked icons** are the only
 option. The only remaining accuracy gain is reversing the **wear-off message** packet for EXACT icon removal
-(no countdown either way). `//aio tdbg` stays in `aiohud.cpp` for re-checking after a client patch.
+(no countdown either way). `//aio tdbg` is gone since : re-checking after a client patch means rewriting it from the three passes above.
 
 ## See also
 - [Target module — the TargetBar widget & its config](../../design/target-module.md)

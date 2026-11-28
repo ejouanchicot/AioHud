@@ -157,7 +157,7 @@ label. Two collision shapes:
   Sambas **216**, Jigs **218**, Flourishes **221/222/226**, stratagems **231**, … Here MANY are usable at
   once, and the wanted label is the **family header** (the first table row).
 
-Rule: read the **usable-JA bitmap** once/frame (`read_usable_ja_bits`, game_mem.cpp:374 — the get_abilities
+Rule: read the **usable-JA bitmap** once/frame (`read_usable_bits`, game_mem.cpp:653 -- WS + JA bitmaps in one read — the get_abilities
 **"block 0xAC"**, JA bits at **+0x44**, exactly **128 bytes** = 1024 ids). Then:
 
 ```

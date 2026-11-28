@@ -384,11 +384,12 @@ timer / objective rows). Center-anchored (`ztX` centre, `ztY` top),
 0x00E→on_00e**. The module's own code lives in `model/party_state_zonetracker.cpp` (split out of
 `party_state.cpp`); the widget is `ui/hud_zonetracker.cpp`.
 
-Config module "Zone Tracker" (`zt_config.cpp`) — **everything is per-variant**. The
-`Content` selector (second row, right under `Show` — the one panel where `Size` is not
-the row after `Show`, because `Content` drives what the rest of the panel even shows)
-picks the zone; the sub-options and the Text element list below are **filtered to that
-zone**. Each variant has a visibility toggle per row, a text element per visual group
+Config module "Zone Tracker" (`zt_config.cpp`) — **everything is per-variant**. On the
+redesigned page (`draw_zt_v2`, Advanced, 2026-11-27) a **7-zone `chrome_segment`** under the
+Frame section writes `ztVariant` (it is also the preview's zone); the zone's own section
+(titled with the zone, slot 15), Sortie's Behaviour section and the Text element list below
+are **filtered to that zone**. (The old page, `//aio config v1` → `draw_zt_config`, used a
+`Content` selector row right under `Show` instead.) Each variant has a visibility toggle per row, a text element per visual group
 (font / size / outline / bold / colour), and size sliders for its bars, dots and icons.
 
 Persisted as `zt=` / `ztText%d=` / `ztsheol=` plus one key per variant:
@@ -418,6 +419,6 @@ incoming-text lines with mode).
 - [Static analysis of FFXiMain](../../reverse-engineering/static-analysis.md) — the dump, its **0x05C60000** base, and how to re-pin it.
 - [The differential memory scanner](../../reverse-engineering/memory-scanner.md) — the generalized protocol + failure modes behind the post-mortem above.
 - [The in-game RE probe toolkit](../../reverse-engineering/probes.md) — every `//aio` diagnostic, including `limbusrun`/`limbusmem`.
-- [Config panels](../../architecture/config-panels.md) — the `Content`-selector pattern and the C1061 out-of-line parser rule.
+- [Config panels](../../architecture/config-panels.md) — the switch-above-the-sections rule and the C1061 out-of-line parser rule.
 - [PointWatch](../player/pointwatch.md) — the same `pwcore.lua` engine (the core XP/CP/ML providers).
 - [Party cast bar — 0x028](../party/cast-bar.md) — the packet-bit-read pattern.

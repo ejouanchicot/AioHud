@@ -105,7 +105,7 @@ early-out (`count == 0` -> skip the bag's 80 slots).
 
 ## Reader (model)
 `aio::refresh_items()` takes ONE SEH-guarded block copy of the whole container (`0x19552` bytes) into a
-static snapshot; `count_item(id)` / `owns_item(id)` / `count_items(ids,n,out)` / `item_slot()` /
+static snapshot; `count_item(id)` / `count_items(ids,n,out)` / `item_slot()` /
 `item_bag_info()` then answer from that snapshot with no further game-memory reads. This is deliberate
 (rule 5/6): a `safe_read` per slot would be ~1440 SEH-guarded reads per poll. A poller must call
 `refresh_items()` once per cycle; a bad pointer degrades to a no-op and every count reads 0.

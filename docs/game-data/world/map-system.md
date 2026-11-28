@@ -319,9 +319,9 @@ split into three sub-sections. It writes the `mm*` fields of `UiConfig` (`src/mo
   - **Background** (`mmBgAlpha`, 0..100%) — backdrop opacity behind the map (0 = fully transparent, the
     game shows through; colour `0x00080B12`, drawn as a disc when round, a quad when square).
 - **Shape & Frame**
-  - **Shape** (`mmShape`) — **Square** (0) or **Round** (1). Round uses a **stencil circle-clip**
-    (`mm_clip_circle_begin`: clear the widget rect stencil to 0, set 1 inside the disc, draw content only
-    where stencil == 1).
+  - **Shape** (`mmShape`) — **Square** (0) or **Round** (1). Round is **pure geometry**: the map is a
+    textured circular fan (`tdisc`) and the markers are circle-tested -- NO stencil (Windower binds no
+    depth-stencil for the overlay, so a stencil clip silently no-ops ; see the note in `minimap.cpp`).
   - **Frame** (`mmFrame`) — **None** (0) / **Box Theme** (1, follows the party/alliance `skinTheme` via
     procedural hue or the FFXI skin border) / **Custom** (2). Round frame is an additive halo ring
     (`disc_glow`, blend reset after per rule 3); square frame is `rrect_stroke`.
@@ -377,7 +377,7 @@ already draws bezel-then-map; the Help had it reversed, which hid the map even t
 were fine.
 
 ## See also
-- Config panels — the split config page (../architecture/config-panels.md) — the Minimap settings panel.
+- [Config panels](../../architecture/config-panels.md) — the Minimap settings page (`minimap_config.cpp`).
 - Local player struct (player-struct.md) . Party array (party-array.md) - the g chains reused here.
 - Target & sub-target struct (target-substruct.md) - the same target_t FFXIDB reaches at the client
   map object +0x30 (0x04000000 = nothing; entity ptr at +0x08).
